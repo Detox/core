@@ -1,0 +1,42 @@
+{
+	"name"            : "@detox/core",
+	"description"     : "Core library of Detox project that provides high-level APIs used when building end-user applications",
+	"keywords"        : [
+		"detox"
+	],
+	"version"         : "",
+	"homepage"        : "https://github.com/Detox/detox-core",
+	"author"          : {
+		"name"  : "Nazar Mokrynskyi",
+		"email" : "nazar@mokrynskyi.com",
+		"url"   : "https://cleverstyle.org"
+	},
+	"repository"      : {
+		"type" : "git",
+		"url"  : "git://github.com/Detox/detox-core.git"
+	},
+	"licenses"        : [
+		{
+			"type" : "MIT",
+			"url"  : "https://github.com/Detox/detox-core/blob/master/license.txt"
+		}
+	],
+	"bugs"            : "https://github.com/Detox/detox-core/issues",
+	"docs"            : "https://github.com/Detox/detox-core",
+	"main"            : "src/index.js",
+	"files"           : [
+		"src"
+	],
+	"scripts"         : {
+		"test" : "tape tests/**/*.js"
+	},
+	"dependencies"    : {
+		"@detox/crypto"    : "^0.3.1",
+		"@detox/transport" : "^0.1.0"
+	},
+	"devDependencies" : {
+		"google-closure-compiler-js" : "^20170910.0.1",
+		"gulp"                       : "^3.9.1",
+		"tape"                       : "^4.8.0"
+	}
+}
