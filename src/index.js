@@ -6,6 +6,44 @@
  * @license   MIT License, see license.txt
  */
 (function(){
+  var randombytes;
+  if (typeof crypto !== 'undefined') {
+    randombytes = function(size){
+      var array;
+      array = new Uint8Array(size);
+      crypto.getRandomValues(array);
+      return array;
+    };
+  } else {
+    randombytes = require('crypto').randomBytes;
+  }
+  /**
+   * @param {number} min
+   * @param {number} max
+   *
+   * @return {number}
+   */
+  function random_int(min, max){
+    var bytes, uint32_number;
+    bytes = randombytes(4);
+    uint32_number = new Uint32Array(bytes.buffer)[0];
+    return Math.floor(uint32_number / Math.pow(2, 32) * (max - min + 1)) + min;
+  }
+  /**
+   * @param {!Array} array Returned item will be removed from this array
+   *
+   * @return {*}
+   */
+  function pull_random_item_from_array(array){
+    var length, index;
+    length = array.length;
+    if (length === 1) {
+      return array.pop();
+    } else {
+      index = random_int(0, length - 1);
+      return array.splice(index, 1)[0];
+    }
+  }
   function Wrapper(detoxCrypto, detoxTransport, asyncEventer){
     /**
      * Generate random seed that can be used as keypair seed
@@ -60,7 +98,43 @@
     }
     Core.prototype = Object.create(asyncEventer.prototype);
     x$ = Core.prototype;
-    x$['connect_to'] = function(id){};
+    /**
+     * @param {!Uint8Array}	id
+     * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous point
+     */
+    x$['connect_to'] = function(id, number_of_intermediate_nodes){
+      var this$ = this;
+      if (this._connected_nodes.size / 2 < number_of_intermediate_nodes) {
+        this['fire']('connection_failed');
+        return;
+      }
+      this._dht['find_introduction_nodes'](id, function(introduction_nodes){
+        function try_construct_routing_path(){
+          var introduction_node, connected_nodes, nodes, res$, i$, to$, i, first_node, this$ = this;
+          if (!introduction_nodes.length) {
+            this['fire']('connection_failed');
+            return;
+          }
+          introduction_node = pull_random_item_from_array(introduction_nodes);
+          connected_nodes = Array.from(this._connected_nodes.values());
+          res$ = [];
+          for (i$ = 0, to$ = number_of_intermediate_nodes; i$ < to$; ++i$) {
+            i = i$;
+            res$.push(pull_random_item_from_array(connected_nodes));
+          }
+          nodes = res$;
+          nodes.push(introduction_node);
+          first_node = nodes[0];
+          return this._router['construct_routing_path'](nodes).then(function(){})['catch'](try_construct_routing_path);
+        }
+        try_construct_routing_path();
+      }, function(){
+        this$['fire']('connection_failed');
+      });
+    };
+    /**
+     * @param {!Uint8Array} id
+     */
     x$['disconnect_from'] = function(id){};
     /**
      * @param {!Uint8Array} id		ID of the node that should receive data

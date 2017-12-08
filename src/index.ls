@@ -4,6 +4,38 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
+if typeof crypto != 'undefined'
+	randombytes	= (size) ->
+		array = new Uint8Array(size)
+		crypto.getRandomValues(array)
+		array
+else
+	randombytes	= require('crypto').randomBytes
+
+/**
+ * @param {number} min
+ * @param {number} max
+ *
+ * @return {number}
+ */
+function random_int (min, max)
+	bytes			= randombytes(4)
+	uint32_number	= (new Uint32Array(bytes.buffer))[0]
+	Math.floor(uint32_number / 2**32 * (max - min + 1)) + min
+
+/**
+ * @param {!Array} array Returned item will be removed from this array
+ *
+ * @return {*}
+ */
+function pull_random_item_from_array (array)
+	length	= array.length
+	if length == 1
+		array.pop()
+	else
+		index	= random_int(0, length - 1)
+		array.splice(index, 1)[0]
+
 function Wrapper (detox-crypto, detox-transport, async-eventer)
 	/**
 	 * Generate random seed that can be used as keypair seed
@@ -68,8 +100,42 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 
 	Core:: = Object.create(async-eventer::)
 	Core::
-		..'connect_to' = (id) !->
-			#TODO: Create routing necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
+		/**
+		 * @param {!Uint8Array}	id
+		 * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous point
+		 */
+		..'connect_to' = (id, number_of_intermediate_nodes) !->
+			# TODO: This is a naive implementation, should use unknown nodes
+			# Require at least twice as much nodes to be connected
+			if @_connected_nodes.size / 2 < number_of_intermediate_nodes
+				@'fire'('connection_failed') #TODO: Add reason code
+				return
+			@_dht['find_introduction_nodes'](
+				id
+				(introduction_nodes) !~>
+					# TODO: add `connection_progress` event
+					function try_construct_routing_path
+						if !introduction_nodes.length
+							@'fire'('connection_failed') #TODO: Add reason code
+							return
+						introduction_node	= pull_random_item_from_array(introduction_nodes)
+						connected_nodes		= Array.from(@_connected_nodes.values())
+						nodes				=
+							for i from 0 til number_of_intermediate_nodes
+								pull_random_item_from_array(connected_nodes)
+						nodes.push(introduction_node)
+						first_node	= nodes[0]
+						@_router['construct_routing_path'](nodes)
+							.then !~> # TODO: success, then talk to introduction point
+							.catch(try_construct_routing_path)
+					try_construct_routing_path()
+				!~>
+					@'fire'('connection_failed') #TODO: Add reason code
+			)
+			# TODO: Create necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
+		/**
+		 * @param {!Uint8Array} id
+		 */
 		..'disconnect_from' = (id) !->
 			#TODO: Destroy corresponding routing path
 		/**
