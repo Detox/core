@@ -36,6 +36,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_real_keypair	= detox-crypto['create_keypair'](real_key_seed)
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 
+		@_connected_nodes	= new Map
+
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
 			@_dht_keypair['ed25519']['private']
@@ -46,11 +48,38 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			bucket_size
 		)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], packet_size, max_pending_segments)
-		# TODO: everything
+		@_dht
+			.'on'('node_connected', (id) !~>
+				@_connected_nodes.set(id.join(','), id)
+			)
+			.'on'('node_disconnected', (id) !~>
+				@_connected_nodes.delete(id.join(','))
+			)
+			.'on'('data', (id, data) !~>
+				@_router['process_packet'](id, data)
+			)
+		@_router
+			.'on'('send', (id, data) !~>
+				@_dht['send_data'](id, data)
+			)
+			.'on'('data', (node_id, route_id, data) !~>
+				#TODO: Fire event with ID that corresponds to responder on this routing path
+			)
 
 	Core:: = Object.create(async-eventer::)
 	Core::
-		#TODO: all methods here
+		..'connect_to' = (id) !->
+			#TODO: Create routing necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
+		..'disconnect_from' = (id) !->
+			#TODO: Destroy corresponding routing path
+		/**
+		 * @param {!Uint8Array} id		ID of the node that should receive data
+		 * @param {!Uint8Array} data
+		 */
+		..'send_data' = (id, data) !->
+			# There should be a single routing path to specified node ID and it will be used in order to send data
+			# Single routing path allows us to have simpler external API and do not bother application with `segment_id` or other implementation details
+			# TODO:
 	Object.defineProperty(Core::, 'constructor', {enumerable: false, value: Core})
 	{
 		'ready'			: (callback) !->

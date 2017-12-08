@@ -12,6 +12,7 @@
      *
      * @return {!Uint8Array} 32 bytes
      */
+    var x$;
     function generate_seed(){
       return detoxCrypto['create_keypair']()['seed'];
     }
@@ -32,6 +33,7 @@
      * @throws {Error}
      */
     function Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size, max_pending_segments){
+      var this$ = this;
       packet_size == null && (packet_size = 512);
       packets_per_second == null && (packets_per_second = 1);
       bucket_size == null && (bucket_size = 2);
@@ -42,11 +44,29 @@
       asyncEventer.call(this);
       this._real_keypair = detoxCrypto['create_keypair'](real_key_seed);
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
+      this._connected_nodes = new Map;
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
+      this._dht['on']('node_connected', function(id){
+        this$._connected_nodes.set(id.join(','), id);
+      })['on']('node_disconnected', function(id){
+        this$._connected_nodes['delete'](id.join(','));
+      })['on']('data', function(id, data){
+        this$._router['process_packet'](id, data);
+      });
+      this._router['on']('send', function(id, data){
+        this$._dht['send_data'](id, data);
+      })['on']('data', function(node_id, route_id, data){});
     }
     Core.prototype = Object.create(asyncEventer.prototype);
-    Core.prototype;
+    x$ = Core.prototype;
+    x$['connect_to'] = function(id){};
+    x$['disconnect_from'] = function(id){};
+    /**
+     * @param {!Uint8Array} id		ID of the node that should receive data
+     * @param {!Uint8Array} data
+     */
+    x$['send_data'] = function(id, data){};
     Object.defineProperty(Core.prototype, 'constructor', {
       enumerable: false,
       value: Core
