@@ -22,7 +22,6 @@ function random_int (min, max)
 	bytes			= randombytes(4)
 	uint32_number	= (new Uint32Array(bytes.buffer))[0]
 	Math.floor(uint32_number / 2**32 * (max - min + 1)) + min
-
 /**
  * @param {!Array} array Returned item will be removed from this array
  *
@@ -35,6 +34,14 @@ function pull_random_item_from_array (array)
 	else
 		index	= random_int(0, length - 1)
 		array.splice(index, 1)[0]
+/**
+ * @param {!Uint8Array}	address
+ * @param {!Uint8Array}	segment_id
+ *
+ * @return {string}
+ */
+function compute_source_id (address, segment_id)
+	address.join(',') + segment_id.join(',')
 
 function Wrapper (detox-crypto, detox-transport, async-eventer)
 	/**
@@ -68,7 +75,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_real_keypair	= detox-crypto['create_keypair'](real_key_seed)
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 
-		@_connected_nodes	= new Map
+		@_connected_nodes		= new Map
+		@_routing_paths			= new Map
+		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
+		@_id_to_routing_path	= new Map
+		@_routing_path_to_id	= new Map
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -95,9 +106,20 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				@_dht['send_data'](id, data)
 			)
 			.'on'('data', (node_id, route_id, data) !~>
-				#TODO: Fire event with ID that corresponds to responder on this routing path
+				source_id	= compute_source_id(node_id, route_id)
+				if !@_routing_path_to_id.has(source_id)
+					# If routing path unknown - ignore
+					return
+				responder_id	= @_routing_path_to_id.get(source_id)
+				@'fire'('data', responder_id, data)
 			)
-
+			.'on'('destroyed', !~>
+				#TODO
+			)
+	Core
+		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'	= 0
+		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'		= 1
+		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'	= 2
 	Core:: = Object.create(async-eventer::)
 	Core::
 		/**
@@ -105,10 +127,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous point
 		 */
 		..'connect_to' = (id, number_of_intermediate_nodes) !->
-			# TODO: This is a naive implementation, should use unknown nodes
 			# Require at least twice as much nodes to be connected
 			if @_connected_nodes.size / 2 < number_of_intermediate_nodes
-				@'fire'('connection_failed') #TODO: Add reason code
+				@'fire'('connection_failed', id, @'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES')
 				return
 			@_dht['find_introduction_nodes'](
 				id
@@ -116,23 +137,76 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					# TODO: add `connection_progress` event
 					function try_construct_routing_path
 						if !introduction_nodes.length
-							@'fire'('connection_failed') #TODO: Add reason code
+							@'fire'('connection_failed', id, @'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES')
 							return
 						introduction_node	= pull_random_item_from_array(introduction_nodes)
-						connected_nodes		= Array.from(@_connected_nodes.values())
-						nodes				=
-							for i from 0 til number_of_intermediate_nodes
-								pull_random_item_from_array(connected_nodes)
-						nodes.push(introduction_node)
-						first_node	= nodes[0]
-						@_router['construct_routing_path'](nodes)
-							.then !~> # TODO: success, then talk to introduction point
-							.catch(try_construct_routing_path)
+						@_connect_to(
+							introduction_node
+							number_of_intermediate_nodes
+							!~>
+								# TODO: the rest
+							try_construct_routing_path
+						)
 					try_construct_routing_path()
 				!~>
-					@'fire'('connection_failed') #TODO: Add reason code
+					@'fire'('connection_failed', id, @'CONNECTION_ERROR_NO_INTRODUCTION_NODES')
 			)
 			# TODO: Create necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
+		/**
+		 * @param {!Uint8Array}	id
+		 * @param {number}		number_of_intermediate_nodes
+		 * @param {!Function}	success_callback
+		 * @param {!Function}	failure_callback
+		 */
+		.._connect_to = (id, number_of_intermediate_nodes, success_callback, failure_callback) !->
+			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
+			# TODO: add `connection_progress` event
+			nodes			=
+				for i from 0 til number_of_intermediate_nodes
+					pull_random_item_from_array(connected_nodes)
+			nodes.push(id)
+			first_node	= nodes[0]
+			@_router['construct_routing_path'](nodes)
+				.then (route_id) !~>
+					@_register_routing_path(id, first_node, route_id)
+					success_callback(first_node, route_id)
+				.catch(failure_callback)
+		/**
+		 * @param {!Uint8Array}	id
+		 */
+		.._disconnect_from = (id) !->
+			id_string	= id.join(',')
+			if !@_id_to_routing_path.has(id_string)
+				return
+			[node_id, route_id] = @_id_to_routing_path.get(id_string)
+			@_router['destroy_routing_path'](node_id, route_id)
+			@_unregister_routing_path(node_id, route_id)
+		/**
+		 * @param {!Uint8Array} responder_id	Last node in routing path, responder
+		 * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
+		 * @param {!Uint8Array} route_id		ID of the route on `node_id`
+		 */
+		.._register_routing_path = (responder_id, node_id, route_id) !->
+			source_id			= compute_source_id(node_id, route_id)
+			responder_id_string	= responder_id.join(',')
+			if @_routing_paths.has(source_id)
+				# Something went wrong, ignore
+				return
+			@_routing_paths.set(source_id, [node_id, route_id])
+			@_id_to_routing_path.set(responder_id_string, [node_id, route_id])
+			@_routing_path_to_id.set(source_id, responder_id)
+		/**
+		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
+		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
+		 */
+		.._unregister_routing_path = (node_id, route_id) !->
+			source_id	= compute_source_id(node_id, route_id)
+			if !@_routing_paths.has(source_id)
+				return
+			responder_id_string	= @_routing_path_to_id.get(source_id).join(',')
+			@_routing_paths.delete(source_id)
+			@_routing_path_to_id.delete(source_id)
+			@_id_to_routing_path.delete(responder_id_string)
 		/**
 		 * @param {!Uint8Array} id
 		 */

@@ -44,13 +44,22 @@
       return array.splice(index, 1)[0];
     }
   }
+  /**
+   * @param {!Uint8Array}	address
+   * @param {!Uint8Array}	segment_id
+   *
+   * @return {string}
+   */
+  function compute_source_id(address, segment_id){
+    return address.join(',') + segment_id.join(',');
+  }
   function Wrapper(detoxCrypto, detoxTransport, asyncEventer){
     /**
      * Generate random seed that can be used as keypair seed
      *
      * @return {!Uint8Array} 32 bytes
      */
-    var x$;
+    var x$, y$;
     function generate_seed(){
       return detoxCrypto['create_keypair']()['seed'];
     }
@@ -83,6 +92,9 @@
       this._real_keypair = detoxCrypto['create_keypair'](real_key_seed);
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._connected_nodes = new Map;
+      this._routing_paths = new Map;
+      this._id_to_routing_path = new Map;
+      this._routing_path_to_id = new Map;
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
       this._dht['on']('node_connected', function(id){
@@ -94,53 +106,121 @@
       });
       this._router['on']('send', function(id, data){
         this$._dht['send_data'](id, data);
-      })['on']('data', function(node_id, route_id, data){});
+      })['on']('data', function(node_id, route_id, data){
+        var source_id, responder_id;
+        source_id = compute_source_id(node_id, route_id);
+        if (!this$._routing_path_to_id.has(source_id)) {
+          return;
+        }
+        responder_id = this$._routing_path_to_id.get(source_id);
+        this$['fire']('data', responder_id, data);
+      })['on']('destroyed', function(){});
     }
+    x$ = Core;
+    x$['CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'] = 0;
+    x$['CONNECTION_ERROR_NO_INTRODUCTION_NODES'] = 1;
+    x$['CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'] = 2;
     Core.prototype = Object.create(asyncEventer.prototype);
-    x$ = Core.prototype;
+    y$ = Core.prototype;
     /**
      * @param {!Uint8Array}	id
      * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous point
      */
-    x$['connect_to'] = function(id, number_of_intermediate_nodes){
+    y$['connect_to'] = function(id, number_of_intermediate_nodes){
       var this$ = this;
       if (this._connected_nodes.size / 2 < number_of_intermediate_nodes) {
-        this['fire']('connection_failed');
+        this['fire']('connection_failed', id, this['CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES']);
         return;
       }
       this._dht['find_introduction_nodes'](id, function(introduction_nodes){
         function try_construct_routing_path(){
-          var introduction_node, connected_nodes, nodes, res$, i$, to$, i, first_node, this$ = this;
+          var introduction_node, this$ = this;
           if (!introduction_nodes.length) {
-            this['fire']('connection_failed');
+            this['fire']('connection_failed', id, this['CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES']);
             return;
           }
           introduction_node = pull_random_item_from_array(introduction_nodes);
-          connected_nodes = Array.from(this._connected_nodes.values());
-          res$ = [];
-          for (i$ = 0, to$ = number_of_intermediate_nodes; i$ < to$; ++i$) {
-            i = i$;
-            res$.push(pull_random_item_from_array(connected_nodes));
-          }
-          nodes = res$;
-          nodes.push(introduction_node);
-          first_node = nodes[0];
-          return this._router['construct_routing_path'](nodes).then(function(){})['catch'](try_construct_routing_path);
+          return this._connect_to(introduction_node, number_of_intermediate_nodes, function(){}, try_construct_routing_path);
         }
         try_construct_routing_path();
       }, function(){
-        this$['fire']('connection_failed');
+        this$['fire']('connection_failed', id, this$['CONNECTION_ERROR_NO_INTRODUCTION_NODES']);
       });
+    };
+    /**
+     * @param {!Uint8Array}	id
+     * @param {number}		number_of_intermediate_nodes
+     * @param {!Function}	success_callback
+     * @param {!Function}	failure_callback
+     */
+    y$._connect_to = function(id, number_of_intermediate_nodes, success_callback, failure_callback){
+      var nodes, res$, i$, i, first_node, this$ = this;
+      res$ = [];
+      for (i$ = 0; i$ < number_of_intermediate_nodes; ++i$) {
+        i = i$;
+        res$.push(pull_random_item_from_array(connected_nodes));
+      }
+      nodes = res$;
+      nodes.push(id);
+      first_node = nodes[0];
+      this._router['construct_routing_path'](nodes).then(function(route_id){
+        this$._register_routing_path(id, first_node, route_id);
+        success_callback(first_node, route_id);
+      })['catch'](failure_callback);
+    };
+    /**
+     * @param {!Uint8Array}	id
+     */
+    y$._disconnect_from = function(id){
+      var id_string, ref$, node_id, route_id;
+      id_string = id.join(',');
+      if (!this._id_to_routing_path.has(id_string)) {
+        return;
+      }
+      ref$ = this._id_to_routing_path.get(id_string), node_id = ref$[0], route_id = ref$[1];
+      this._router['destroy_routing_path'](node_id, route_id);
+      this._unregister_routing_path(node_id, route_id);
+    };
+    /**
+     * @param {!Uint8Array} responder_id	Last node in routing path, responder
+     * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
+     * @param {!Uint8Array} route_id		ID of the route on `node_id`
+     */
+    y$._register_routing_path = function(responder_id, node_id, route_id){
+      var source_id, responder_id_string;
+      source_id = compute_source_id(node_id, route_id);
+      responder_id_string = responder_id.join(',');
+      if (this._routing_paths.has(source_id)) {
+        return;
+      }
+      this._routing_paths.set(source_id, [node_id, route_id]);
+      this._id_to_routing_path.set(responder_id_string, [node_id, route_id]);
+      this._routing_path_to_id.set(source_id, responder_id);
+    };
+    /**
+     * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
+     * @param {!Uint8Array} route_id	ID of the route on `node_id`
+     */
+    y$._unregister_routing_path = function(node_id, route_id){
+      var source_id, responder_id_string;
+      source_id = compute_source_id(node_id, route_id);
+      if (!this._routing_paths.has(source_id)) {
+        return;
+      }
+      responder_id_string = this._routing_path_to_id.get(source_id).join(',');
+      this._routing_paths['delete'](source_id);
+      this._routing_path_to_id['delete'](source_id);
+      this._id_to_routing_path['delete'](responder_id_string);
     };
     /**
      * @param {!Uint8Array} id
      */
-    x$['disconnect_from'] = function(id){};
+    y$['disconnect_from'] = function(id){};
     /**
      * @param {!Uint8Array} id		ID of the node that should receive data
      * @param {!Uint8Array} data
      */
-    x$['send_data'] = function(id, data){};
+    y$['send_data'] = function(id, data){};
     Object.defineProperty(Core.prototype, 'constructor', {
       enumerable: false,
       value: Core

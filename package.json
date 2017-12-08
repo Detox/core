@@ -32,7 +32,7 @@
 	},
 	"dependencies"    : {
 		"@detox/crypto"    : "^0.3.1",
-		"@detox/transport" : "^0.2.0"
+		"@detox/transport" : "^0.3.0"
 	},
 	"devDependencies" : {
 		"google-closure-compiler-js" : "^20170910.0.1",
