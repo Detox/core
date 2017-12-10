@@ -4,10 +4,13 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
-const COMMAND_INTRODUCE_TO = 0
+const COMMAND_INTRODUCE_TO	= 0
+const COMMAND_CONNECTED		= 1
 
-const ID_LENGTH			= 32
-const SIGNATURE_LENGTH	= 64
+const ID_LENGTH				= 32
+const SIGNATURE_LENGTH		= 64
+# How long node should wait for rendezvous node to receive incoming connection from intended responder
+const CONNECTION_TIMEOUT	= 30
 
 const CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES		= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
@@ -51,6 +54,14 @@ function pull_random_item_from_array (array)
  */
 function compute_source_id (address, segment_id)
 	address.join(',') + segment_id.join(',')
+/**
+ * @param {string}		string
+ * @param {!Uint8Array}	array
+ *
+ * @return {boolean}
+ */
+function is_string_equal_to_array (string, array)
+	string == array.join(',')
 /**
  * @param {!Uint8Array} introduction_node
  * @param {!Uint8Array} rendezvous_node
@@ -175,7 +186,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					rendezvous_node	= nodes[nodes.length - 1]
 					@_router['construct_routing_path'](nodes)
 						.then (route_id) !~>
-							!function try_to_introduce
+							!~function try_to_introduce
 								if !introduction_nodes.length
 									@_router['destroy_routing_path'](first_node, route_id)
 									@'fire'('connection_failed', id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
@@ -198,11 +209,26 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									..set(id, 1)
 									..set(rendezvous_token, 1)
 									..set(invitation_message, ID_LENGTH + ID_LENGTH + 1)
-#								@_router['on']()#TODO: wait for connection from another side
+								first_node_string	= first_node.join(',')
+								route_id_string		= route_id.join(',')
+								!~function path_confirmed (node_id, route_id, data)
+									if (
+										!is_string_equal_to_array(first_node_string, node_id) ||
+										!is_string_equal_to_array(responder_id_string, route_id) ||
+										data[0] != COMMAND_CONNECTED ||
+										data.subarray(1, ID_LENGTH + 1).join(',') != rendezvous_token.join(',')
+									)
+										return
+									clearTimeout(path_confirmation_timeout)
+									@_register_routing_path(id, node_id, route_id)
+									@'fire'('connection_success', id)
+								@_router['on']('data', path_confirmed)
 								@_router['send_to'](first_node, route_id, data)
+								path_confirmation_timeout	= setTimeout (!~>
+									@_ronion['off']('data', path_confirmed)
+									try_to_introduce()
+								), CONNECTION_TIMEOUT * 1000
 							try_to_introduce()
-							@_register_routing_path(id, first_node, route_id)
-							success_callback(first_node, route_id)
 						.catch !~>
 							# TODO: Retry?
 							@'fire'('connection_failed', id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)

@@ -6,10 +6,12 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var COMMAND_INTRODUCE_TO, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
+  var COMMAND_INTRODUCE_TO, COMMAND_CONNECTED, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
   COMMAND_INTRODUCE_TO = 0;
+  COMMAND_CONNECTED = 1;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
+  CONNECTION_TIMEOUT = 30;
   CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES = 0;
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 2;
@@ -59,6 +61,15 @@
    */
   function compute_source_id(address, segment_id){
     return address.join(',') + segment_id.join(',');
+  }
+  /**
+   * @param {string}		string
+   * @param {!Uint8Array}	array
+   *
+   * @return {boolean}
+   */
+  function is_string_equal_to_array(string, array){
+    return string === array.join(',');
   }
   /**
    * @param {!Uint8Array} introduction_node
@@ -178,27 +189,40 @@
         rendezvous_node = nodes[nodes.length - 1];
         this$._router['construct_routing_path'](nodes).then(function(route_id){
           function try_to_introduce(){
-            var introduction_node, rendezvous_token, invitation_payload, signature, invitation_message, x$, data;
+            var introduction_node, rendezvous_token, invitation_payload, signature, invitation_message, x$, data, first_node_string, route_id_string, path_confirmation_timeout;
             if (!introduction_nodes.length) {
-              this._router['destroy_routing_path'](first_node, route_id);
-              this['fire']('connection_failed', id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
+              this$._router['destroy_routing_path'](first_node, route_id);
+              this$['fire']('connection_failed', id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
               return;
             }
             introduction_node = pull_random_item_from_array(introduction_nodes);
             rendezvous_token = randombytes(ID_LENGTH);
             invitation_payload = create_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret);
-            signature = detoxCrypto['sign'](invitation_payload, this._real_keypair['ed25519']['public'], this._real_keypair['ed25519']['private']);
+            signature = detoxCrypto['sign'](invitation_payload, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
             invitation_message = detoxCrypto['one_way_encrypt'](new Uint8Array(invitation_payload.length + signature.length), y$.set(invitation_payload), y$.set(signature, invitation_payload.length));
             x$ = data = new Uint8Array(1 + ID_LENGTH + invitation_message.length);
             x$.set([COMMAND_INTRODUCE_TO]);
             x$.set(id, 1);
             x$.set(rendezvous_token, 1);
             x$.set(invitation_message, ID_LENGTH + ID_LENGTH + 1);
-            this._router['send_to'](first_node, route_id, data);
+            first_node_string = first_node.join(',');
+            route_id_string = route_id.join(',');
+            function path_confirmed(node_id, route_id, data){
+              if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(responder_id_string, route_id) || data[0] !== COMMAND_CONNECTED || data.subarray(1, ID_LENGTH + 1).join(',') !== rendezvous_token.join(',')) {
+                return;
+              }
+              clearTimeout(path_confirmation_timeout);
+              this$._register_routing_path(id, node_id, route_id);
+              this$['fire']('connection_success', id);
+            }
+            this$._router['on']('data', path_confirmed);
+            this$._router['send_to'](first_node, route_id, data);
+            path_confirmation_timeout = setTimeout(function(){
+              this$._ronion['off']('data', path_confirmed);
+              try_to_introduce();
+            }, CONNECTION_TIMEOUT * 1000);
           }
           try_to_introduce();
-          this$._register_routing_path(id, first_node, route_id);
-          success_callback(first_node, route_id);
         })['catch'](function(){
           this$['fire']('connection_failed', id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
           return;
