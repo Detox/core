@@ -31,8 +31,8 @@
 		"test" : "tape tests/**/*.js"
 	},
 	"dependencies"    : {
-		"@detox/crypto"    : "^0.3.1",
-		"@detox/transport" : "^0.3.0"
+		"@detox/crypto"    : "^0.4.0",
+		"@detox/transport" : "^0.4.0"
 	},
 	"devDependencies" : {
 		"google-closure-compiler-js" : "^20170910.0.1",

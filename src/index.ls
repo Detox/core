@@ -4,6 +4,16 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
+const COMMAND_INTRODUCE_TO = 0
+
+const ID_LENGTH			= 32
+const SIGNATURE_LENGTH	= 64
+
+const CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES		= 0
+const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
+const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 2
+const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 3
+
 if typeof crypto != 'undefined'
 	randombytes	= (size) ->
 		array = new Uint8Array(size)
@@ -11,7 +21,6 @@ if typeof crypto != 'undefined'
 		array
 else
 	randombytes	= require('crypto').randomBytes
-
 /**
  * @param {number} min
  * @param {number} max
@@ -42,6 +51,20 @@ function pull_random_item_from_array (array)
  */
 function compute_source_id (address, segment_id)
 	address.join(',') + segment_id.join(',')
+/**
+ * @param {!Uint8Array} introduction_node
+ * @param {!Uint8Array} rendezvous_node
+ * @param {!Uint8Array} rendezvous_token
+ * @param {!Uint8Array} secret
+ *
+ * @return {!Uint8Array}
+ */
+function create_invitation_payload (introduction_node, rendezvous_node, rendezvous_token, secret)
+	new Uint8Array(ID_LENGTH * 3 + secret.length)
+		..set(introduction_node)
+		..set(rendezvous_node, ID_LENGTH)
+		..set(rendezvous_token, ID_LENGTH * 2)
+		..set(secret, ID_LENGTH * 3)
 
 function Wrapper (detox-crypto, detox-transport, async-eventer)
 	/**
@@ -117,70 +140,97 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				#TODO
 			)
 	Core
-		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'	= 0
-		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'		= 1
-		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'	= 2
+		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES
+		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
+		..'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
+		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
 	Core:: = Object.create(async-eventer::)
 	Core::
 		/**
 		 * @param {!Uint8Array}	id
-		 * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous point
+		 * @param {!Uint8Array}	secret
+		 * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous node
 		 */
-		..'connect_to' = (id, number_of_intermediate_nodes) !->
+		..'connect_to' = (id, secret, number_of_intermediate_nodes) !->
+			if !number_of_intermediate_nodes
+				# TODO: Support direct connections here?
+				return
 			# Require at least twice as much nodes to be connected
 			if @_connected_nodes.size / 2 < number_of_intermediate_nodes
-				@'fire'('connection_failed', id, @'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES')
+				@'fire'('connection_failed', id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES)
 				return
 			@_dht['find_introduction_nodes'](
 				id
 				(introduction_nodes) !~>
+					if !introduction_nodes.length
+						@'fire'('connection_failed', id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
+						return
 					# TODO: add `connection_progress` event
-					function try_construct_routing_path
-						if !introduction_nodes.length
-							@'fire'('connection_failed', id, @'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES')
+					# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
+					connected_nodes	= @_connected_nodes.slice()
+					nodes			=
+						for i from 0 til number_of_intermediate_nodes
+							pull_random_item_from_array(connected_nodes)
+					first_node		= nodes[0]
+					rendezvous_node	= nodes[nodes.length - 1]
+					@_router['construct_routing_path'](nodes)
+						.then (route_id) !~>
+							!function try_to_introduce
+								if !introduction_nodes.length
+									@_router['destroy_routing_path'](first_node, route_id)
+									@'fire'('connection_failed', id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
+									return
+								introduction_node	= pull_random_item_from_array(introduction_nodes)
+								rendezvous_token	= randombytes(ID_LENGTH)
+								invitation_payload	= create_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret)
+								signature			= detox-crypto['sign'](
+									invitation_payload
+									@_real_keypair['ed25519']['public']
+									@_real_keypair['ed25519']['private']
+								)
+								invitation_message	= detox-crypto['one_way_encrypt'](
+									new Uint8Array(invitation_payload.length + signature.length)
+										..set(invitation_payload)
+										..set(signature, invitation_payload.length)
+								)
+								data				= new Uint8Array(1 + ID_LENGTH + invitation_message.length)
+									..set([COMMAND_INTRODUCE_TO])
+									..set(id, 1)
+									..set(rendezvous_token, 1)
+									..set(invitation_message, ID_LENGTH + ID_LENGTH + 1)
+#								@_router['on']()#TODO: wait for connection from another side
+								@_router['send_to'](first_node, route_id, data)
+							try_to_introduce()
+							@_register_routing_path(id, first_node, route_id)
+							success_callback(first_node, route_id)
+						.catch !~>
+							# TODO: Retry?
+							@'fire'('connection_failed', id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 							return
-						introduction_node	= pull_random_item_from_array(introduction_nodes)
-						@_connect_to(
-							introduction_node
-							number_of_intermediate_nodes
-							!~>
-								# TODO: the rest
-							try_construct_routing_path
-						)
-					try_construct_routing_path()
 				!~>
-					@'fire'('connection_failed', id, @'CONNECTION_ERROR_NO_INTRODUCTION_NODES')
+					@'fire'('connection_failed', id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
 			# TODO: Create necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
 		/**
-		 * @param {!Uint8Array}	id
-		 * @param {number}		number_of_intermediate_nodes
-		 * @param {!Function}	success_callback
-		 * @param {!Function}	failure_callback
+		 * @param {!Uint8Array} id
 		 */
-		.._connect_to = (id, number_of_intermediate_nodes, success_callback, failure_callback) !->
-			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
-			# TODO: add `connection_progress` event
-			nodes			=
-				for i from 0 til number_of_intermediate_nodes
-					pull_random_item_from_array(connected_nodes)
-			nodes.push(id)
-			first_node	= nodes[0]
-			@_router['construct_routing_path'](nodes)
-				.then (route_id) !~>
-					@_register_routing_path(id, first_node, route_id)
-					success_callback(first_node, route_id)
-				.catch(failure_callback)
-		/**
-		 * @param {!Uint8Array}	id
-		 */
-		.._disconnect_from = (id) !->
+		..'disconnect_from' = (id) !->
 			id_string	= id.join(',')
 			if !@_id_to_routing_path.has(id_string)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(id_string)
 			@_router['destroy_routing_path'](node_id, route_id)
 			@_unregister_routing_path(node_id, route_id)
+		/**
+		 * @param {!Uint8Array} id
+		 * @param {!Uint8Array} data
+		 */
+		..'send_to' = (id, data) !->
+			id_string	= id.join(',')
+			if !@_id_to_routing_path.has(id_string)
+				return
+			[node_id, route_id] = @_id_to_routing_path.get(id_string)
+			@_router['send_data'](node_id, route_id, data)
 		/**
 		 * @param {!Uint8Array} responder_id	Last node in routing path, responder
 		 * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
@@ -207,11 +257,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_paths.delete(source_id)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(responder_id_string)
-		/**
-		 * @param {!Uint8Array} id
-		 */
-		..'disconnect_from' = (id) !->
-			#TODO: Destroy corresponding routing path
 		/**
 		 * @param {!Uint8Array} id		ID of the node that should receive data
 		 * @param {!Uint8Array} data
