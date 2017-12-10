@@ -7,10 +7,14 @@
 const COMMAND_INTRODUCE_TO	= 0
 const COMMAND_CONNECTED		= 1
 
-const ID_LENGTH				= 32
-const SIGNATURE_LENGTH		= 64
+const ID_LENGTH						= 32
+const SIGNATURE_LENGTH				= 64
 # How long node should wait for rendezvous node to receive incoming connection from intended responder
-const CONNECTION_TIMEOUT	= 30
+const CONNECTION_TIMEOUT			= 30
+# The same as in `@detox/transport`
+const ROUTING_PATH_SEGMENT_TIMEOUT	= 10
+# After specified number of seconds since last data sending or receiving connection is considered unused and can be closed
+const LAST_USED_TIMEOUT				= 60
 
 const CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES		= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
@@ -115,6 +119,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_id_to_routing_path	= new Map
 		@_routing_path_to_id	= new Map
 		@_used_tags				= new Map
+		@_last_used_timeouts	= new Map
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -127,21 +132,37 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], packet_size, max_pending_segments)
 		@_dht
-			.'on'('node_connected', (id) !~>
-				@_connected_nodes.set(id.join(','), id)
+			.'on'('node_connected', (node_id) !~>
+				@_connected_nodes.set(node_id.join(','), node_id)
 			)
-			.'on'('node_disconnected', (id) !~>
-				@_connected_nodes.delete(id.join(','))
-				@_del_used_tag(id)
+			.'on'('node_disconnected', (node_id) !~>
+				@_connected_nodes.delete(node_id.join(','))
 			)
-			.'on'('data', (id, data) !~>
-				@_router['process_packet'](id, data)
+			.'on'('data', (node_id, data) !~>
+				@_router['process_packet'](node_id, data)
 			)
 		@_router
-			.'on'('send', (id, data) !~>
-				@_dht['send_data'](id, data)
+			.'on'('send', (node_id, data) !~>
+				node_id_string	= node_id.join(',')
+				if @_connected_nodes.has(node_id_string)
+					@_update_used_timeout(node_id)
+					@_dht['send_data'](node_id, data)
+					return
+				!~function connected (node_id)
+					if !is_string_equal_to_array(node_id_string, node_id)
+						return
+					clearTimeout(connected_timeout)
+					@_update_used_timeout(node_id)
+					@_dht['send_data'](node_id, data)
+				@_dht['on']('node_connected', connected)
+				connected_timeout	= setTimeout (!~>
+					@_dht['off']('node_connected', connected)
+				), ROUTING_PATH_SEGMENT_TIMEOUT * 1000
+				@_dht['lookup'](node_id)
 			)
 			.'on'('data', (node_id, route_id, data) !~>
+				@_update_used_timeout(node_id)
+				# TODO: Handle forwarding and commands parsing
 				source_id	= compute_source_id(node_id, route_id)
 				if !@_routing_path_to_id.has(source_id)
 					# If routing path unknown - ignore
@@ -149,8 +170,15 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				responder_id	= @_routing_path_to_id.get(source_id)
 				@'fire'('data', responder_id, data)
 			)
-			.'on'('destroyed', !~>
-				#TODO
+			.'on'('destroyed', (node_id, route_id) !~>
+				source_id	= compute_source_id(node_id, route_id)
+				if !@_routing_path_to_id.has(source_id)
+					# If routing path unknown - ignore
+					return
+				initiator_id	= @_routing_path_to_id.get(source_id)
+				@'fire'('disconnected', initiator_id)
+				@_unregister_routing_path(node_id, route_id)
+				# TODO: For forwarding connections destroy the other half of the effective routing path
 			)
 	Core
 		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES
@@ -160,23 +188,23 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 	Core:: = Object.create(async-eventer::)
 	Core::
 		/**
-		 * @param {!Uint8Array}	id
+		 * @param {!Uint8Array}	target_id
 		 * @param {!Uint8Array}	secret
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous node
 		 */
-		..'connect_to' = (id, secret, number_of_intermediate_nodes) !->
+		..'connect_to' = (target_id, secret, number_of_intermediate_nodes) !->
 			if !number_of_intermediate_nodes
 				# TODO: Support direct connections here?
 				return
 			# Require at least twice as much nodes to be connected
 			if @_connected_nodes.size / 2 < number_of_intermediate_nodes
-				@'fire'('connection_failed', id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES)
+				@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES)
 				return
 			@_dht['find_introduction_nodes'](
-				id
+				target_id
 				(introduction_nodes) !~>
 					if !introduction_nodes.length
-						@'fire'('connection_failed', id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
+						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 						return
 					# TODO: add `connection_progress` event
 					# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
@@ -186,13 +214,12 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							pull_random_item_from_array(connected_nodes)
 					first_node		= nodes[0]
 					rendezvous_node	= nodes[nodes.length - 1]
-					@_add_used_tag(first_node)
 					@_router['construct_routing_path'](nodes)
 						.then (route_id) !~>
 							!~function try_to_introduce
 								if !introduction_nodes.length
 									@_router['destroy_routing_path'](first_node, route_id)
-									@'fire'('connection_failed', id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
+									@'fire'('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 									return
 								introduction_node	= pull_random_item_from_array(introduction_nodes)
 								rendezvous_token	= randombytes(ID_LENGTH)
@@ -202,7 +229,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									@_real_keypair['ed25519']['public']
 									@_real_keypair['ed25519']['private']
 								)
-								x25519_public_key	= detox-crypto['convert_public_key'](id)
+								x25519_public_key	= detox-crypto['convert_public_key'](target_id)
 								invitation_message	= detox-crypto['one_way_encrypt'](
 									x25519_public_key
 									new Uint8Array(invitation_payload.length + signature.length)
@@ -211,12 +238,12 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								)
 								data				= new Uint8Array(1 + ID_LENGTH + invitation_message.length)
 									..set([COMMAND_INTRODUCE_TO])
-									..set(id, 1)
+									..set(target_id, 1)
 									..set(rendezvous_token, 1)
 									..set(invitation_message, ID_LENGTH + ID_LENGTH + 1)
 								first_node_string	= first_node.join(',')
 								route_id_string		= route_id.join(',')
-								!~function path_confirmed (node_id, route_id, data)
+								!~function path_confirmation (node_id, route_id, data)
 									if (
 										!is_string_equal_to_array(first_node_string, node_id) ||
 										!is_string_equal_to_array(responder_id_string, route_id) ||
@@ -225,41 +252,39 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									)
 										return
 									clearTimeout(path_confirmation_timeout)
-									@_register_routing_path(id, node_id, route_id)
-									@'fire'('connection_success', id)
-								@_router['on']('data', path_confirmed)
+									@_register_routing_path(target_id, node_id, route_id)
+									@'fire'('connected', target_id)
+								@_router['on']('data', path_confirmation)
 								@_router['send_to'](first_node, route_id, data)
 								path_confirmation_timeout	= setTimeout (!~>
-									@_ronion['off']('data', path_confirmed)
+									@_ronion['off']('data', path_confirmation)
 									try_to_introduce()
 								), CONNECTION_TIMEOUT * 1000
 							try_to_introduce()
 						.catch !~>
 							# TODO: Retry?
-							@_del_used_tag(first_node)
-							@'fire'('connection_failed', id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
+							@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 							return
 				!~>
-					@'fire'('connection_failed', id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
+					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
 			# TODO: Create necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
 		/**
-		 * @param {!Uint8Array} id
+		 * @param {!Uint8Array} target_id
 		 */
-		..'disconnect_from' = (id) !->
-			id_string	= id.join(',')
+		..'disconnect_from' = (target_id) !->
+			id_string	= target_id.join(',')
 			if !@_id_to_routing_path.has(id_string)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(id_string)
 			@_router['destroy_routing_path'](node_id, route_id)
-			@_del_used_tag(node_id)
 			@_unregister_routing_path(node_id, route_id)
 		/**
-		 * @param {!Uint8Array} id
+		 * @param {!Uint8Array} target_id
 		 * @param {!Uint8Array} data
 		 */
-		..'send_to' = (id, data) !->
-			id_string	= id.join(',')
+		..'send_to' = (target_id, data) !->
+			id_string	= target_id.join(',')
 			if !@_id_to_routing_path.has(id_string)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(id_string)
@@ -291,7 +316,21 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(responder_id_string)
 		/**
-		 * @param {!Uint8Array}
+		 * @param {!Uint8Array} node_id
+		 */
+		.._update_used_timeout = (node_id) !->
+			node_id_string	= node_id.join(',')
+			if @_last_used_timeouts.has(node_id_string)
+				clearTimeout(@_last_used_timeouts.get(node_id_string))
+			else
+				@_add_used_tag(node_id)
+			last_sent_timeout	= setTimeout (!~>
+				@_last_used_timeouts.delete(node_id_string)
+				@_del_used_tag(node_id)
+			), LAST_USED_TIMEOUT * 1000
+			@_last_used_timeouts.set(node_id_string, last_sent_timeout)
+		/**
+		 * @param {!Uint8Array} node_id
 		 */
 		.._add_used_tag = (node_id) !->
 			node_id_string	= node_id.join(',')
@@ -303,7 +342,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			if value == 1
 				@_dht['add_used_tag'](node_id)
 		/**
-		 * @param {!Uint8Array}
+		 * @param {!Uint8Array} node_id
 		 */
 		.._del_used_tag = (node_id) !->
 			node_id_string	= node_id.join(',')
@@ -312,18 +351,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			value = @_used_tags.get(node_id_string)
 			--value
 			if !value
-				@_used_tags.del(node_id_string)
+				@_used_tags.delete(node_id_string)
 				@_dht['del_used_tag'](node_id)
 			else
 				@_used_tags.set(node_id_string, value)
-		/**
-		 * @param {!Uint8Array} id		ID of the node that should receive data
-		 * @param {!Uint8Array} data
-		 */
-		..'send_data' = (id, data) !->
-			# There should be a single routing path to specified node ID and it will be used in order to send data
-			# Single routing path allows us to have simpler external API and do not bother application with `segment_id` or other implementation details
-			# TODO:
 	Object.defineProperty(Core::, 'constructor', {enumerable: false, value: Core})
 	{
 		'ready'			: (callback) !->
