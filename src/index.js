@@ -130,12 +130,14 @@
       this._routing_paths = new Map;
       this._id_to_routing_path = new Map;
       this._routing_path_to_id = new Map;
+      this._used_tags = new Map;
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
       this._dht['on']('node_connected', function(id){
         this$._connected_nodes.set(id.join(','), id);
       })['on']('node_disconnected', function(id){
         this$._connected_nodes['delete'](id.join(','));
+        this$._del_used_tag(id);
       })['on']('data', function(id, data){
         this$._router['process_packet'](id, data);
       });
@@ -187,9 +189,10 @@
         nodes = res$;
         first_node = nodes[0];
         rendezvous_node = nodes[nodes.length - 1];
+        this$._add_used_tag(first_node);
         this$._router['construct_routing_path'](nodes).then(function(route_id){
           function try_to_introduce(){
-            var introduction_node, rendezvous_token, invitation_payload, signature, invitation_message, x$, data, first_node_string, route_id_string, path_confirmation_timeout;
+            var introduction_node, rendezvous_token, invitation_payload, signature, x25519_public_key, invitation_message, x$, data, first_node_string, route_id_string, path_confirmation_timeout;
             if (!introduction_nodes.length) {
               this$._router['destroy_routing_path'](first_node, route_id);
               this$['fire']('connection_failed', id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
@@ -199,7 +202,8 @@
             rendezvous_token = randombytes(ID_LENGTH);
             invitation_payload = create_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret);
             signature = detoxCrypto['sign'](invitation_payload, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
-            invitation_message = detoxCrypto['one_way_encrypt'](new Uint8Array(invitation_payload.length + signature.length), y$.set(invitation_payload), y$.set(signature, invitation_payload.length));
+            x25519_public_key = detoxCrypto['convert_public_key'](id);
+            invitation_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(invitation_payload.length + signature.length), y$.set(invitation_payload), y$.set(signature, invitation_payload.length));
             x$ = data = new Uint8Array(1 + ID_LENGTH + invitation_message.length);
             x$.set([COMMAND_INTRODUCE_TO]);
             x$.set(id, 1);
@@ -224,6 +228,7 @@
           }
           try_to_introduce();
         })['catch'](function(){
+          this$._del_used_tag(first_node);
           this$['fire']('connection_failed', id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
           return;
         });
@@ -242,6 +247,7 @@
       }
       ref$ = this._id_to_routing_path.get(id_string), node_id = ref$[0], route_id = ref$[1];
       this._router['destroy_routing_path'](node_id, route_id);
+      this._del_used_tag(node_id);
       this._unregister_routing_path(node_id, route_id);
     };
     /**
@@ -287,6 +293,40 @@
       this._routing_paths['delete'](source_id);
       this._routing_path_to_id['delete'](source_id);
       this._id_to_routing_path['delete'](responder_id_string);
+    };
+    /**
+     * @param {!Uint8Array}
+     */
+    y$._add_used_tag = function(node_id){
+      var node_id_string, value;
+      node_id_string = node_id.join(',');
+      value = 0;
+      if (this._used_tags.has(node_id_string)) {
+        value = this._used_tags.get(node_id_string);
+      }
+      ++value;
+      this._used_tags.set(node_id_string, value);
+      if (value === 1) {
+        this._dht['add_used_tag'](node_id);
+      }
+    };
+    /**
+     * @param {!Uint8Array}
+     */
+    y$._del_used_tag = function(node_id){
+      var node_id_string, value;
+      node_id_string = node_id.join(',');
+      if (!this._used_tags.has(node_id_string)) {
+        return;
+      }
+      value = this._used_tags.get(node_id_string);
+      --value;
+      if (!value) {
+        this._used_tags.del(node_id_string);
+        this._dht['del_used_tag'](node_id);
+      } else {
+        this._used_tags.set(node_id_string, value);
+      }
     };
     /**
      * @param {!Uint8Array} id		ID of the node that should receive data

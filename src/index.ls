@@ -114,6 +114,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path	= new Map
 		@_routing_path_to_id	= new Map
+		@_used_tags				= new Map
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -131,6 +132,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 			.'on'('node_disconnected', (id) !~>
 				@_connected_nodes.delete(id.join(','))
+				@_del_used_tag(id)
 			)
 			.'on'('data', (id, data) !~>
 				@_router['process_packet'](id, data)
@@ -184,6 +186,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							pull_random_item_from_array(connected_nodes)
 					first_node		= nodes[0]
 					rendezvous_node	= nodes[nodes.length - 1]
+					@_add_used_tag(first_node)
 					@_router['construct_routing_path'](nodes)
 						.then (route_id) !~>
 							!~function try_to_introduce
@@ -199,7 +202,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									@_real_keypair['ed25519']['public']
 									@_real_keypair['ed25519']['private']
 								)
+								x25519_public_key	= detox-crypto['convert_public_key'](id)
 								invitation_message	= detox-crypto['one_way_encrypt'](
+									x25519_public_key
 									new Uint8Array(invitation_payload.length + signature.length)
 										..set(invitation_payload)
 										..set(signature, invitation_payload.length)
@@ -231,6 +236,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							try_to_introduce()
 						.catch !~>
 							# TODO: Retry?
+							@_del_used_tag(first_node)
 							@'fire'('connection_failed', id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 							return
 				!~>
@@ -246,6 +252,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(id_string)
 			@_router['destroy_routing_path'](node_id, route_id)
+			@_del_used_tag(node_id)
 			@_unregister_routing_path(node_id, route_id)
 		/**
 		 * @param {!Uint8Array} id
@@ -283,6 +290,32 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_paths.delete(source_id)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(responder_id_string)
+		/**
+		 * @param {!Uint8Array}
+		 */
+		.._add_used_tag = (node_id) !->
+			node_id_string	= node_id.join(',')
+			value			= 0
+			if @_used_tags.has(node_id_string)
+				value = @_used_tags.get(node_id_string)
+			++value
+			@_used_tags.set(node_id_string, value)
+			if value == 1
+				@_dht['add_used_tag'](node_id)
+		/**
+		 * @param {!Uint8Array}
+		 */
+		.._del_used_tag = (node_id) !->
+			node_id_string	= node_id.join(',')
+			if !@_used_tags.has(node_id_string)
+				return
+			value = @_used_tags.get(node_id_string)
+			--value
+			if !value
+				@_used_tags.del(node_id_string)
+				@_dht['del_used_tag'](node_id)
+			else
+				@_used_tags.set(node_id_string, value)
 		/**
 		 * @param {!Uint8Array} id		ID of the node that should receive data
 		 * @param {!Uint8Array} data
