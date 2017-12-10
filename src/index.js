@@ -6,9 +6,13 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var COMMAND_INTRODUCE_TO, COMMAND_CONNECTED, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
-  COMMAND_INTRODUCE_TO = 0;
-  COMMAND_CONNECTED = 1;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
+  DHT_COMMAND_ROUTING = 0;
+  DHT_COMMAND_INTRODUCE_TO = 1;
+  ROUTING_COMMAND_ANNOUNCE = 0;
+  ROUTING_COMMAND_INITIALIZE_FORWARDING = 1;
+  ROUTING_COMMAND_CONFIRM_FORWARDING = 2;
+  ROUTING_COMMAND_CONNECTED = 3;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   CONNECTION_TIMEOUT = 30;
@@ -90,6 +94,61 @@
     x$.set(secret, ID_LENGTH * 3);
     return x$;
   }
+  /**
+   * @param {!Uint8Array} invitation_payload
+   *
+   * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, secret]
+   */
+  function parse_invitation_payload(invitation_payload){
+    var introduction_node, rendezvous_node, rendezvous_token, secret;
+    introduction_node = invitation_payload.subarray(0, ID_LENGTH);
+    rendezvous_node = invitation_payload.subarray(ID_LENGTH, ID_LENGTH * 2);
+    rendezvous_token = invitation_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
+    secret = invitation_payload.subarray(ID_LENGTH * 3);
+    return [introduction_node, rendezvous_node, rendezvous_token, secret];
+  }
+  /**
+   * @param {!Uint8Array} rendezvous_token
+   * @param {!Uint8Array} introduction_node
+   * @param {!Uint8Array} target_id
+   * @param {!Uint8Array} invitation_message
+   */
+  function compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message){
+    var x$;
+    x$ = new Uint8Array(1 + ID_LENGTH * 3 + invitation_message.length);
+    x$.set([ROUTING_COMMAND_INITIALIZE_FORWARDING]);
+    x$.set(rendezvous_token, 1);
+    x$.set(introduction_node, 1 + ID_LENGTH);
+    x$.set(target_id, 1 + ID_LENGTH * 2);
+    x$.set(invitation_message, 1 + ID_LENGTH * 3);
+    return x$;
+  }
+  /**
+   * @param {!Uint8Array} message
+   *
+   * @return {!Array<Uint8Array>} [rendezvous_token, introduction_node, target_id, invitation_message]
+   */
+  function parse_initialize_forwarding_data(message){
+    var rendezvous_token, introduction_node, target_id, invitation_message;
+    rendezvous_token = message.subarray(1, 1 + ID_LENGTH);
+    introduction_node = message.subarray(1 + ID_LENGTH, 1 + ID_LENGTH * 2);
+    target_id = message.subarray(1 + ID_LENGTH * 2, 1 + ID_LENGTH * 3);
+    invitation_message = message.subarray(1 + ID_LENGTH * 3);
+    return [rendezvous_token, introduction_node, target_id, invitation_message];
+  }
+  /**
+   * @param {!Uint8Array} target_id
+   * @param {!Uint8Array} invitation_message
+   *
+   * @return {!Uint8Array}
+   */
+  function compose_introduce_to_data(target_id, invitation_message){
+    var x$;
+    x$ = new Uint8Array(ID_LENGTH + invitation_message.length);
+    x$.set(target_id);
+    x$.set(invitation_message, ID_LENGTH);
+    return x$;
+  }
   function Wrapper(detoxCrypto, detoxTransport, asyncEventer){
     /**
      * Generate random seed that can be used as keypair seed
@@ -134,53 +193,57 @@
       this._routing_path_to_id = new Map;
       this._used_tags = new Map;
       this._last_used_timeouts = new Map;
+      this._pending_forwarding = new Map;
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
       this._dht['on']('node_connected', function(node_id){
         this$._connected_nodes.set(node_id.join(','), node_id);
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id.join(','));
-      })['on']('data', function(node_id, data){
-        this$._router['process_packet'](node_id, data);
+      })['on']('data', function(node_id, command, data){
+        var target_id, invitation_message;
+        switch (command) {
+        case DHT_COMMAND_ROUTING:
+          this$._router['process_packet'](node_id, data);
+          break;
+        case DHT_COMMAND_INTRODUCE_TO:
+          target_id = data.subarray(1, 1 + ID_LENGTH);
+          invitation_message = data.subarray(1 + ID_LENGTH);
+        }
       });
       this._router['on']('send', function(node_id, data){
-        var node_id_string, connected_timeout;
-        node_id_string = node_id.join(',');
-        if (this$._connected_nodes.has(node_id_string)) {
-          this$._update_used_timeout(node_id);
-          this$._dht['send_data'](node_id, data);
-          return;
-        }
-        function connected(node_id){
-          if (!is_string_equal_to_array(node_id_string, node_id)) {
-            return;
-          }
-          clearTimeout(connected_timeout);
-          this$._update_used_timeout(node_id);
-          this$._dht['send_data'](node_id, data);
-        }
-        this$._dht['on']('node_connected', connected);
-        connected_timeout = setTimeout(function(){
-          this$._dht['off']('node_connected', connected);
-        }, ROUTING_PATH_SEGMENT_TIMEOUT * 1000);
-        this$._dht['lookup'](node_id);
+        this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, data){
-        var source_id, responder_id;
+        var source_id, origin_node_id, ref$, rendezvous_token, introduction_node, target_id, invitation_message, rendezvous_token_string, forwarding_timeout;
         this$._update_used_timeout(node_id);
         source_id = compute_source_id(node_id, route_id);
-        if (!this$._routing_path_to_id.has(source_id)) {
-          return;
+        if (this$._routing_path_to_id.has(source_id)) {
+          origin_node_id = this$._routing_path_to_id.get(source_id);
+          this$['fire']('data', origin_node_id, data);
+        } else {
+          switch (data[0]) {
+          case ROUTING_COMMAND_ANNOUNCE:
+            break;
+          case ROUTING_COMMAND_INITIALIZE_FORWARDING:
+            ref$ = parse_initialize_forwarding_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], invitation_message = ref$[3];
+            rendezvous_token_string = rendezvous_token.join(',');
+            forwarding_timeout = setTimeout(function(){
+              this$._pending_forwarding['delete'](rendezvous_token_string);
+            }, CONNECTION_TIMEOUT * 1000);
+            this$._pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout]);
+            this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, invitation_message));
+            break;
+          case ROUTING_COMMAND_CONFIRM_FORWARDING:
+          }
         }
-        responder_id = this$._routing_path_to_id.get(source_id);
-        this$['fire']('data', responder_id, data);
       })['on']('destroyed', function(node_id, route_id){
-        var source_id, initiator_id;
+        var source_id, origin_node_id;
         source_id = compute_source_id(node_id, route_id);
         if (!this$._routing_path_to_id.has(source_id)) {
           return;
         }
-        initiator_id = this$._routing_path_to_id.get(source_id);
-        this$['fire']('disconnected', initiator_id);
+        origin_node_id = this$._routing_path_to_id.get(source_id);
+        this$['fire']('disconnected', origin_node_id);
         this$._unregister_routing_path(node_id, route_id);
       });
     }
@@ -222,7 +285,7 @@
         rendezvous_node = nodes[nodes.length - 1];
         this$._router['construct_routing_path'](nodes).then(function(route_id){
           function try_to_introduce(){
-            var introduction_node, rendezvous_token, invitation_payload, signature, x25519_public_key, invitation_message, x$, data, first_node_string, route_id_string, path_confirmation_timeout;
+            var introduction_node, rendezvous_token, invitation_payload, signature, x25519_public_key, invitation_message, first_node_string, route_id_string, path_confirmation_timeout;
             if (!introduction_nodes.length) {
               this$._router['destroy_routing_path'](first_node, route_id);
               this$['fire']('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
@@ -234,15 +297,10 @@
             signature = detoxCrypto['sign'](invitation_payload, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
             x25519_public_key = detoxCrypto['convert_public_key'](target_id);
             invitation_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(invitation_payload.length + signature.length), y$.set(invitation_payload), y$.set(signature, invitation_payload.length));
-            x$ = data = new Uint8Array(1 + ID_LENGTH + invitation_message.length);
-            x$.set([COMMAND_INTRODUCE_TO]);
-            x$.set(target_id, 1);
-            x$.set(rendezvous_token, 1);
-            x$.set(invitation_message, ID_LENGTH + ID_LENGTH + 1);
             first_node_string = first_node.join(',');
             route_id_string = route_id.join(',');
             function path_confirmation(node_id, route_id, data){
-              if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(responder_id_string, route_id) || data[0] !== COMMAND_CONNECTED || data.subarray(1, ID_LENGTH + 1).join(',') !== rendezvous_token.join(',')) {
+              if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(responder_id_string, route_id) || data[0] !== ROUTING_COMMAND_CONNECTED || data.subarray(1, ID_LENGTH + 1).join(',') !== rendezvous_token.join(',')) {
                 return;
               }
               clearTimeout(path_confirmation_timeout);
@@ -250,7 +308,7 @@
               this$['fire']('connected', target_id);
             }
             this$._router['on']('data', path_confirmation);
-            this$._router['send_to'](first_node, route_id, data);
+            this$._router['send_to'](first_node, route_id, compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message));
             path_confirmation_timeout = setTimeout(function(){
               this$._ronion['off']('data', path_confirmation);
               try_to_introduce();
@@ -321,6 +379,32 @@
       this._routing_paths['delete'](source_id);
       this._routing_path_to_id['delete'](source_id);
       this._id_to_routing_path['delete'](responder_id_string);
+    };
+    /**
+     * @param {!Uint8Array} node_id
+     * @param {!Uint8Array} data
+     */
+    y$._send_to_dht_node = function(node_id, command, data){
+      var node_id_string, connected_timeout, this$ = this;
+      node_id_string = node_id.join(',');
+      if (this._connected_nodes.has(node_id_string)) {
+        this._update_used_timeout(node_id);
+        this._dht['send_data'](node_id, command, data);
+        return;
+      }
+      function connected(node_id){
+        if (!is_string_equal_to_array(node_id_string, node_id)) {
+          return;
+        }
+        clearTimeout(connected_timeout);
+        this$._update_used_timeout(node_id);
+        this$._dht['send_data'](node_id, command, data);
+      }
+      this._dht['on']('node_connected', connected);
+      connected_timeout = setTimeout(function(){
+        this$._dht['off']('node_connected', connected);
+      }, ROUTING_PATH_SEGMENT_TIMEOUT * 1000);
+      this._dht['lookup'](node_id);
     };
     /**
      * @param {!Uint8Array} node_id

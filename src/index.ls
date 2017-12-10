@@ -4,8 +4,13 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
-const COMMAND_INTRODUCE_TO	= 0
-const COMMAND_CONNECTED		= 1
+const DHT_COMMAND_ROUTING			= 0
+const DHT_COMMAND_INTRODUCE_TO		= 1
+
+const ROUTING_COMMAND_ANNOUNCE				= 0
+const ROUTING_COMMAND_INITIALIZE_FORWARDING	= 1
+const ROUTING_COMMAND_CONFIRM_FORWARDING	= 2
+const ROUTING_COMMAND_CONNECTED				= 3
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
@@ -80,6 +85,51 @@ function create_invitation_payload (introduction_node, rendezvous_node, rendezvo
 		..set(rendezvous_node, ID_LENGTH)
 		..set(rendezvous_token, ID_LENGTH * 2)
 		..set(secret, ID_LENGTH * 3)
+/**
+ * @param {!Uint8Array} invitation_payload
+ *
+ * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, secret]
+ */
+function parse_invitation_payload (invitation_payload)
+	introduction_node	= invitation_payload.subarray(0, ID_LENGTH)
+	rendezvous_node		= invitation_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
+	rendezvous_token	= invitation_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
+	secret				= invitation_payload.subarray(ID_LENGTH * 3)
+	[introduction_node, rendezvous_node, rendezvous_token, secret]
+/**
+ * @param {!Uint8Array} rendezvous_token
+ * @param {!Uint8Array} introduction_node
+ * @param {!Uint8Array} target_id
+ * @param {!Uint8Array} invitation_message
+ */
+function compose_initialize_forwarding_data (rendezvous_token, introduction_node, target_id, invitation_message)
+	new Uint8Array(1 + ID_LENGTH * 3 + invitation_message.length)
+		..set([ROUTING_COMMAND_INITIALIZE_FORWARDING])
+		..set(rendezvous_token, 1)
+		..set(introduction_node, 1 + ID_LENGTH)
+		..set(target_id, 1 + ID_LENGTH * 2)
+		..set(invitation_message, 1 + ID_LENGTH * 3)
+/**
+ * @param {!Uint8Array} message
+ *
+ * @return {!Array<Uint8Array>} [rendezvous_token, introduction_node, target_id, invitation_message]
+ */
+function parse_initialize_forwarding_data (message)
+	rendezvous_token		= message.subarray(1, 1 + ID_LENGTH)
+	introduction_node		= message.subarray(1 + ID_LENGTH, 1 + ID_LENGTH * 2)
+	target_id				= message.subarray(1 + ID_LENGTH * 2, 1 + ID_LENGTH * 3)
+	invitation_message		= message.subarray(1 + ID_LENGTH * 3)
+	[rendezvous_token, introduction_node, target_id, invitation_message]
+/**
+ * @param {!Uint8Array} target_id
+ * @param {!Uint8Array} invitation_message
+ *
+ * @return {!Uint8Array}
+ */
+function compose_introduce_to_data (target_id, invitation_message)
+	new Uint8Array(ID_LENGTH + invitation_message.length)
+		..set(target_id)
+		..set(invitation_message, ID_LENGTH)
 
 function Wrapper (detox-crypto, detox-transport, async-eventer)
 	/**
@@ -120,6 +170,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_routing_path_to_id	= new Map
 		@_used_tags				= new Map
 		@_last_used_timeouts	= new Map
+		@_pending_forwarding	= new Map
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -138,45 +189,54 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			.'on'('node_disconnected', (node_id) !~>
 				@_connected_nodes.delete(node_id.join(','))
 			)
-			.'on'('data', (node_id, data) !~>
-				@_router['process_packet'](node_id, data)
+			.'on'('data', (node_id, command, data) !~>
+				switch command
+					case DHT_COMMAND_ROUTING
+						@_router['process_packet'](node_id, data)
+					case DHT_COMMAND_INTRODUCE_TO
+						target_id			= data.subarray(1, 1 + ID_LENGTH)
+						invitation_message	= data.subarray(1 + ID_LENGTH)
+						# TODO: Send invitation message to announced node
 			)
 		@_router
 			.'on'('send', (node_id, data) !~>
-				node_id_string	= node_id.join(',')
-				if @_connected_nodes.has(node_id_string)
-					@_update_used_timeout(node_id)
-					@_dht['send_data'](node_id, data)
-					return
-				!~function connected (node_id)
-					if !is_string_equal_to_array(node_id_string, node_id)
-						return
-					clearTimeout(connected_timeout)
-					@_update_used_timeout(node_id)
-					@_dht['send_data'](node_id, data)
-				@_dht['on']('node_connected', connected)
-				connected_timeout	= setTimeout (!~>
-					@_dht['off']('node_connected', connected)
-				), ROUTING_PATH_SEGMENT_TIMEOUT * 1000
-				@_dht['lookup'](node_id)
+				@_send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data)
 			)
 			.'on'('data', (node_id, route_id, data) !~>
 				@_update_used_timeout(node_id)
 				# TODO: Handle forwarding and commands parsing
 				source_id	= compute_source_id(node_id, route_id)
-				if !@_routing_path_to_id.has(source_id)
-					# If routing path unknown - ignore
-					return
-				responder_id	= @_routing_path_to_id.get(source_id)
-				@'fire'('data', responder_id, data)
+				if @_routing_path_to_id.has(source_id)
+					origin_node_id	= @_routing_path_to_id.get(source_id)
+					@'fire'('data', origin_node_id, data)
+				else
+					switch data[0]
+						case ROUTING_COMMAND_ANNOUNCE
+							# TODO: Announcement received
+							void
+						case ROUTING_COMMAND_INITIALIZE_FORWARDING
+							[rendezvous_token, introduction_node, target_id, invitation_message]	= parse_initialize_forwarding_data(data)
+							rendezvous_token_string													= rendezvous_token.join(',')
+							forwarding_timeout														= setTimeout (!~>
+								@_pending_forwarding.delete(rendezvous_token_string)
+							), CONNECTION_TIMEOUT * 1000
+							@_pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout])
+							@_send_to_dht_node(
+								introduction_node
+								DHT_COMMAND_INTRODUCE_TO
+								compose_introduce_to_data(target_id, invitation_message)
+							)
+						case ROUTING_COMMAND_CONFIRM_FORWARDING
+							# TODO: Node received invitation message and wants to talk
+							void
 			)
 			.'on'('destroyed', (node_id, route_id) !~>
 				source_id	= compute_source_id(node_id, route_id)
 				if !@_routing_path_to_id.has(source_id)
 					# If routing path unknown - ignore
 					return
-				initiator_id	= @_routing_path_to_id.get(source_id)
-				@'fire'('disconnected', initiator_id)
+				origin_node_id	= @_routing_path_to_id.get(source_id)
+				@'fire'('disconnected', origin_node_id)
 				@_unregister_routing_path(node_id, route_id)
 				# TODO: For forwarding connections destroy the other half of the effective routing path
 			)
@@ -236,18 +296,13 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 										..set(invitation_payload)
 										..set(signature, invitation_payload.length)
 								)
-								data				= new Uint8Array(1 + ID_LENGTH + invitation_message.length)
-									..set([COMMAND_INTRODUCE_TO])
-									..set(target_id, 1)
-									..set(rendezvous_token, 1)
-									..set(invitation_message, ID_LENGTH + ID_LENGTH + 1)
 								first_node_string	= first_node.join(',')
 								route_id_string		= route_id.join(',')
 								!~function path_confirmation (node_id, route_id, data)
 									if (
 										!is_string_equal_to_array(first_node_string, node_id) ||
 										!is_string_equal_to_array(responder_id_string, route_id) ||
-										data[0] != COMMAND_CONNECTED ||
+										data[0] != ROUTING_COMMAND_CONNECTED ||
 										data.subarray(1, ID_LENGTH + 1).join(',') != rendezvous_token.join(',')
 									)
 										return
@@ -255,7 +310,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									@_register_routing_path(target_id, node_id, route_id)
 									@'fire'('connected', target_id)
 								@_router['on']('data', path_confirmation)
-								@_router['send_to'](first_node, route_id, data)
+								@_router['send_to'](
+									first_node
+									route_id
+									compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message)
+								)
 								path_confirmation_timeout	= setTimeout (!~>
 									@_ronion['off']('data', path_confirmation)
 									try_to_introduce()
@@ -315,6 +374,27 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_paths.delete(source_id)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(responder_id_string)
+		/**
+		 * @param {!Uint8Array} node_id
+		 * @param {!Uint8Array} data
+		 */
+		.._send_to_dht_node = (node_id, command, data) !->
+			node_id_string	= node_id.join(',')
+			if @_connected_nodes.has(node_id_string)
+				@_update_used_timeout(node_id)
+				@_dht['send_data'](node_id, command, data)
+				return
+			!~function connected (node_id)
+				if !is_string_equal_to_array(node_id_string, node_id)
+					return
+				clearTimeout(connected_timeout)
+				@_update_used_timeout(node_id)
+				@_dht['send_data'](node_id, command, data)
+			@_dht['on']('node_connected', connected)
+			connected_timeout	= setTimeout (!~>
+				@_dht['off']('node_connected', connected)
+			), ROUTING_PATH_SEGMENT_TIMEOUT * 1000
+			@_dht['lookup'](node_id)
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
