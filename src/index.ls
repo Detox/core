@@ -11,6 +11,7 @@ const ROUTING_COMMAND_ANNOUNCE				= 0
 const ROUTING_COMMAND_INITIALIZE_FORWARDING	= 1
 const ROUTING_COMMAND_CONFIRM_FORWARDING	= 2
 const ROUTING_COMMAND_CONNECTED				= 3
+const ROUTING_COMMAND_INTRODUCTION			= 4
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
@@ -206,29 +207,35 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				# TODO: Handle forwarding and commands parsing
 				source_id	= compute_source_id(node_id, route_id)
 				# TODO: With command argument this doesn't seem right
-				if @_routing_path_to_id.has(source_id)
-					origin_node_id	= @_routing_path_to_id.get(source_id)
-					@'fire'('data', origin_node_id, data)
-				else
-					switch command
-						case ROUTING_COMMAND_ANNOUNCE
-							# TODO: Announcement received
-							void
-						case ROUTING_COMMAND_INITIALIZE_FORWARDING
-							[rendezvous_token, introduction_node, target_id, invitation_message]	= parse_initialize_forwarding_data(data)
-							rendezvous_token_string													= rendezvous_token.join(',')
-							forwarding_timeout														= setTimeout (!~>
-								@_pending_forwarding.delete(rendezvous_token_string)
-							), CONNECTION_TIMEOUT * 1000
-							@_pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout])
-							@_send_to_dht_node(
-								introduction_node
-								DHT_COMMAND_INTRODUCE_TO
-								compose_introduce_to_data(target_id, invitation_message)
-							)
-						case ROUTING_COMMAND_CONFIRM_FORWARDING
-							# TODO: Node received invitation message and wants to talk
-							void
+				if !@_routing_path_to_id.has(source_id)
+					# If routing path unknown - ignore
+					return
+				origin_node_id	= @_routing_path_to_id.get(source_id)
+				switch command
+					case ROUTING_COMMAND_ANNOUNCE
+						# TODO: Announcement received
+						void
+					case ROUTING_COMMAND_INITIALIZE_FORWARDING
+						[rendezvous_token, introduction_node, target_id, invitation_message]	= parse_initialize_forwarding_data(data)
+						rendezvous_token_string													= rendezvous_token.join(',')
+						forwarding_timeout														= setTimeout (!~>
+							@_pending_forwarding.delete(rendezvous_token_string)
+						), CONNECTION_TIMEOUT * 1000
+						@_pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout])
+						@_send_to_dht_node(
+							introduction_node
+							DHT_COMMAND_INTRODUCE_TO
+							compose_introduce_to_data(target_id, invitation_message)
+						)
+					case ROUTING_COMMAND_CONFIRM_FORWARDING
+						# TODO: Node received invitation message and wants to talk
+						void
+					case ROUTING_COMMAND_INTRODUCTION
+						# TODO: This happens on node that announced itself
+						void
+					else
+						# TODO
+						#@'fire'('data', origin_node_id, command, data)
 			)
 			.'on'('destroyed', (node_id, route_id) !~>
 				source_id	= compute_source_id(node_id, route_id)
@@ -248,17 +255,30 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 	Core:: = Object.create(async-eventer::)
 	Core::
 		/**
-		 * @param {!Uint8Array}	target_id
+		 * @param {number} number_of_introduction_nodes
+		 * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
+		 */
+		..'announce' = (number_of_introduction_nodes, number_of_intermediate_nodes) !->
+			introduction_nodes	= @_pick_random_nodes(number_of_introduction_nodes)
+			for let introduction_node in introduction_nodes
+				nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+				if !nodes
+					# TODO: Retry?
+					return
+				nodes.push(introduction_node)
+				@_router['construct_routing_path'](nodes)
+					.then !~>
+						# TODO: Connected to introduction node
+					.catch !~>
+						# TODO: Retry?
+		/**
+		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
 		 * @param {!Uint8Array}	secret
-		 * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous node
+		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
 		 */
 		..'connect_to' = (target_id, secret, number_of_intermediate_nodes) !->
 			if !number_of_intermediate_nodes
 				# TODO: Support direct connections here?
-				return
-			# Require at least twice as much nodes to be connected
-			if @_connected_nodes.size / 2 < number_of_intermediate_nodes
-				@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES)
 				return
 			@_dht['find_introduction_nodes'](
 				target_id
@@ -268,10 +288,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						return
 					# TODO: add `connection_progress` event
 					# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
-					connected_nodes	= @_connected_nodes.slice()
-					nodes			=
-						for i from 0 til number_of_intermediate_nodes
-							pull_random_item_from_array(connected_nodes)
+					connected_nodes	= Array.from(@_connected_nodes.values())
+					nodes			= @_pick_random_nodes(number_of_intermediate_nodes + 1) # Number of nodes doesn't include rendezvous node, hence +1
+					if !nodes
+						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES)
+						return
 					first_node		= nodes[0]
 					rendezvous_node	= nodes[nodes.length - 1]
 					@_router['construct_routing_path'](nodes)
@@ -349,6 +370,25 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(id_string)
 			@_router['send_data'](node_id, route_id, data)
+		/**
+		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
+		 *
+		 * @param {number}				number_of_nodes
+		 * @param {Array<Uint8Array>}	exclude_nodes
+		 *
+		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
+		 */
+		.._pick_random_nodes = (number_of_nodes, exclude_nodes = null) ->
+			# Require at least 3 times as much nodes to be connected
+			if @_connected_nodes.size / 3 < number_of_nodes
+				return null
+			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
+			connected_nodes	= Array.from(@_connected_nodes.values())
+			if exclude_nodes
+				connected_nodes	= connected_nodes.filter (node) ->
+					!(node in exclude_nodes)
+			for i from 0 til number_of_nodes
+				pull_random_item_from_array(connected_nodes)
 		/**
 		 * @param {!Uint8Array} responder_id	Last node in routing path, responder
 		 * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification

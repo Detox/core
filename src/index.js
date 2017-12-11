@@ -6,13 +6,14 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_INTRODUCTION, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
   ROUTING_COMMAND_INITIALIZE_FORWARDING = 1;
   ROUTING_COMMAND_CONFIRM_FORWARDING = 2;
   ROUTING_COMMAND_CONNECTED = 3;
+  ROUTING_COMMAND_INTRODUCTION = 4;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   CONNECTION_TIMEOUT = 30;
@@ -216,24 +217,28 @@
         var source_id, origin_node_id, ref$, rendezvous_token, introduction_node, target_id, invitation_message, rendezvous_token_string, forwarding_timeout;
         this$._update_used_timeout(node_id);
         source_id = compute_source_id(node_id, route_id);
-        if (this$._routing_path_to_id.has(source_id)) {
-          origin_node_id = this$._routing_path_to_id.get(source_id);
-          this$['fire']('data', origin_node_id, data);
-        } else {
-          switch (command) {
-          case ROUTING_COMMAND_ANNOUNCE:
-            break;
-          case ROUTING_COMMAND_INITIALIZE_FORWARDING:
-            ref$ = parse_initialize_forwarding_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], invitation_message = ref$[3];
-            rendezvous_token_string = rendezvous_token.join(',');
-            forwarding_timeout = setTimeout(function(){
-              this$._pending_forwarding['delete'](rendezvous_token_string);
-            }, CONNECTION_TIMEOUT * 1000);
-            this$._pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout]);
-            this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, invitation_message));
-            break;
-          case ROUTING_COMMAND_CONFIRM_FORWARDING:
-          }
+        if (!this$._routing_path_to_id.has(source_id)) {
+          return;
+        }
+        origin_node_id = this$._routing_path_to_id.get(source_id);
+        switch (command) {
+        case ROUTING_COMMAND_ANNOUNCE:
+          break;
+        case ROUTING_COMMAND_INITIALIZE_FORWARDING:
+          ref$ = parse_initialize_forwarding_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], invitation_message = ref$[3];
+          rendezvous_token_string = rendezvous_token.join(',');
+          forwarding_timeout = setTimeout(function(){
+            this$._pending_forwarding['delete'](rendezvous_token_string);
+          }, CONNECTION_TIMEOUT * 1000);
+          this$._pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout]);
+          this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, invitation_message));
+          break;
+        case ROUTING_COMMAND_CONFIRM_FORWARDING:
+          break;
+        case ROUTING_COMMAND_INTRODUCTION:
+          break;
+        default:
+
         }
       })['on']('destroyed', function(node_id, route_id){
         var source_id, origin_node_id;
@@ -254,32 +259,47 @@
     Core.prototype = Object.create(asyncEventer.prototype);
     y$ = Core.prototype;
     /**
-     * @param {!Uint8Array}	target_id
+     * @param {number} number_of_introduction_nodes
+     * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
+     */
+    y$['announce'] = function(number_of_introduction_nodes, number_of_intermediate_nodes){
+      var introduction_nodes, i$, len$;
+      introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes);
+      for (i$ = 0, len$ = introduction_nodes.length; i$ < len$; ++i$) {
+        (fn$.call(this, introduction_nodes[i$]));
+      }
+      function fn$(introduction_node){
+        var nodes, this$ = this;
+        nodes = this._pick_random_nodes(number_of_intermediate_nodes);
+        if (!nodes) {
+          return;
+        }
+        nodes.push(introduction_node);
+        this._router['construct_routing_path'](nodes).then(function(){})['catch'](function(){});
+      }
+    };
+    /**
+     * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
      * @param {!Uint8Array}	secret
-     * @param {number}		number_of_intermediate_nodes	How many hops should be made til rendezvous node
+     * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
      */
     y$['connect_to'] = function(target_id, secret, number_of_intermediate_nodes){
       var this$ = this;
       if (!number_of_intermediate_nodes) {
         return;
       }
-      if (this._connected_nodes.size / 2 < number_of_intermediate_nodes) {
-        this['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES);
-        return;
-      }
       this._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
-        var connected_nodes, nodes, res$, i$, to$, i, first_node, rendezvous_node;
+        var connected_nodes, nodes, first_node, rendezvous_node;
         if (!introduction_nodes.length) {
           this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES);
           return;
         }
-        connected_nodes = this$._connected_nodes.slice();
-        res$ = [];
-        for (i$ = 0, to$ = number_of_intermediate_nodes; i$ < to$; ++i$) {
-          i = i$;
-          res$.push(pull_random_item_from_array(connected_nodes));
+        connected_nodes = Array.from(this$._connected_nodes.values());
+        nodes = this$._pick_random_nodes(number_of_intermediate_nodes + 1);
+        if (!nodes) {
+          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES);
+          return;
         }
-        nodes = res$;
         first_node = nodes[0];
         rendezvous_node = nodes[nodes.length - 1];
         this$._router['construct_routing_path'](nodes).then(function(route_id){
@@ -347,6 +367,32 @@
       }
       ref$ = this._id_to_routing_path.get(id_string), node_id = ref$[0], route_id = ref$[1];
       this._router['send_data'](node_id, route_id, data);
+    };
+    /**
+     * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
+     *
+     * @param {number}				number_of_nodes
+     * @param {Array<Uint8Array>}	exclude_nodes
+     *
+     * @return {Array<Uint8Array>} `null` if there was not enough nodes
+     */
+    y$._pick_random_nodes = function(number_of_nodes, exclude_nodes){
+      var connected_nodes, i$, i, results$ = [];
+      exclude_nodes == null && (exclude_nodes = null);
+      if (this._connected_nodes.size / 3 < number_of_nodes) {
+        return null;
+      }
+      connected_nodes = Array.from(this._connected_nodes.values());
+      if (exclude_nodes) {
+        connected_nodes = connected_nodes.filter(function(node){
+          return !in$(node, exclude_nodes);
+        });
+      }
+      for (i$ = 0; i$ < number_of_nodes; ++i$) {
+        i = i$;
+        results$.push(pull_random_item_from_array(connected_nodes));
+      }
+      return results$;
     };
     /**
      * @param {!Uint8Array} responder_id	Last node in routing path, responder
@@ -483,5 +529,10 @@
     module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport').require('async-eventer'));
   } else {
     this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['async_eventer']);
+  }
+  function in$(x, xs){
+    var i = -1, l = xs.length >>> 0;
+    while (++i < l) if (x === xs[i]) return true;
+    return false;
   }
 }).call(this);
