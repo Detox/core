@@ -115,12 +115,11 @@
    */
   function compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message){
     var x$;
-    x$ = new Uint8Array(1 + ID_LENGTH * 3 + invitation_message.length);
-    x$.set([ROUTING_COMMAND_INITIALIZE_FORWARDING]);
-    x$.set(rendezvous_token, 1);
-    x$.set(introduction_node, 1 + ID_LENGTH);
-    x$.set(target_id, 1 + ID_LENGTH * 2);
-    x$.set(invitation_message, 1 + ID_LENGTH * 3);
+    x$ = new Uint8Array(ID_LENGTH * 3 + invitation_message.length);
+    x$.set(rendezvous_token);
+    x$.set(introduction_node, ID_LENGTH);
+    x$.set(target_id, ID_LENGTH * 2);
+    x$.set(invitation_message, ID_LENGTH * 3);
     return x$;
   }
   /**
@@ -130,10 +129,10 @@
    */
   function parse_initialize_forwarding_data(message){
     var rendezvous_token, introduction_node, target_id, invitation_message;
-    rendezvous_token = message.subarray(1, 1 + ID_LENGTH);
-    introduction_node = message.subarray(1 + ID_LENGTH, 1 + ID_LENGTH * 2);
-    target_id = message.subarray(1 + ID_LENGTH * 2, 1 + ID_LENGTH * 3);
-    invitation_message = message.subarray(1 + ID_LENGTH * 3);
+    rendezvous_token = message.subarray(0, ID_LENGTH);
+    introduction_node = message.subarray(ID_LENGTH, ID_LENGTH * 2);
+    target_id = message.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
+    invitation_message = message.subarray(ID_LENGTH * 3);
     return [rendezvous_token, introduction_node, target_id, invitation_message];
   }
   /**
@@ -213,7 +212,7 @@
       });
       this._router['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
-      })['on']('data', function(node_id, route_id, data){
+      })['on']('data', function(node_id, route_id, command, data){
         var source_id, origin_node_id, ref$, rendezvous_token, introduction_node, target_id, invitation_message, rendezvous_token_string, forwarding_timeout;
         this$._update_used_timeout(node_id);
         source_id = compute_source_id(node_id, route_id);
@@ -221,7 +220,7 @@
           origin_node_id = this$._routing_path_to_id.get(source_id);
           this$['fire']('data', origin_node_id, data);
         } else {
-          switch (data[0]) {
+          switch (command) {
           case ROUTING_COMMAND_ANNOUNCE:
             break;
           case ROUTING_COMMAND_INITIALIZE_FORWARDING:
@@ -308,7 +307,7 @@
               this$['fire']('connected', target_id);
             }
             this$._router['on']('data', path_confirmation);
-            this$._router['send_to'](first_node, route_id, compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message));
+            this$._router['send_to'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_FORWARDING, compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message));
             path_confirmation_timeout = setTimeout(function(){
               this$._ronion['off']('data', path_confirmation);
               try_to_introduce();
