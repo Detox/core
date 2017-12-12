@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_INTRODUCTION, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_INTRODUCTION, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -23,6 +23,7 @@
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 2;
   CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES = 3;
+  ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS = 0;
   if (typeof crypto !== 'undefined') {
     randombytes = function(size){
       var array;
@@ -86,7 +87,7 @@
    *
    * @return {!Uint8Array}
    */
-  function create_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret){
+  function generate_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret){
     var x$;
     x$ = new Uint8Array(ID_LENGTH * 3 + secret.length);
     x$.set(introduction_node);
@@ -109,10 +110,36 @@
     return [introduction_node, rendezvous_node, rendezvous_token, secret];
   }
   /**
+   * @param {!Uint8Array} public_key
+   * @param {!Uint8Array} introduction_message
+   *
+   * @return {!Uint8Array}
+   */
+  function compose_announcement_data(public_key, introduction_message){
+    var x$;
+    x$ = new Uint8Array(ID_LENGTH + introduction_message.length);
+    x$.set(public_key);
+    x$.set(introduction_message, ID_LENGTH);
+    return x$;
+  }
+  /**
+   * @param {!Uint8Array} message
+   *
+   * @return {!Array<Uint8Array>} [public_key, introduction_message]
+   */
+  function parse_announcement_data(message){
+    var public_key, introduction_message;
+    public_key = message.subarray(0, ID_LENGTH);
+    introduction_message = message.subarray(ID_LENGTH);
+    return [public_key, introduction_message];
+  }
+  /**
    * @param {!Uint8Array} rendezvous_token
    * @param {!Uint8Array} introduction_node
    * @param {!Uint8Array} target_id
    * @param {!Uint8Array} invitation_message
+   *
+   * @return {!Uint8Array}
    */
   function compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message){
     var x$;
@@ -194,6 +221,7 @@
       this._used_tags = new Map;
       this._last_used_timeouts = new Map;
       this._pending_forwarding = new Map;
+      this._announced_to = new Map;
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
       this._dht['on']('node_connected', function(node_id){
@@ -247,7 +275,6 @@
           return;
         }
         origin_node_id = this$._routing_path_to_id.get(source_id);
-        this$['fire']('disconnected', origin_node_id);
         this$._unregister_routing_path(node_id, route_id);
       });
     }
@@ -256,6 +283,7 @@
     x$['CONNECTION_ERROR_NO_INTRODUCTION_NODES'] = CONNECTION_ERROR_NO_INTRODUCTION_NODES;
     x$['CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'] = CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT;
     x$['CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'] = CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES;
+    x$['ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS'] = ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS;
     Core.prototype = Object.create(asyncEventer.prototype);
     y$ = Core.prototype;
     /**
@@ -263,19 +291,49 @@
      * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
      */
     y$['announce'] = function(number_of_introduction_nodes, number_of_intermediate_nodes){
-      var introduction_nodes, i$, len$;
+      var introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
       introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes);
+      introductions_pending = number_of_introduction_nodes;
+      introduction_nodes_confirmed = [];
+      function announced(introduction_node){
+        var introduction_message, i$, ref$, len$, introduction_node_string;
+        if (introduction_node) {
+          introduction_nodes_confirmed.push(introduction_node);
+        }
+        --introductions_pending;
+        if (introductions_pending) {
+          return;
+        }
+        if (!introduction_nodes_confirmed.length) {
+          this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS);
+          return;
+        }
+        introduction_message = this$._dht['generate_introduction_message'](this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private'], introduction_nodes_confirmed);
+        for (i$ = 0, len$ = (ref$ = introduction_nodes_confirmed).length; i$ < len$; ++i$) {
+          introduction_node = ref$[i$];
+          this$['send_to'](introduction_node, ROUTING_COMMAND_ANNOUNCE, compose_announcement_data(this$._real_keypair['ed25519']['public'], introduction_message));
+          introduction_node_string = introduction_node.join(',');
+          this$._announced_to.set(introduction_node_string, introduction_node);
+        }
+        this$['fire']('announced');
+      }
       for (i$ = 0, len$ = introduction_nodes.length; i$ < len$; ++i$) {
         (fn$.call(this, introduction_nodes[i$]));
       }
       function fn$(introduction_node){
-        var nodes, this$ = this;
+        var nodes, first_node, this$ = this;
         nodes = this._pick_random_nodes(number_of_intermediate_nodes);
         if (!nodes) {
           return;
         }
         nodes.push(introduction_node);
-        this._router['construct_routing_path'](nodes).then(function(){})['catch'](function(){});
+        first_node = nodes[0];
+        this._router['construct_routing_path'](nodes).then(function(route_id){
+          this$._register_routing_path(introduction_node, first_node, route_id);
+          announced(introduction_node);
+        })['catch'](function(){
+          announced();
+        });
       }
     };
     /**
@@ -286,6 +344,9 @@
     y$['connect_to'] = function(target_id, secret, number_of_intermediate_nodes){
       var this$ = this;
       if (!number_of_intermediate_nodes) {
+        return;
+      }
+      if (this._id_to_routing_path.has(target_id.join(','))) {
         return;
       }
       this._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
@@ -312,7 +373,7 @@
             }
             introduction_node = pull_random_item_from_array(introduction_nodes);
             rendezvous_token = randombytes(ID_LENGTH);
-            invitation_payload = create_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret);
+            invitation_payload = generate_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret);
             signature = detoxCrypto['sign'](invitation_payload, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
             x25519_public_key = detoxCrypto['convert_public_key'](target_id);
             invitation_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(invitation_payload.length + signature.length), y$.set(invitation_payload), y$.set(signature, invitation_payload.length));
@@ -324,7 +385,6 @@
               }
               clearTimeout(path_confirmation_timeout);
               this$._register_routing_path(target_id, node_id, route_id);
-              this$['fire']('connected', target_id);
             }
             this$._router['on']('data', path_confirmation);
             this$._router['send_to'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_FORWARDING, compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message));
@@ -357,16 +417,17 @@
     };
     /**
      * @param {!Uint8Array} target_id
+     * @param {!Uint8Array} command
      * @param {!Uint8Array} data
      */
-    y$['send_to'] = function(target_id, data){
+    y$['send_to'] = function(target_id, command, data){
       var id_string, ref$, node_id, route_id;
       id_string = target_id.join(',');
       if (!this._id_to_routing_path.has(id_string)) {
         return;
       }
       ref$ = this._id_to_routing_path.get(id_string), node_id = ref$[0], route_id = ref$[1];
-      this._router['send_data'](node_id, route_id, data);
+      this._router['send_data'](node_id, route_id, command, data);
     };
     /**
      * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -395,35 +456,39 @@
       return results$;
     };
     /**
-     * @param {!Uint8Array} responder_id	Last node in routing path, responder
-     * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
-     * @param {!Uint8Array} route_id		ID of the route on `node_id`
+     * @param {!Uint8Array} target_id	Last node in routing path, responder
+     * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
+     * @param {!Uint8Array} route_id	ID of the route on `node_id`
      */
-    y$._register_routing_path = function(responder_id, node_id, route_id){
-      var source_id, responder_id_string;
+    y$._register_routing_path = function(target_id, node_id, route_id){
+      var source_id, target_id_string;
       source_id = compute_source_id(node_id, route_id);
-      responder_id_string = responder_id.join(',');
+      target_id_string = target_id.join(',');
       if (this._routing_paths.has(source_id)) {
         return;
       }
       this._routing_paths.set(source_id, [node_id, route_id]);
-      this._id_to_routing_path.set(responder_id_string, [node_id, route_id]);
-      this._routing_path_to_id.set(source_id, responder_id);
+      this._id_to_routing_path.set(target_id_string, [node_id, route_id]);
+      this._routing_path_to_id.set(source_id, target_id);
+      this['fire']('connected', target_id);
     };
     /**
      * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
      * @param {!Uint8Array} route_id	ID of the route on `node_id`
      */
     y$._unregister_routing_path = function(node_id, route_id){
-      var source_id, responder_id_string;
+      var source_id, target_id, target_id_string;
       source_id = compute_source_id(node_id, route_id);
       if (!this._routing_paths.has(source_id)) {
         return;
       }
-      responder_id_string = this._routing_path_to_id.get(source_id).join(',');
+      target_id = this._routing_path_to_id.get(source_id);
+      target_id_string = target_id.join(',');
       this._routing_paths['delete'](source_id);
       this._routing_path_to_id['delete'](source_id);
-      this._id_to_routing_path['delete'](responder_id_string);
+      this._id_to_routing_path['delete'](target_id_string);
+      this._announced_to['delete'](target_id_string);
+      this['fire']('disconnected', target_id);
     };
     /**
      * @param {!Uint8Array} node_id
