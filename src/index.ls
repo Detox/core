@@ -84,7 +84,7 @@ function is_string_equal_to_array (string, array)
  *
  * @return {!Uint8Array}
  */
-function generate_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, secret)
+function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, secret)
 	new Uint8Array(ID_LENGTH * 3 + secret.length)
 		..set(target_id)
 		..set(introduction_node, ID_LENGTH)
@@ -460,7 +460,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									return
 								introduction_node		= pull_random_item_from_array(introduction_nodes)
 								rendezvous_token		= randombytes(ID_LENGTH)
-								introduction_payload	= generate_introduction_payload(
+								introduction_payload	= compose_introduction_payload(
 									@_real_keypair['ed25519']['public']
 									introduction_node
 									rendezvous_node

@@ -89,7 +89,7 @@
    *
    * @return {!Uint8Array}
    */
-  function generate_introduction_payload(target_id, introduction_node, rendezvous_node, rendezvous_token, secret){
+  function compose_introduction_payload(target_id, introduction_node, rendezvous_node, rendezvous_token, secret){
     var x$;
     x$ = new Uint8Array(ID_LENGTH * 3 + secret.length);
     x$.set(target_id);
@@ -485,7 +485,7 @@
             }
             introduction_node = pull_random_item_from_array(introduction_nodes);
             rendezvous_token = randombytes(ID_LENGTH);
-            introduction_payload = generate_introduction_payload(this$._real_keypair['ed25519']['public'], introduction_node, rendezvous_node, rendezvous_token, secret);
+            introduction_payload = compose_introduction_payload(this$._real_keypair['ed25519']['public'], introduction_node, rendezvous_node, rendezvous_token, secret);
             signature = this$._sign(introduction_payload);
             x25519_public_key = detoxCrypto['convert_public_key'](target_id);
             introduction_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(introduction_payload.length + signature.length), y$.set(signature), y$.set(introduction_payload, SIGNATURE_LENGTH));
