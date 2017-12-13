@@ -479,7 +479,6 @@
           function try_to_introduce(){
             var introduction_node, rendezvous_token, introduction_payload, signature, x25519_public_key, introduction_message, first_node_string, route_id_string, path_confirmation_timeout;
             if (!introduction_nodes.length) {
-              this$._router['destroy_routing_path'](first_node, route_id);
               this$['fire']('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
               return;
             }

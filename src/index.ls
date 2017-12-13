@@ -458,7 +458,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						.then (route_id) !~>
 							!~function try_to_introduce
 								if !introduction_nodes.length
-									@_router['destroy_routing_path'](first_node, route_id)
 									@'fire'('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 									return
 								introduction_node		= pull_random_item_from_array(introduction_nodes)
