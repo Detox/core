@@ -12,6 +12,7 @@ const ROUTING_COMMAND_INITIALIZE_FORWARDING	= 1
 const ROUTING_COMMAND_CONFIRM_FORWARDING	= 2
 const ROUTING_COMMAND_CONNECTED				= 3
 const ROUTING_COMMAND_INTRODUCTION			= 4
+const ROUTING_CUSTOM_COMMANDS_OFFSET	= 10 # 5..9 are also reserved for future use, everything above is available for the user
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
@@ -156,6 +157,15 @@ function compose_introduce_to_data (target_id, invitation_message)
 	new Uint8Array(ID_LENGTH + invitation_message.length)
 		..set(target_id)
 		..set(invitation_message, ID_LENGTH)
+/**
+ * @param {!Uint8Array} message
+ *
+ * @return {!Array<Uint8Array>} [target_id, invitation_message]
+ */
+function parse_introduce_to_data (message)
+	target_id			= message.subarray(0, ID_LENGTH)
+	invitation_message	= message.subarray(ID_LENGTH)
+	[target_id, invitation_message]
 
 function Wrapper (detox-crypto, detox-transport, async-eventer)
 	/**
@@ -222,9 +232,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					case DHT_COMMAND_ROUTING
 						@_router['process_packet'](node_id, data)
 					case DHT_COMMAND_INTRODUCE_TO
-						target_id			= data.subarray(1, 1 + ID_LENGTH)
-						invitation_message	= data.subarray(1 + ID_LENGTH)
-						# TODO: Send invitation message to announced node
+						[target_id, invitation_message]	= parse_introduce_to_data(data)
+						target_id_string				= target_id.join(',')
+						if !@_announcements_from.has(target_id_string)
+							return
+						#TODO
 			)
 		@_router
 			.'on'('send', (node_id, data) !~>
@@ -262,12 +274,14 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						# TODO: This happens on node that announced itself
 						void
 					else
+						if command < ROUTING_CUSTOM_COMMANDS_OFFSET
+							return
 						if !@_routing_path_to_id.has(source_id)
 							# If routing path unknown - ignore
 							return
 						origin_node_id	= @_routing_path_to_id.get(source_id)
 						# TODO
-						#@'fire'('data', origin_node_id, command, data)
+						#@'fire'('data', origin_node_id, command - ROUTING_CUSTOM_COMMANDS_OFFSET, data)
 			)
 			.'on'('destroyed', (node_id, route_id) !~>
 				source_id	= compute_source_id(node_id, route_id)
@@ -314,7 +328,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					@_real_keypair['ed25519']['private']
 				)
 				for introduction_node in introduction_nodes_confirmed
-					@'send_to'(
+					@_send_to_routing_node(
 						introduction_node
 						ROUTING_COMMAND_ANNOUNCE
 						compose_announcement_data(@_real_keypair['ed25519']['public'], introduction_message, signature)
@@ -354,7 +368,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					if !introduction_nodes.length
 						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 						return
-					# TODO: add `connection_progress` event
+					# TODO: add `connection_progress` events
 					connected_nodes	= Array.from(@_connected_nodes.values())
 					nodes			= @_pick_random_nodes(number_of_intermediate_nodes + 1) # Number of nodes doesn't include rendezvous node, hence +1
 					if !nodes
@@ -415,7 +429,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				!~>
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
-			# TODO: Create necessary routing path to specified node ID if not done yet and fire `connected` event (maybe send intermediate events too)
 		/**
 		 * @param {!Uint8Array} target_id
 		 */
@@ -428,15 +441,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_unregister_routing_path(node_id, route_id)
 		/**
 		 * @param {!Uint8Array} target_id
-		 * @param {!Uint8Array} command
+		 * @param {!Uint8Array} command		0..235
 		 * @param {!Uint8Array} data
 		 */
 		..'send_to' = (target_id, command, data) !->
-			id_string	= target_id.join(',')
-			if !@_id_to_routing_path.has(id_string)
-				return
-			[node_id, route_id] = @_id_to_routing_path.get(id_string)
-			@_router['send_data'](node_id, route_id, command, data)
+			@_send_to_routing_node(target_id, command + ROUTING_CUSTOM_COMMANDS_OFFSET, data)
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
@@ -488,8 +497,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_announcements_from.delete(target_id_string)
 			@'fire'('disconnected', target_id)
 		/**
-		 * @param {!Uint8Array} node_id
-		 * @param {!Uint8Array} data
+		 * @param {!Uint8Array}	node_id
+		 * @param {number}		command	0..245
+		 * @param {!Uint8Array}	data
 		 */
 		.._send_to_dht_node = (node_id, command, data) !->
 			node_id_string	= node_id.join(',')
@@ -508,6 +518,17 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				@_dht['off']('node_connected', connected)
 			), ROUTING_PATH_SEGMENT_TIMEOUT * 1000
 			@_dht['lookup'](node_id)
+		/**
+		 * @param {!Uint8Array}	target_id
+		 * @param {number}		command		0..245
+		 * @param {!Uint8Array}	data
+		 */
+		.._send_to_routing_node = (target_id, command, data) !->
+			target_id_string	= target_id.join(',')
+			if !@_id_to_routing_path.has(target_id_string)
+				return
+			[node_id, route_id] = @_id_to_routing_path.get(target_id_string)
+			@_router['send_data'](node_id, route_id, command, data)
 		/**
 		 * @param {!Uint8Array} node_id
 		 */

@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_INTRODUCTION, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_FORWARDING, ROUTING_COMMAND_CONFIRM_FORWARDING, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_INTRODUCTION, ROUTING_CUSTOM_COMMANDS_OFFSET, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -14,6 +14,7 @@
   ROUTING_COMMAND_CONFIRM_FORWARDING = 2;
   ROUTING_COMMAND_CONNECTED = 3;
   ROUTING_COMMAND_INTRODUCTION = 4;
+  ROUTING_CUSTOM_COMMANDS_OFFSET = 10;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   CONNECTION_TIMEOUT = 30;
@@ -179,6 +180,17 @@
     x$.set(invitation_message, ID_LENGTH);
     return x$;
   }
+  /**
+   * @param {!Uint8Array} message
+   *
+   * @return {!Array<Uint8Array>} [target_id, invitation_message]
+   */
+  function parse_introduce_to_data(message){
+    var target_id, invitation_message;
+    target_id = message.subarray(0, ID_LENGTH);
+    invitation_message = message.subarray(ID_LENGTH);
+    return [target_id, invitation_message];
+  }
   function Wrapper(detoxCrypto, detoxTransport, asyncEventer){
     /**
      * Generate random seed that can be used as keypair seed
@@ -233,14 +245,17 @@
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id.join(','));
       })['on']('data', function(node_id, command, data){
-        var target_id, invitation_message;
+        var ref$, target_id, invitation_message, target_id_string;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
           break;
         case DHT_COMMAND_INTRODUCE_TO:
-          target_id = data.subarray(1, 1 + ID_LENGTH);
-          invitation_message = data.subarray(1 + ID_LENGTH);
+          ref$ = parse_introduce_to_data(data), target_id = ref$[0], invitation_message = ref$[1];
+          target_id_string = target_id.join(',');
+          if (!this$._announcements_from.has(target_id_string)) {
+            return;
+          }
         }
       });
       this._router['on']('send', function(node_id, data){
@@ -274,6 +289,9 @@
         case ROUTING_COMMAND_INTRODUCTION:
           break;
         default:
+          if (command < ROUTING_CUSTOM_COMMANDS_OFFSET) {
+            return;
+          }
           if (!this$._routing_path_to_id.has(source_id)) {
             return;
           }
@@ -323,7 +341,7 @@
         signature = detoxCrypto['sign'](introduction_message, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
         for (i$ = 0, len$ = (ref$ = introduction_nodes_confirmed).length; i$ < len$; ++i$) {
           introduction_node = ref$[i$];
-          this$['send_to'](introduction_node, ROUTING_COMMAND_ANNOUNCE, compose_announcement_data(this$._real_keypair['ed25519']['public'], introduction_message, signature));
+          this$._send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, compose_announcement_data(this$._real_keypair['ed25519']['public'], introduction_message, signature));
           introduction_node_string = introduction_node.join(',');
           this$._announced_to.set(introduction_node_string, introduction_node);
         }
@@ -429,17 +447,11 @@
     };
     /**
      * @param {!Uint8Array} target_id
-     * @param {!Uint8Array} command
+     * @param {!Uint8Array} command		0..235
      * @param {!Uint8Array} data
      */
     y$['send_to'] = function(target_id, command, data){
-      var id_string, ref$, node_id, route_id;
-      id_string = target_id.join(',');
-      if (!this._id_to_routing_path.has(id_string)) {
-        return;
-      }
-      ref$ = this._id_to_routing_path.get(id_string), node_id = ref$[0], route_id = ref$[1];
-      this._router['send_data'](node_id, route_id, command, data);
+      this._send_to_routing_node(target_id, command + ROUTING_CUSTOM_COMMANDS_OFFSET, data);
     };
     /**
      * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -504,8 +516,9 @@
       this['fire']('disconnected', target_id);
     };
     /**
-     * @param {!Uint8Array} node_id
-     * @param {!Uint8Array} data
+     * @param {!Uint8Array}	node_id
+     * @param {number}		command	0..245
+     * @param {!Uint8Array}	data
      */
     y$._send_to_dht_node = function(node_id, command, data){
       var node_id_string, connected_timeout, this$ = this;
@@ -528,6 +541,20 @@
         this$._dht['off']('node_connected', connected);
       }, ROUTING_PATH_SEGMENT_TIMEOUT * 1000);
       this._dht['lookup'](node_id);
+    };
+    /**
+     * @param {!Uint8Array}	target_id
+     * @param {number}		command		0..245
+     * @param {!Uint8Array}	data
+     */
+    y$._send_to_routing_node = function(target_id, command, data){
+      var target_id_string, ref$, node_id, route_id;
+      target_id_string = target_id.join(',');
+      if (!this._id_to_routing_path.has(target_id_string)) {
+        return;
+      }
+      ref$ = this._id_to_routing_path.get(target_id_string), node_id = ref$[0], route_id = ref$[1];
+      this._router['send_data'](node_id, route_id, command, data);
     };
     /**
      * @param {!Uint8Array} node_id
