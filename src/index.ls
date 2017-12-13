@@ -102,22 +102,25 @@ function parse_invitation_payload (invitation_payload)
 /**
  * @param {!Uint8Array} public_key
  * @param {!Uint8Array} introduction_message
+ * @param {!Uint8Array} signature
  *
  * @return {!Uint8Array}
  */
-function compose_announcement_data (public_key, introduction_message)
+function compose_announcement_data (public_key, introduction_message, signature)
 	new Uint8Array(ID_LENGTH + introduction_message.length)
 		..set(public_key)
-		..set(introduction_message, ID_LENGTH)
+		..set(signature, ID_LENGTH)
+		..set(introduction_message, ID_LENGTH + SIGNATURE_LENGTH)
 /**
  * @param {!Uint8Array} message
  *
- * @return {!Array<Uint8Array>} [public_key, introduction_message]
+ * @return {!Array<Uint8Array>} [public_key, introduction_message, signature]
  */
 function parse_announcement_data (message)
 	public_key				= message.subarray(0, ID_LENGTH)
-	introduction_message	= message.subarray(ID_LENGTH)
-	[public_key, introduction_message]
+	introduction_message	= message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH)
+	signature				= message.subarray(ID_LENGTH + SIGNATURE_LENGTH)
+	[public_key, introduction_message, signature]
 /**
  * @param {!Uint8Array} rendezvous_token
  * @param {!Uint8Array} introduction_node
@@ -195,6 +198,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_last_used_timeouts	= new Map
 		@_pending_forwarding	= new Map
 		@_announced_to			= new Map
+		@_announcements_from	= new Map
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -230,15 +234,15 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				@_update_used_timeout(node_id)
 				# TODO: Handle forwarding and commands parsing
 				source_id	= compute_source_id(node_id, route_id)
-				# TODO: With command argument this doesn't seem right
-				if !@_routing_path_to_id.has(source_id)
-					# If routing path unknown - ignore
-					return
-				origin_node_id	= @_routing_path_to_id.get(source_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
-						# TODO: Announcement received
-						void
+						[public_key, introduction_message, signature]	= parse_announcement_data(data)
+						if !detox-crypto['verify'](signature, introduction_message, public_key)
+							return
+						@_register_routing_path(public_key, node_id, route_id)
+						public_key_string	= public_key.join(',')
+						@_announcements_from.set(public_key_string, public_key)
+						@'fire'('announcement_received', public_key)
 					case ROUTING_COMMAND_INITIALIZE_FORWARDING
 						[rendezvous_token, introduction_node, target_id, invitation_message]	= parse_initialize_forwarding_data(data)
 						rendezvous_token_string													= rendezvous_token.join(',')
@@ -258,6 +262,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						# TODO: This happens on node that announced itself
 						void
 					else
+						if !@_routing_path_to_id.has(source_id)
+							# If routing path unknown - ignore
+							return
+						origin_node_id	= @_routing_path_to_id.get(source_id)
 						# TODO
 						#@'fire'('data', origin_node_id, command, data)
 			)
@@ -300,11 +308,16 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					@_real_keypair['ed25519']['private']
 					introduction_nodes_confirmed
 				)
+				signature				= detox-crypto['sign'](
+					introduction_message
+					@_real_keypair['ed25519']['public']
+					@_real_keypair['ed25519']['private']
+				)
 				for introduction_node in introduction_nodes_confirmed
 					@'send_to'(
 						introduction_node
 						ROUTING_COMMAND_ANNOUNCE
-						compose_announcement_data(@_real_keypair['ed25519']['public'], introduction_message)
+						compose_announcement_data(@_real_keypair['ed25519']['public'], introduction_message, signature)
 					)
 					introduction_node_string	= introduction_node.join(',')
 					@_announced_to.set(introduction_node_string, introduction_node)
@@ -472,6 +485,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(target_id_string)
 			@_announced_to.delete(target_id_string)
+			@_announcements_from.delete(target_id_string)
 			@'fire'('disconnected', target_id)
 		/**
 		 * @param {!Uint8Array} node_id
