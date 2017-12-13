@@ -88,7 +88,7 @@
    *
    * @return {!Uint8Array}
    */
-  function generate_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret){
+  function generate_introduction_payload(introduction_node, rendezvous_node, rendezvous_token, secret){
     var x$;
     x$ = new Uint8Array(ID_LENGTH * 3 + secret.length);
     x$.set(introduction_node);
@@ -98,98 +98,98 @@
     return x$;
   }
   /**
-   * @param {!Uint8Array} invitation_payload
+   * @param {!Uint8Array} introduction_payload
    *
    * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, secret]
    */
-  function parse_invitation_payload(invitation_payload){
+  function parse_introduction_payload(introduction_payload){
     var introduction_node, rendezvous_node, rendezvous_token, secret;
-    introduction_node = invitation_payload.subarray(0, ID_LENGTH);
-    rendezvous_node = invitation_payload.subarray(ID_LENGTH, ID_LENGTH * 2);
-    rendezvous_token = invitation_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
-    secret = invitation_payload.subarray(ID_LENGTH * 3);
+    introduction_node = introduction_payload.subarray(0, ID_LENGTH);
+    rendezvous_node = introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2);
+    rendezvous_token = introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
+    secret = introduction_payload.subarray(ID_LENGTH * 3);
     return [introduction_node, rendezvous_node, rendezvous_token, secret];
   }
   /**
    * @param {!Uint8Array} public_key
-   * @param {!Uint8Array} introduction_message
+   * @param {!Uint8Array} announcement_message
    * @param {!Uint8Array} signature
    *
    * @return {!Uint8Array}
    */
-  function compose_announcement_data(public_key, introduction_message, signature){
+  function compose_announcement_data(public_key, announcement_message, signature){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH + introduction_message.length);
+    x$ = new Uint8Array(ID_LENGTH + announcement_message.length);
     x$.set(public_key);
     x$.set(signature, ID_LENGTH);
-    x$.set(introduction_message, ID_LENGTH + SIGNATURE_LENGTH);
+    x$.set(announcement_message, ID_LENGTH + SIGNATURE_LENGTH);
     return x$;
   }
   /**
    * @param {!Uint8Array} message
    *
-   * @return {!Array<Uint8Array>} [public_key, introduction_message, signature]
+   * @return {!Array<Uint8Array>} [public_key, announcement_message, signature]
    */
   function parse_announcement_data(message){
-    var public_key, introduction_message, signature;
+    var public_key, announcement_message, signature;
     public_key = message.subarray(0, ID_LENGTH);
-    introduction_message = message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH);
+    announcement_message = message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH);
     signature = message.subarray(ID_LENGTH + SIGNATURE_LENGTH);
-    return [public_key, introduction_message, signature];
+    return [public_key, announcement_message, signature];
   }
   /**
    * @param {!Uint8Array} rendezvous_token
    * @param {!Uint8Array} introduction_node
    * @param {!Uint8Array} target_id
-   * @param {!Uint8Array} invitation_message
+   * @param {!Uint8Array} introduction_message
    *
    * @return {!Uint8Array}
    */
-  function compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message){
+  function compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, introduction_message){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH * 3 + invitation_message.length);
+    x$ = new Uint8Array(ID_LENGTH * 3 + introduction_message.length);
     x$.set(rendezvous_token);
     x$.set(introduction_node, ID_LENGTH);
     x$.set(target_id, ID_LENGTH * 2);
-    x$.set(invitation_message, ID_LENGTH * 3);
+    x$.set(introduction_message, ID_LENGTH * 3);
     return x$;
   }
   /**
    * @param {!Uint8Array} message
    *
-   * @return {!Array<Uint8Array>} [rendezvous_token, introduction_node, target_id, invitation_message]
+   * @return {!Array<Uint8Array>} [rendezvous_token, introduction_node, target_id, introduction_message]
    */
   function parse_initialize_forwarding_data(message){
-    var rendezvous_token, introduction_node, target_id, invitation_message;
+    var rendezvous_token, introduction_node, target_id, introduction_message;
     rendezvous_token = message.subarray(0, ID_LENGTH);
     introduction_node = message.subarray(ID_LENGTH, ID_LENGTH * 2);
     target_id = message.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
-    invitation_message = message.subarray(ID_LENGTH * 3);
-    return [rendezvous_token, introduction_node, target_id, invitation_message];
+    introduction_message = message.subarray(ID_LENGTH * 3);
+    return [rendezvous_token, introduction_node, target_id, introduction_message];
   }
   /**
    * @param {!Uint8Array} target_id
-   * @param {!Uint8Array} invitation_message
+   * @param {!Uint8Array} introduction_message
    *
    * @return {!Uint8Array}
    */
-  function compose_introduce_to_data(target_id, invitation_message){
+  function compose_introduce_to_data(target_id, introduction_message){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH + invitation_message.length);
+    x$ = new Uint8Array(ID_LENGTH + introduction_message.length);
     x$.set(target_id);
-    x$.set(invitation_message, ID_LENGTH);
+    x$.set(introduction_message, ID_LENGTH);
     return x$;
   }
   /**
    * @param {!Uint8Array} message
    *
-   * @return {!Array<Uint8Array>} [target_id, invitation_message]
+   * @return {!Array<Uint8Array>} [target_id, introduction_message]
    */
   function parse_introduce_to_data(message){
-    var target_id, invitation_message;
+    var target_id, introduction_message;
     target_id = message.subarray(0, ID_LENGTH);
-    invitation_message = message.subarray(ID_LENGTH);
-    return [target_id, invitation_message];
+    introduction_message = message.subarray(ID_LENGTH);
+    return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, asyncEventer){
     /**
@@ -245,29 +245,30 @@
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id.join(','));
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, invitation_message, target_id_string;
+        var ref$, target_id, introduction_message, target_id_string;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
           break;
         case DHT_COMMAND_INTRODUCE_TO:
-          ref$ = parse_introduce_to_data(data), target_id = ref$[0], invitation_message = ref$[1];
+          ref$ = parse_introduce_to_data(data), target_id = ref$[0], introduction_message = ref$[1];
           target_id_string = target_id.join(',');
           if (!this$._announcements_from.has(target_id_string)) {
             return;
           }
+          this$._send_to_routing_node(target_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
         }
       });
       this._router['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, introduction_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, invitation_message, rendezvous_token_string, forwarding_timeout, origin_node_id;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, forwarding_timeout, origin_node_id;
         this$._update_used_timeout(node_id);
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
-          ref$ = parse_announcement_data(data), public_key = ref$[0], introduction_message = ref$[1], signature = ref$[2];
-          if (!detoxCrypto['verify'](signature, introduction_message, public_key)) {
+          ref$ = parse_announcement_data(data), public_key = ref$[0], announcement_message = ref$[1], signature = ref$[2];
+          if (!detoxCrypto['verify'](signature, announcement_message, public_key)) {
             return;
           }
           this$._register_routing_path(public_key, node_id, route_id);
@@ -276,13 +277,13 @@
           this$['fire']('announcement_received', public_key);
           break;
         case ROUTING_COMMAND_INITIALIZE_FORWARDING:
-          ref$ = parse_initialize_forwarding_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], invitation_message = ref$[3];
+          ref$ = parse_initialize_forwarding_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
           rendezvous_token_string = rendezvous_token.join(',');
           forwarding_timeout = setTimeout(function(){
             this$._pending_forwarding['delete'](rendezvous_token_string);
           }, CONNECTION_TIMEOUT * 1000);
           this$._pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout]);
-          this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, invitation_message));
+          this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, introduction_message));
           break;
         case ROUTING_COMMAND_CONFIRM_FORWARDING:
           break;
@@ -325,7 +326,7 @@
       introductions_pending = number_of_introduction_nodes;
       introduction_nodes_confirmed = [];
       function announced(introduction_node){
-        var introduction_message, signature, i$, ref$, len$, introduction_node_string;
+        var announcement_message, signature, i$, ref$, len$, introduction_node_string;
         if (introduction_node) {
           introduction_nodes_confirmed.push(introduction_node);
         }
@@ -337,11 +338,11 @@
           this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS);
           return;
         }
-        introduction_message = this$._dht['generate_introduction_message'](this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private'], introduction_nodes_confirmed);
-        signature = detoxCrypto['sign'](introduction_message, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
+        announcement_message = this$._dht['generate_announcement_message'](this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private'], introduction_nodes_confirmed);
+        signature = detoxCrypto['sign'](announcement_message, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
         for (i$ = 0, len$ = (ref$ = introduction_nodes_confirmed).length; i$ < len$; ++i$) {
           introduction_node = ref$[i$];
-          this$._send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, compose_announcement_data(this$._real_keypair['ed25519']['public'], introduction_message, signature));
+          this$._send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, compose_announcement_data(this$._real_keypair['ed25519']['public'], announcement_message, signature));
           introduction_node_string = introduction_node.join(',');
           this$._announced_to.set(introduction_node_string, introduction_node);
         }
@@ -395,7 +396,7 @@
         rendezvous_node = nodes[nodes.length - 1];
         this$._router['construct_routing_path'](nodes).then(function(route_id){
           function try_to_introduce(){
-            var introduction_node, rendezvous_token, invitation_payload, signature, x25519_public_key, invitation_message, first_node_string, route_id_string, path_confirmation_timeout;
+            var introduction_node, rendezvous_token, introduction_payload, signature, x25519_public_key, introduction_message, first_node_string, route_id_string, path_confirmation_timeout;
             if (!introduction_nodes.length) {
               this$._router['destroy_routing_path'](first_node, route_id);
               this$['fire']('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
@@ -403,10 +404,10 @@
             }
             introduction_node = pull_random_item_from_array(introduction_nodes);
             rendezvous_token = randombytes(ID_LENGTH);
-            invitation_payload = generate_invitation_payload(introduction_node, rendezvous_node, rendezvous_token, secret);
-            signature = detoxCrypto['sign'](invitation_payload, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
+            introduction_payload = generate_introduction_payload(introduction_node, rendezvous_node, rendezvous_token, secret);
+            signature = detoxCrypto['sign'](introduction_payload, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
             x25519_public_key = detoxCrypto['convert_public_key'](target_id);
-            invitation_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(invitation_payload.length + signature.length), y$.set(invitation_payload), y$.set(signature, invitation_payload.length));
+            introduction_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(introduction_payload.length + signature.length), y$.set(introduction_payload), y$.set(signature, introduction_payload.length));
             first_node_string = first_node.join(',');
             route_id_string = route_id.join(',');
             function path_confirmation(node_id, route_id, data){
@@ -417,7 +418,7 @@
               this$._register_routing_path(target_id, node_id, route_id);
             }
             this$._router['on']('data', path_confirmation);
-            this$._router['send_to'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_FORWARDING, compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, invitation_message));
+            this$._router['send_to'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_FORWARDING, compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, introduction_message));
             path_confirmation_timeout = setTimeout(function(){
               this$._ronion['off']('data', path_confirmation);
               try_to_introduce();
