@@ -8,8 +8,8 @@ const DHT_COMMAND_ROUTING			= 0
 const DHT_COMMAND_INTRODUCE_TO		= 1
 
 const ROUTING_COMMAND_ANNOUNCE				= 0
-const ROUTING_COMMAND_INITIALIZE_FORWARDING	= 1
-const ROUTING_COMMAND_CONFIRM_FORWARDING	= 2
+const ROUTING_COMMAND_INITIALIZE_CONNECTION	= 1
+const ROUTING_COMMAND_CONFIRM_CONNECTION	= 2
 const ROUTING_COMMAND_CONNECTED				= 3
 const ROUTING_COMMAND_INTRODUCTION			= 4
 const ROUTING_CUSTOM_COMMANDS_OFFSET	= 10 # 5..9 are also reserved for future use, everything above is available for the user
@@ -76,6 +76,7 @@ function compute_source_id (address, segment_id)
 function is_string_equal_to_array (string, array)
 	string == array.join(',')
 /**
+ * @param {!Uint8Array} target_id
  * @param {!Uint8Array} introduction_node
  * @param {!Uint8Array} rendezvous_node
  * @param {!Uint8Array} rendezvous_token
@@ -83,22 +84,24 @@ function is_string_equal_to_array (string, array)
  *
  * @return {!Uint8Array}
  */
-function generate_introduction_payload (introduction_node, rendezvous_node, rendezvous_token, secret)
+function generate_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, secret)
 	new Uint8Array(ID_LENGTH * 3 + secret.length)
-		..set(introduction_node)
-		..set(rendezvous_node, ID_LENGTH)
-		..set(rendezvous_token, ID_LENGTH * 2)
-		..set(secret, ID_LENGTH * 3)
+		..set(target_id)
+		..set(introduction_node, ID_LENGTH)
+		..set(rendezvous_node, ID_LENGTH * 2)
+		..set(rendezvous_token, ID_LENGTH * 3)
+		..set(secret, ID_LENGTH * 4)
 /**
  * @param {!Uint8Array} introduction_payload
  *
  * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, secret]
  */
 function parse_introduction_payload (introduction_payload)
-	introduction_node	= introduction_payload.subarray(0, ID_LENGTH)
-	rendezvous_node		= introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
-	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
-	secret				= introduction_payload.subarray(ID_LENGTH * 3)
+	target_id			= introduction_payload.subarray(0, ID_LENGTH)
+	introduction_node	= introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
+	rendezvous_node		= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
+	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 4)
+	secret				= introduction_payload.subarray(ID_LENGTH * 4)
 	[introduction_node, rendezvous_node, rendezvous_token, secret]
 /**
  * @param {!Uint8Array} public_key
@@ -130,7 +133,7 @@ function parse_announcement_data (message)
  *
  * @return {!Uint8Array}
  */
-function compose_initialize_forwarding_data (rendezvous_token, introduction_node, target_id, introduction_message)
+function compose_initialize_connection_data (rendezvous_token, introduction_node, target_id, introduction_message)
 	new Uint8Array(ID_LENGTH * 3 + introduction_message.length)
 		..set(rendezvous_token)
 		..set(introduction_node, ID_LENGTH)
@@ -141,12 +144,31 @@ function compose_initialize_forwarding_data (rendezvous_token, introduction_node
  *
  * @return {!Array<Uint8Array>} [rendezvous_token, introduction_node, target_id, introduction_message]
  */
-function parse_initialize_forwarding_data (message)
+function parse_initialize_connection_data (message)
 	rendezvous_token		= message.subarray(0, ID_LENGTH)
 	introduction_node		= message.subarray(ID_LENGTH, ID_LENGTH * 2)
 	target_id				= message.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
 	introduction_message	= message.subarray(ID_LENGTH * 3)
 	[rendezvous_token, introduction_node, target_id, introduction_message]
+/**
+ * @param {!Uint8Array} signature
+ * @param {!Uint8Array} rendezvous_token
+ *
+ * @return {!Uint8Array}
+ */
+function compose_confirm_connection_data (signature, rendezvous_token)
+	new Uint8Array(SIGNATURE_LENGTH + rendezvous_token.length)
+		..set(signature)
+		..set(rendezvous_token, SIGNATURE_LENGTH)
+/**
+ * @param {!Uint8Array} message
+ *
+ * @return {!Array<Uint8Array>} [signature, rendezvous_token]
+ */
+function parse_confirm_connection_data (message)
+	signature			= message.subarray(0, SIGNATURE_LENGTH)
+	rendezvous_token	= message.subarray(SIGNATURE_LENGTH)
+	[signature, rendezvous_token]
 /**
  * @param {!Uint8Array} target_id
  * @param {!Uint8Array} introduction_message
@@ -206,7 +228,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_routing_path_to_id	= new Map
 		@_used_tags				= new Map
 		@_last_used_timeouts	= new Map
-		@_pending_forwarding	= new Map
+		@_pending_connection	= new Map
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
 
@@ -220,6 +242,12 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			bucket_size
 		)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], packet_size, max_pending_segments)
+		@_sign		= (data) ~>
+			detox-crypto['sign'](
+				data
+				@_real_keypair['ed25519']['public']
+				@_real_keypair['ed25519']['private']
+			)
 		@_dht
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.set(node_id.join(','), node_id)
@@ -244,7 +272,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
 				@_update_used_timeout(node_id)
-				# TODO: Handle forwarding and commands parsing
+				# TODO: Handle connection and commands parsing
 				source_id	= compute_source_id(node_id, route_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
@@ -255,23 +283,66 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						public_key_string	= public_key.join(',')
 						@_announcements_from.set(public_key_string, public_key)
 						@'fire'('announcement_received', public_key)
-					case ROUTING_COMMAND_INITIALIZE_FORWARDING
-						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_forwarding_data(data)
+					case ROUTING_COMMAND_INITIALIZE_CONNECTION
+						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						rendezvous_token_string													= rendezvous_token.join(',')
-						forwarding_timeout														= setTimeout (!~>
-							@_pending_forwarding.delete(rendezvous_token_string)
+						connection_timeout														= setTimeout (!~>
+							@_pending_connection.delete(rendezvous_token_string)
 						), CONNECTION_TIMEOUT * 1000
-						@_pending_forwarding.set(rendezvous_token_string, [node_id, route_id, forwarding_timeout])
+						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, connection_timeout])
 						@_send_to_dht_node(
 							introduction_node
 							DHT_COMMAND_INTRODUCE_TO
 							compose_introduce_to_data(target_id, introduction_message)
 						)
-					case ROUTING_COMMAND_CONFIRM_FORWARDING
+					case ROUTING_COMMAND_CONFIRM_CONNECTION
 						# TODO: Node received introduction message and wants to talk
 						void
 					case ROUTING_COMMAND_INTRODUCTION
-						# TODO: This happens on node that announced itself
+						if !@_routing_path_to_id.has(source_id)
+							# If routing path unknown - ignore
+							return
+						try
+							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](@_real_keypair['x25519']['public'], data)
+							signature						= introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH)
+							introduction_payload			= introduction_message_decrypted.subarray(SIGNATURE_LENGTH)
+							[
+								target_id
+								introduction_node
+								rendezvous_node
+								rendezvous_token
+								secret
+							]								= parse_introduction_payload(introduction_payload)
+							if (
+								!is_string_equal_to_array(introduction_node.join(','), @_routing_path_to_id.get(source_id)) ||
+								!detox-crypto['verify'](signature, introduction_payload, target_id)
+							)
+								return
+							data	=
+								'target_id'						: target_id
+								'secret'						: secret
+								'number_of_intermediate_nodes'	: null
+							<~! @'fire'('introduction', data).then
+							number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
+							if number_of_intermediate_nodes == null
+								return
+							nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+							if !nodes
+								# TODO: Retry?
+								return
+							nodes.push(rendezvous_node)
+							first_node	= nodes[0]
+							@_router['construct_routing_path'](nodes)
+								.then (route_id) !~>
+									@_register_routing_path(target_id, first_node, route_id)
+									signature	= @_sign(announcement_message)
+									@_send_to_routing_node(
+										target_id
+										ROUTING_COMMAND_CONFIRM_CONNECTION
+										compose_confirm_connection_data(signature, rendezvous_token)
+									)
+								.catch !~>
+									# TODO: Retry?
 						void
 					else
 						if command < ROUTING_CUSTOM_COMMANDS_OFFSET
@@ -290,7 +361,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					return
 				origin_node_id	= @_routing_path_to_id.get(source_id)
 				@_unregister_routing_path(node_id, route_id)
-				# TODO: For forwarding connections destroy the other half of the effective routing path
+				# TODO: For connection connections destroy the other half of the effective routing path
 			)
 	Core
 		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES
@@ -322,11 +393,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					@_real_keypair['ed25519']['private']
 					introduction_nodes_confirmed
 				)
-				signature				= detox-crypto['sign'](
-					announcement_message
-					@_real_keypair['ed25519']['public']
-					@_real_keypair['ed25519']['private']
-				)
+				signature				= @_sign(announcement_message)
 				for introduction_node in introduction_nodes_confirmed
 					@_send_to_routing_node(
 						introduction_node
@@ -385,27 +452,30 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									return
 								introduction_node		= pull_random_item_from_array(introduction_nodes)
 								rendezvous_token		= randombytes(ID_LENGTH)
-								introduction_payload	= generate_introduction_payload(introduction_node, rendezvous_node, rendezvous_token, secret)
-								signature				= detox-crypto['sign'](
-									introduction_payload
+								introduction_payload	= generate_introduction_payload(
 									@_real_keypair['ed25519']['public']
-									@_real_keypair['ed25519']['private']
+									introduction_node
+									rendezvous_node
+									rendezvous_token
+									secret
 								)
+								signature				= @_sign(introduction_payload)
 								x25519_public_key		= detox-crypto['convert_public_key'](target_id)
 								introduction_message	= detox-crypto['one_way_encrypt'](
 									x25519_public_key
 									new Uint8Array(introduction_payload.length + signature.length)
-										..set(introduction_payload)
-										..set(signature, introduction_payload.length)
+										..set(signature)
+										..set(introduction_payload, SIGNATURE_LENGTH)
 								)
 								first_node_string		= first_node.join(',')
 								route_id_string			= route_id.join(',')
-								!~function path_confirmation (node_id, route_id, data)
+								!~function path_confirmation (node_id, route_id, command, data)
 									if (
 										!is_string_equal_to_array(first_node_string, node_id) ||
 										!is_string_equal_to_array(responder_id_string, route_id) ||
-										data[0] != ROUTING_COMMAND_CONNECTED ||
-										data.subarray(1, ID_LENGTH + 1).join(',') != rendezvous_token.join(',')
+										command != ROUTING_COMMAND_CONNECTED ||
+										data.subarray(0, ID_LENGTH).join(',') != rendezvous_token.join(',') ||
+										!detox-crypto['verify'](data.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH), rendezvous_token, target_id)
 									)
 										return
 									clearTimeout(path_confirmation_timeout)
@@ -414,8 +484,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								@_router['send_to'](
 									first_node
 									route_id
-									ROUTING_COMMAND_INITIALIZE_FORWARDING
-									compose_initialize_forwarding_data(rendezvous_token, introduction_node, target_id, introduction_message)
+									ROUTING_COMMAND_INITIALIZE_CONNECTION
+									compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message)
 								)
 								path_confirmation_timeout	= setTimeout (!~>
 									@_ronion['off']('data', path_confirmation)
