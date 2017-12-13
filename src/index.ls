@@ -365,6 +365,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						#@'fire'('data', origin_node_id, command - ROUTING_CUSTOM_COMMANDS_OFFSET, data)
 			)
 			.'on'('destroyed', (node_id, route_id) !~>
+				# TODO: This event should be removed from Ronion and `@detox/transport`, so we'll need to have 5 min timers on each route and remove connections on expiration
 				source_id	= compute_source_id(node_id, route_id)
 				if !@_routing_path_to_id.has(source_id)
 					# If routing path unknown - ignore
@@ -509,16 +510,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				!~>
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
-		/**
-		 * @param {!Uint8Array} target_id
-		 */
-		..'disconnect_from' = (target_id) !->
-			id_string	= target_id.join(',')
-			if !@_id_to_routing_path.has(id_string)
-				return
-			[node_id, route_id] = @_id_to_routing_path.get(id_string)
-			@_router['destroy_routing_path'](node_id, route_id)
-			@_unregister_routing_path(node_id, route_id)
 		/**
 		 * @param {!Uint8Array} target_id
 		 * @param {!Uint8Array} command		0..235

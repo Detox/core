@@ -516,19 +516,6 @@
     };
     /**
      * @param {!Uint8Array} target_id
-     */
-    y$['disconnect_from'] = function(target_id){
-      var id_string, ref$, node_id, route_id;
-      id_string = target_id.join(',');
-      if (!this._id_to_routing_path.has(id_string)) {
-        return;
-      }
-      ref$ = this._id_to_routing_path.get(id_string), node_id = ref$[0], route_id = ref$[1];
-      this._router['destroy_routing_path'](node_id, route_id);
-      this._unregister_routing_path(node_id, route_id);
-    };
-    /**
-     * @param {!Uint8Array} target_id
      * @param {!Uint8Array} command		0..235
      * @param {!Uint8Array} data
      */
