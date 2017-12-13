@@ -20,7 +20,7 @@ const SIGNATURE_LENGTH				= 64
 const CONNECTION_TIMEOUT			= 30
 # The same as in `@detox/transport`
 const ROUTING_PATH_SEGMENT_TIMEOUT	= 10
-# After specified number of seconds since last data sending or receiving connection is considered unused and can be closed
+# After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
 const LAST_USED_TIMEOUT				= 60
 
 const CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES		= 0
@@ -61,12 +61,12 @@ function pull_random_item_from_array (array)
 		array.splice(index, 1)[0]
 /**
  * @param {!Uint8Array}	address
- * @param {!Uint8Array}	segment_id
+ * @param {!Uint8Array}	route_id
  *
  * @return {string}
  */
-function compute_source_id (address, segment_id)
-	address.join(',') + segment_id.join(',')
+function compute_source_id (address, route_id)
+	address.join(',') + route_id.join(',')
 /**
  * @param {string}		string
  * @param {!Uint8Array}	array
@@ -227,11 +227,23 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_id_to_routing_path	= new Map
 		@_routing_path_to_id	= new Map
 		@_used_tags				= new Map
-		@_last_used_timeouts	= new Map
+		@_connections_timeouts	= new Map
+		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
+
+		@_cleanup_interval	= setInterval (!~>
+			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
+			@_routes_timeouts.forEach ([last_updated, node_id, route_id], key) !~>
+				if last_updated < unused_older_than
+					@_router['destroy_routing_path'](node_id, route_id)
+					@_routes_timeouts.delete(key)
+			@_connections_timeouts.forEach ([last_updated, node_id], key) !~>
+				if last_updated < unused_older_than
+					@_del_used_tag(node_id)
+		), LAST_USED_TIMEOUT * 1000
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -268,11 +280,14 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						@_send_to_routing_node(target_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 			)
 		@_router
+			.'on'('activity', (node_id, route_id) !~>
+				@_update_connection_timeout(node_id)
+				@_update_route_timeout(node_id, route_id)
+			)
 			.'on'('send', (node_id, data) !~>
 				@_send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
-				@_update_used_timeout(node_id)
 				source_id	= compute_source_id(node_id, route_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
@@ -513,6 +528,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		 */
 		..'send_to' = (target_id, data) !->
 			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data)
+		..'destroy' = !->
+			clearInterval(@_cleanup_interval)
+			@_dht['destroy']()
+			@_router['destroy']()
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
@@ -571,14 +590,14 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		.._send_to_dht_node = (node_id, command, data) !->
 			node_id_string	= node_id.join(',')
 			if @_connected_nodes.has(node_id_string)
-				@_update_used_timeout(node_id)
+				@_update_connection_timeout(node_id)
 				@_dht['send_data'](node_id, command, data)
 				return
 			!~function connected (node_id)
 				if !is_string_equal_to_array(node_id_string, node_id)
 					return
 				clearTimeout(connected_timeout)
-				@_update_used_timeout(node_id)
+				@_update_connection_timeout(node_id)
 				@_dht['send_data'](node_id, command, data)
 			@_dht['on']('node_connected', connected)
 			connected_timeout	= setTimeout (!~>
@@ -599,17 +618,17 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
-		.._update_used_timeout = (node_id) !->
+		.._update_connection_timeout = (node_id) !->
 			node_id_string	= node_id.join(',')
-			if @_last_used_timeouts.has(node_id_string)
-				clearTimeout(@_last_used_timeouts.get(node_id_string))
-			else
+			if !@_connections_timeouts.has(node_id_string)
 				@_add_used_tag(node_id)
-			last_sent_timeout	= setTimeout (!~>
-				@_last_used_timeouts.delete(node_id_string)
-				@_del_used_tag(node_id)
-			), LAST_USED_TIMEOUT * 1000
-			@_last_used_timeouts.set(node_id_string, last_sent_timeout)
+			@_connections_timeouts.set(node_id_string, [+(new Date), node_id])
+		/**
+		 * @param {!Uint8Array} node_id
+		 */
+		.._update_route_timeout = (node_id, route_id) !->
+			source_id	= compute_source_id(node_id, route_id)
+			@_routes_timeouts.set(source_id, [+(new Date), node_id, route_id])
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
