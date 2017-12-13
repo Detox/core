@@ -6,15 +6,15 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_INTRODUCTION, ROUTING_CUSTOM_COMMANDS_OFFSET, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
   ROUTING_COMMAND_INITIALIZE_CONNECTION = 1;
-  ROUTING_COMMAND_CONFIRM_CONNECTION = 2;
-  ROUTING_COMMAND_CONNECTED = 3;
-  ROUTING_COMMAND_INTRODUCTION = 4;
-  ROUTING_CUSTOM_COMMANDS_OFFSET = 10;
+  ROUTING_COMMAND_INTRODUCTION = 2;
+  ROUTING_COMMAND_CONFIRM_CONNECTION = 3;
+  ROUTING_COMMAND_CONNECTED = 4;
+  ROUTING_COMMAND_DATA = 5;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   CONNECTION_TIMEOUT = 30;
@@ -370,14 +370,14 @@
             });
           } catch (e$) {}
           break;
-        default:
-          if (command < ROUTING_CUSTOM_COMMANDS_OFFSET) {
-            return;
+        case ROUTING_COMMAND_DATA:
+          if (this$._forwarding_mapping.has(source_id)) {
+            ref$ = this$._forwarding_mapping.get(source_id), target_node_id = ref$[0], target_route_id = ref$[1];
+            this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
+          } else if (this$._routing_path_to_id.has(source_id)) {
+            origin_node_id = this$._routing_path_to_id.get(source_id);
+            this$['fire']('data', origin_node_id, data);
           }
-          if (!this$._routing_path_to_id.has(source_id)) {
-            return;
-          }
-          origin_node_id = this$._routing_path_to_id.get(source_id);
         }
       })['on']('destroyed', function(node_id, route_id){
         var source_id, origin_node_id;
@@ -456,6 +456,7 @@
     y$['connect_to'] = function(target_id, secret, number_of_intermediate_nodes){
       var this$ = this;
       if (!number_of_intermediate_nodes) {
+        throw new Error('Direct connections are not yet supported');
         return;
       }
       if (this._id_to_routing_path.has(target_id.join(','))) {
@@ -515,11 +516,10 @@
     };
     /**
      * @param {!Uint8Array} target_id
-     * @param {!Uint8Array} command		0..235
      * @param {!Uint8Array} data
      */
-    y$['send_to'] = function(target_id, command, data){
-      this._send_to_routing_node(target_id, command + ROUTING_CUSTOM_COMMANDS_OFFSET, data);
+    y$['send_to'] = function(target_id, data){
+      this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data);
     };
     /**
      * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes

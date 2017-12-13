@@ -9,10 +9,10 @@ const DHT_COMMAND_INTRODUCE_TO		= 1
 
 const ROUTING_COMMAND_ANNOUNCE				= 0
 const ROUTING_COMMAND_INITIALIZE_CONNECTION	= 1
-const ROUTING_COMMAND_CONFIRM_CONNECTION	= 2
-const ROUTING_COMMAND_CONNECTED				= 3
-const ROUTING_COMMAND_INTRODUCTION			= 4
-const ROUTING_CUSTOM_COMMANDS_OFFSET	= 10 # 5..9 are also reserved for future use, everything above is available for the user
+const ROUTING_COMMAND_INTRODUCTION			= 2
+const ROUTING_COMMAND_CONFIRM_CONNECTION	= 3
+const ROUTING_COMMAND_CONNECTED				= 4
+const ROUTING_COMMAND_DATA					= 5
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
@@ -273,7 +273,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
 				@_update_used_timeout(node_id)
-				# TODO: @_forwarding_mapping
 				source_id	= compute_source_id(node_id, route_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
@@ -354,15 +353,13 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									)
 								.catch !~>
 									# TODO: Retry?
-					else
-						if command < ROUTING_CUSTOM_COMMANDS_OFFSET
-							return
-						if !@_routing_path_to_id.has(source_id)
-							# If routing path unknown - ignore
-							return
-						origin_node_id	= @_routing_path_to_id.get(source_id)
-						# TODO
-						#@'fire'('data', origin_node_id, command - ROUTING_CUSTOM_COMMANDS_OFFSET, data)
+					case ROUTING_COMMAND_DATA
+						if @_forwarding_mapping.has(source_id)
+							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
+							@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
+						else if @_routing_path_to_id.has(source_id)
+							origin_node_id	= @_routing_path_to_id.get(source_id)
+							@'fire'('data', origin_node_id, data)
 			)
 			.'on'('destroyed', (node_id, route_id) !~>
 				# TODO: This event should be removed from Ronion and `@detox/transport`, so we'll need to have 5 min timers on each route and remove connections on expiration
@@ -435,6 +432,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		 */
 		..'connect_to' = (target_id, secret, number_of_intermediate_nodes) !->
 			if !number_of_intermediate_nodes
+				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
 				return
 			if @_id_to_routing_path.has(target_id.join(','))
@@ -511,11 +509,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 		/**
 		 * @param {!Uint8Array} target_id
-		 * @param {!Uint8Array} command		0..235
 		 * @param {!Uint8Array} data
 		 */
-		..'send_to' = (target_id, command, data) !->
-			@_send_to_routing_node(target_id, command + ROUTING_CUSTOM_COMMANDS_OFFSET, data)
+		..'send_to' = (target_id, data) !->
+			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data)
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
