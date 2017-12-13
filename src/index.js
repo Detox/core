@@ -265,6 +265,7 @@
       this._pending_connection = new Map;
       this._announced_to = new Map;
       this._announcements_from = new Map;
+      this._forwarding_mapping = new Map;
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
       this._sign = function(data){
@@ -292,7 +293,7 @@
       this._router['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, introduction_message_decrypted, introduction_payload, rendezvous_node, secret, origin_node_id;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_message_decrypted, introduction_payload, rendezvous_node, secret, origin_node_id;
         this$._update_used_timeout(node_id);
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
@@ -312,10 +313,24 @@
           connection_timeout = setTimeout(function(){
             this$._pending_connection['delete'](rendezvous_token_string);
           }, CONNECTION_TIMEOUT * 1000);
-          this$._pending_connection.set(rendezvous_token_string, [node_id, route_id, connection_timeout]);
+          this$._pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout]);
           this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, introduction_message));
           break;
         case ROUTING_COMMAND_CONFIRM_CONNECTION:
+          ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token = ref$[1];
+          rendezvous_token_string = rendezvous_token.join(',');
+          if (!this$._pending_connection.has(rendezvous_token_string)) {
+            return;
+          }
+          ref$ = this$._pending_connection.get(rendezvous_token_string), target_node_id = ref$[0], target_route_id = ref$[1], target_id = ref$[2], connection_timeout = ref$[3];
+          if (!detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
+            return;
+          }
+          clearTimeout(connection_timeout);
+          this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
+          target_source_id = compute_source_id(target_node_id, target_route_id);
+          this$._forwarding_mapping.set(source_id, [target_node_id, target_route_id]);
+          this$._forwarding_mapping.set(target_source_id, [node_id, route_id]);
           break;
         case ROUTING_COMMAND_INTRODUCTION:
           if (!this$._routing_path_to_id.has(source_id)) {

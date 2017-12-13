@@ -231,6 +231,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_pending_connection	= new Map
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
+		@_forwarding_mapping	= new Map
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -272,7 +273,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
 				@_update_used_timeout(node_id)
-				# TODO: Handle connection and commands parsing
+				# TODO: @_forwarding_mapping
 				source_id	= compute_source_id(node_id, route_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
@@ -289,15 +290,25 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						connection_timeout														= setTimeout (!~>
 							@_pending_connection.delete(rendezvous_token_string)
 						), CONNECTION_TIMEOUT * 1000
-						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, connection_timeout])
+						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout])
 						@_send_to_dht_node(
 							introduction_node
 							DHT_COMMAND_INTRODUCE_TO
 							compose_introduce_to_data(target_id, introduction_message)
 						)
 					case ROUTING_COMMAND_CONFIRM_CONNECTION
-						# TODO: Node received introduction message and wants to talk
-						void
+						[signature, rendezvous_token]	= parse_confirm_connection_data(data)
+						rendezvous_token_string			= rendezvous_token.join(',')
+						if !@_pending_connection.has(rendezvous_token_string)
+							return
+						[target_node_id, target_route_id, target_id, connection_timeout]	= @_pending_connection.get(rendezvous_token_string)
+						if !detox-crypto['verify'](signature, rendezvous_token, target_id)
+							return
+						clearTimeout(connection_timeout)
+						@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
+						target_source_id	= compute_source_id(target_node_id, target_route_id)
+						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
+						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
 					case ROUTING_COMMAND_INTRODUCTION
 						if !@_routing_path_to_id.has(source_id)
 							# If routing path unknown - ignore
@@ -343,7 +354,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									)
 								.catch !~>
 									# TODO: Retry?
-						void
 					else
 						if command < ROUTING_CUSTOM_COMMANDS_OFFSET
 							return
