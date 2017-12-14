@@ -28,6 +28,9 @@ const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
 const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 2
 const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 3
 
+const CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES		= 0
+const CONNECTION_PROGRESS_INTRODUCTION_SENT				= 1
+
 const ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS	= 0
 
 if typeof crypto != 'undefined'
@@ -391,6 +394,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
 		..'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
 		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
+
+		..'CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'		= CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES
+		..'CONNECTION_PROGRESS_INTRODUCTION_SENT'				= CONNECTION_PROGRESS_INTRODUCTION_SENT
+
 		..'ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS'		= ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS
 	Core:: = Object.create(async-eventer::)
 	Core::
@@ -459,7 +466,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					if !introduction_nodes.length
 						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 						return
-					# TODO: add `connection_progress` events
+					@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
 					connected_nodes	= Array.from(@_connected_nodes.values())
 					nodes			= @_pick_random_nodes(number_of_intermediate_nodes + 1) # Number of nodes doesn't include rendezvous node, hence +1
 					if !nodes
@@ -510,6 +517,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									ROUTING_COMMAND_INITIALIZE_CONNECTION
 									compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message)
 								)
+								@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
 								path_confirmation_timeout	= setTimeout (!~>
 									@_ronion['off']('data', path_confirmation)
 									try_to_introduce()
