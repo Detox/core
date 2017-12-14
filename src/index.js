@@ -317,7 +317,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_message_decrypted, introduction_payload, rendezvous_node, secret, origin_node_id;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, origin_node_id;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -359,12 +359,20 @@
           if (!this$._routing_path_to_id.has(source_id)) {
             return;
           }
+          introduction_node = this$._routing_path_to_id.get(source_id);
+          introduction_node_string = introduction_node.join(',');
+          if (!this$._announced_to.has(introduction_node_string)) {
+            return;
+          }
           try {
             introduction_message_decrypted = detoxCrypto['one_way_decrypt'](this$._real_keypair['x25519']['public'], data);
             signature = introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH);
             introduction_payload = introduction_message_decrypted.subarray(SIGNATURE_LENGTH);
-            ref$ = parse_introduction_payload(introduction_payload), target_id = ref$[0], introduction_node = ref$[1], rendezvous_node = ref$[2], rendezvous_token = ref$[3], secret = ref$[4];
-            if (!is_string_equal_to_array(introduction_node.join(','), this$._routing_path_to_id.get(source_id)) || !detoxCrypto['verify'](signature, introduction_payload, target_id)) {
+            ref$ = parse_introduction_payload(introduction_payload), target_id = ref$[0], introduction_node_received = ref$[1], rendezvous_node = ref$[2], rendezvous_token = ref$[3], secret = ref$[4];
+            if (!is_string_equal_to_array(introduction_node_received.join(','), introduction_node) || !detoxCrypto['verify'](signature, introduction_payload, target_id)) {
+              return;
+            }
+            if (this$._id_to_routing_path.has(target_id.join(','))) {
               return;
             }
             data = {

@@ -328,21 +328,30 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						if !@_routing_path_to_id.has(source_id)
 							# If routing path unknown - ignore
 							return
+						introduction_node			= @_routing_path_to_id.get(source_id)
+						introduction_node_string	= introduction_node.join(',')
+						if !@_announced_to.has(introduction_node_string)
+							# We do not expect introductions on this connection
+							return
 						try
 							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](@_real_keypair['x25519']['public'], data)
 							signature						= introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH)
 							introduction_payload			= introduction_message_decrypted.subarray(SIGNATURE_LENGTH)
 							[
 								target_id
-								introduction_node
+								introduction_node_received
 								rendezvous_node
 								rendezvous_token
 								secret
 							]								= parse_introduction_payload(introduction_payload)
 							if (
-								!is_string_equal_to_array(introduction_node.join(','), @_routing_path_to_id.get(source_id)) ||
+								!is_string_equal_to_array(introduction_node_received.join(','), introduction_node) ||
 								!detox-crypto['verify'](signature, introduction_payload, target_id)
 							)
+								return
+							if @_id_to_routing_path.has(target_id.join(','))
+								# If already have connection to this node - silently ignore:
+								# might be a tricky attack when DHT public key is the same as real public key
 								return
 							data	=
 								'target_id'						: target_id
