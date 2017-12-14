@@ -239,6 +239,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routes_timeouts.forEach ([last_updated, node_id, route_id], key) !~>
 				if last_updated < unused_older_than
 					@_router['destroy_routing_path'](node_id, route_id)
+					@_unregister_routing_path(node_id, route_id)
 					@_routes_timeouts.delete(key)
 			@_connections_timeouts.forEach ([last_updated, node_id], key) !~>
 				if last_updated < unused_older_than
@@ -375,16 +376,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						else if @_routing_path_to_id.has(source_id)
 							origin_node_id	= @_routing_path_to_id.get(source_id)
 							@'fire'('data', origin_node_id, data)
-			)
-			.'on'('destroyed', (node_id, route_id) !~>
-				# TODO: This event should be removed from Ronion and `@detox/transport`, so we'll need to have 5 min timers on each route and remove connections on expiration
-				source_id	= compute_source_id(node_id, route_id)
-				if !@_routing_path_to_id.has(source_id)
-					# If routing path unknown - ignore
-					return
-				origin_node_id	= @_routing_path_to_id.get(source_id)
-				@_unregister_routing_path(node_id, route_id)
-				# TODO: For connection connections destroy the other half of the effective routing path
 			)
 	Core
 		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES

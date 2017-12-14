@@ -275,6 +275,7 @@
           last_updated = arg$[0], node_id = arg$[1], route_id = arg$[2];
           if (last_updated < unused_older_than) {
             this$._router['destroy_routing_path'](node_id, route_id);
+            this$._unregister_routing_path(node_id, route_id);
             this$._routes_timeouts['delete'](key);
           }
         });
@@ -401,14 +402,6 @@
             this$['fire']('data', origin_node_id, data);
           }
         }
-      })['on']('destroyed', function(node_id, route_id){
-        var source_id, origin_node_id;
-        source_id = compute_source_id(node_id, route_id);
-        if (!this$._routing_path_to_id.has(source_id)) {
-          return;
-        }
-        origin_node_id = this$._routing_path_to_id.get(source_id);
-        this$._unregister_routing_path(node_id, route_id);
       });
     }
     x$ = Core;
