@@ -299,7 +299,7 @@
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id.join(','));
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_id_string;
+        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -310,7 +310,8 @@
           if (!this$._announcements_from.has(target_id_string)) {
             return;
           }
-          this$._send_to_routing_node(target_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
+          ref$ = this$._announcements_from.get(target_id_string), target_node_id = ref$[1], target_route_id = ref$[2];
+          this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
         }
       });
       this._router['on']('activity', function(node_id, route_id){
@@ -327,9 +328,8 @@
           if (!detoxCrypto['verify'](signature, announcement_message, public_key)) {
             return;
           }
-          this$._register_routing_path(public_key, node_id, route_id);
           public_key_string = public_key.join(',');
-          this$._announcements_from.set(public_key_string, public_key);
+          this$._announcements_from.set(public_key_string, [public_key, node_id, route_id]);
           this$['fire']('announcement_received', public_key);
           break;
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
@@ -385,7 +385,7 @@
             this$['fire']('introduction', data).then(function(){
               var number_of_intermediate_nodes, nodes, first_node;
               number_of_intermediate_nodes = data['number_of_intermediate_nodes'];
-              if (number_of_intermediate_nodes === null) {
+              if (number_of_intermediate_nodes < 1) {
                 return;
               }
               nodes = this$._pick_random_nodes(number_of_intermediate_nodes);

@@ -233,6 +233,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_connections_timeouts	= new Map
 		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
+		# TODO: Re-announce itself to avoid routing path disconnection
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
@@ -281,7 +282,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						target_id_string					= target_id.join(',')
 						if !@_announcements_from.has(target_id_string)
 							return
-						@_send_to_routing_node(target_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
+						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
+						@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 			)
 		@_router
 			.'on'('activity', (node_id, route_id) !~>
@@ -298,9 +300,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						[public_key, announcement_message, signature]	= parse_announcement_data(data)
 						if !detox-crypto['verify'](signature, announcement_message, public_key)
 							return
-						@_register_routing_path(public_key, node_id, route_id)
 						public_key_string	= public_key.join(',')
-						@_announcements_from.set(public_key_string, public_key)
+						@_announcements_from.set(public_key_string, [public_key, node_id, route_id])
 						@'fire'('announcement_received', public_key)
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
@@ -362,7 +363,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								'number_of_intermediate_nodes'	: null
 							<~! @'fire'('introduction', data).then
 							number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
-							if number_of_intermediate_nodes == null
+							if number_of_intermediate_nodes < 1
+								# TODO: Support direct connections here?
 								return
 							nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
 							if !nodes
@@ -535,6 +537,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		 * @param {!Uint8Array} data
 		 */
 		..'send_to' = (target_id, data) !->
+			# TODO: end-to-end encryption?
 			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data)
 		..'destroy' = !->
 			clearInterval(@_cleanup_interval)
