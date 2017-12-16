@@ -445,8 +445,6 @@
                 response_handshake_message = encryptor_instance['get_handshake_message']();
                 this$._encryptor_instances.set(target_id_string, encryptor_instance);
                 this$._register_routing_path(target_id, first_node, route_id);
-                this$._multiplexers.set(target_id_string, fixedSizeMultiplexer['Multiplexer'](this$._max_data_size, this$._max_packet_data_size));
-                this$._demultiplexers.set(target_id_string, fixedSizeMultiplexer['Demultiplexer'](this$._max_data_size, this$._max_packet_data_size));
                 signature = this$._sign(rendezvous_token);
                 this$._send_to_routing_node(target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(){});
@@ -626,8 +624,6 @@
               this$._encryptor_instances.set(target_id_string, encryptor_instance);
               clearTimeout(path_confirmation_timeout);
               this$._register_routing_path(target_id, node_id, route_id);
-              this$._multiplexers.set(target_id_string, fixedSizeMultiplexer['Multiplexer'](this$._max_data_size, this$._max_packet_data_size));
-              this$._demultiplexers.set(target_id_string, fixedSizeMultiplexer['Demultiplexer'](this$._max_data_size, this$._max_packet_data_size));
             }
             this$._router['on']('data', path_confirmation);
             this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message));
@@ -725,6 +721,8 @@
       }
       this._id_to_routing_path.set(target_id_string, [node_id, route_id]);
       this._routing_path_to_id.set(source_id, target_id);
+      this._multiplexers.set(target_id_string, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
+      this._demultiplexers.set(target_id_string, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
       this['fire']('connected', target_id);
     };
     /**

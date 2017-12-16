@@ -413,14 +413,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							first_node	= nodes[0]
 							@_router['construct_routing_path'](nodes)
 								.then (route_id) !~>
-									encryptor_instance			= detox-crypto['Encryptor'](false, @_real_keypair['x25519']['private'])
+									encryptor_instance	= detox-crypto['Encryptor'](false, @_real_keypair['x25519']['private'])
 									encryptor_instance['put_handshake_message'](handshake_message)
 									response_handshake_message	= encryptor_instance['get_handshake_message']()
 									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									@_register_routing_path(target_id, first_node, route_id)
-									# Make sure each chunk after encryption will fit perfectly into DHT packet
-									@_multiplexers.set(target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
-									@_demultiplexers.set(target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
 									signature	= @_sign(rendezvous_token)
 									@_send_to_routing_node(
 										target_id
@@ -603,9 +600,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									clearTimeout(path_confirmation_timeout)
 									@_register_routing_path(target_id, node_id, route_id)
-									# Make sure each chunk after encryption will fit perfectly into DHT packet
-									@_multiplexers.set(target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
-									@_demultiplexers.set(target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
 								@_router['on']('data', path_confirmation)
 								@_router['send_data'](
 									first_node
@@ -687,6 +681,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				return
 			@_id_to_routing_path.set(target_id_string, [node_id, route_id])
 			@_routing_path_to_id.set(source_id, target_id)
+			# Make sure each chunk after encryption will fit perfectly into DHT packet
+			# Multiplexer/demultiplexer pair is not needed for introduction node, but for simplicity we'll create it anyway
+			@_multiplexers.set(target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
+			@_demultiplexers.set(target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
 			@'fire'('connected', target_id)
 		/**
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
