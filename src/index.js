@@ -412,7 +412,7 @@
             this$['fire']('introduction', data).then(function(){
               var number_of_intermediate_nodes, nodes, first_node;
               number_of_intermediate_nodes = data['number_of_intermediate_nodes'];
-              if (number_of_intermediate_nodes < 1) {
+              if (!number_of_intermediate_nodes) {
                 return;
               }
               nodes = this$._pick_random_nodes(number_of_intermediate_nodes);

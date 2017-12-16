@@ -384,7 +384,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								'number_of_intermediate_nodes'	: null
 							<~! @'fire'('introduction', data).then
 							number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
-							if number_of_intermediate_nodes < 1
+							if !number_of_intermediate_nodes
 								# TODO: Support direct connections here?
 								return
 							nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
