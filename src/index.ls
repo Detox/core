@@ -19,6 +19,8 @@ const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
 # Handshake message length for Noise_NK_25519_ChaChaPoly_BLAKE2b
 const HANDSHAKE_MESSAGE_LENGTH		= 48
+# ChaChaPoly+BLAKE2b
+const MAC_LENGTH					= 16
 # How long node should wait for rendezvous node to receive incoming connection from intended responder
 const CONNECTION_TIMEOUT			= 30
 # The same as in `@detox/transport`
@@ -203,7 +205,7 @@ function parse_introduce_to_data (message)
 	introduction_message	= message.subarray(ID_LENGTH)
 	[target_id, introduction_message]
 
-function Wrapper (detox-crypto, detox-transport, async-eventer)
+function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-eventer)
 	/**
 	 * Generate random seed that can be used as keypair seed
 	 *
@@ -250,6 +252,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_pending_pings			= new Set
 		@_last_announcement		= 0
 		@_encryptor_instances	= new Map
+		@_multiplexers			= new Map
+		@_demultiplexers		= new Map
 
 		@_cleanup_interval				= setInterval (!~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
@@ -414,6 +418,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									response_handshake_message	= encryptor_instance['get_handshake_message']()
 									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									@_register_routing_path(target_id, first_node, route_id)
+									# Make sure each chunk after encryption will fit perfectly into DHT packet
+									@_multiplexers.set(target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
+									@_demultiplexers.set(target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
 									signature	= @_sign(rendezvous_token)
 									@_send_to_routing_node(
 										target_id
@@ -429,11 +436,19 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						else if @_routing_path_to_id.has(source_id)
 							target_id			= @_routing_path_to_id.get(source_id)
 							target_id_string	= target_id.join(',')
-							if !@_encryptor_instances.has(target_id_string)
-								return
 							encryptor_instance	= @_encryptor_instances.get(target_id_string)
+							if !encryptor_instance
+								return
+							demultiplexer		= @_demultiplexers.get(target_id_string)
+							if !demultiplexer
+								return
 							data_decrypted		= encryptor_instance['decrypt'](data)
-							@'fire'('data', target_id, data_decrypted)
+							demultiplexer['feed'](data_decrypted)
+							# Data are always more or equal to block size, so no need to do `while` loop
+							if demultiplexer['have_more_data']()
+								data_with_header	= demultiplexer['get_data']()
+								command				= data_with_header[0]
+								@'fire'('data', target_id, command, data_with_header.subarray(1))
 					case ROUTING_COMMAND_PING
 						if @_routing_path_to_id.has(source_id)
 							target_id			= @_routing_path_to_id.get(source_id)
@@ -445,6 +460,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						# Send ping back
 						@_send_ping(node_id, route_id)
 			)
+		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: 1 byte for command, 2 bytes for multiplexer and MAC on top of that
+		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH # 468 bytes
 	Core
 		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES
 		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -588,6 +605,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									clearTimeout(path_confirmation_timeout)
 									@_register_routing_path(target_id, node_id, route_id)
+									# Make sure each chunk after encryption will fit perfectly into DHT packet
+									@_multiplexers.set(target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
+									@_demultiplexers.set(target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
 								@_router['on']('data', path_confirmation)
 								@_router['send_data'](
 									first_node
@@ -610,16 +630,26 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
 		/**
-		 * @param {!Uint8Array} target_id
-		 * @param {!Uint8Array} data		Up to 65 KiB (limit defined in `@detox/transport`)
+		 * @param {!Uint8Array}	target_id
+		 * @param {number}		command		Command from range `0..255`
+		 * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
-		..'send_to' = (target_id, data) !->
+		..'send_to' = (target_id, command, data) !->
 			target_id_string	= target_id.join(',')
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if !encryptor_instance || data.length > @_max_data_size
 				return
-			data_encrypted		= encryptor_instance['encrypt'](data)
-			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_encrypted)
+			multiplexer			= @_multiplexers.get(target_id_string)
+			if !multiplexer
+				return
+			data_with_header	= new Uint8Array(data.length + 1)
+				..set([command])
+				..set(data, 1)
+			multiplexer['feed'](data_with_header)
+			while multiplexer['have_more_blocks']()
+				data_block				= multiplexer['get_block']()
+				data_block_encrypted	= encryptor_instance['encrypt'](data_block)
+				@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
 		..'destroy' = !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
@@ -686,6 +716,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				[, , , announce_interval]	= @_announcements_from.get(target_id_string)
 				clearInterval(announce_interval)
 				@_announcements_from.delete(target_id_string)
+			@_multiplexers.delete(target_id_string)
+			@_demultiplexers.delete(target_id_string)
 			@'fire'('disconnected', target_id)
 		/**
 		 * @param {!Uint8Array}	node_id
@@ -782,10 +814,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 
 if typeof define == 'function' && define['amd']
 	# AMD
-	define(['@detox/crypto', '@detox/transport', 'async-eventer'], Wrapper)
+	define(['@detox/crypto', '@detox/transport', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
 else if typeof exports == 'object'
 	# CommonJS
-	module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport')require('async-eventer'))
+	module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('fixed-size-multiplexer'), require('async-eventer'))
 else
 	# Browser globals
-	@'detox_core' = Wrapper(@'detox_crypto', @'detox_transport', @'async_eventer')
+	@'detox_core' = Wrapper(@'detox_crypto', @'detox_transport', @'fixed_size_multiplexer', @'async_eventer')

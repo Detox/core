@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -19,6 +19,7 @@
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   HANDSHAKE_MESSAGE_LENGTH = 48;
+  MAC_LENGTH = 16;
   CONNECTION_TIMEOUT = 30;
   ROUTING_PATH_SEGMENT_TIMEOUT = 10;
   LAST_USED_TIMEOUT = 60;
@@ -229,7 +230,7 @@
     introduction_message = message.subarray(ID_LENGTH);
     return [target_id, introduction_message];
   }
-  function Wrapper(detoxCrypto, detoxTransport, asyncEventer){
+  function Wrapper(detoxCrypto, detoxTransport, fixedSizeMultiplexer, asyncEventer){
     /**
      * Generate random seed that can be used as keypair seed
      *
@@ -280,6 +281,8 @@
       this._pending_pings = new Set;
       this._last_announcement = 0;
       this._encryptor_instances = new Map;
+      this._multiplexers = new Map;
+      this._demultiplexers = new Map;
       this._cleanup_interval = setInterval(function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
@@ -353,7 +356,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, target_id_string, encryptor_instance, data_decrypted;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, target_id_string, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -442,6 +445,8 @@
                 response_handshake_message = encryptor_instance['get_handshake_message']();
                 this$._encryptor_instances.set(target_id_string, encryptor_instance);
                 this$._register_routing_path(target_id, first_node, route_id);
+                this$._multiplexers.set(target_id_string, fixedSizeMultiplexer['Multiplexer'](this$._max_data_size, this$._max_packet_data_size));
+                this$._demultiplexers.set(target_id_string, fixedSizeMultiplexer['Demultiplexer'](this$._max_data_size, this$._max_packet_data_size));
                 signature = this$._sign(rendezvous_token);
                 this$._send_to_routing_node(target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(){});
@@ -455,12 +460,21 @@
           } else if (this$._routing_path_to_id.has(source_id)) {
             target_id = this$._routing_path_to_id.get(source_id);
             target_id_string = target_id.join(',');
-            if (!this$._encryptor_instances.has(target_id_string)) {
+            encryptor_instance = this$._encryptor_instances.get(target_id_string);
+            if (!encryptor_instance) {
               return;
             }
-            encryptor_instance = this$._encryptor_instances.get(target_id_string);
+            demultiplexer = this$._demultiplexers.get(target_id_string);
+            if (!demultiplexer) {
+              return;
+            }
             data_decrypted = encryptor_instance['decrypt'](data);
-            this$['fire']('data', target_id, data_decrypted);
+            demultiplexer['feed'](data_decrypted);
+            if (demultiplexer['have_more_data']()) {
+              data_with_header = demultiplexer['get_data']();
+              command = data_with_header[0];
+              this$['fire']('data', target_id, command, data_with_header.subarray(1));
+            }
           }
           break;
         case ROUTING_COMMAND_PING:
@@ -475,6 +489,7 @@
           this$._send_ping(node_id, route_id);
         }
       });
+      this._max_packet_data_size = this._router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH;
     }
     x$ = Core;
     x$['CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES;
@@ -611,6 +626,8 @@
               this$._encryptor_instances.set(target_id_string, encryptor_instance);
               clearTimeout(path_confirmation_timeout);
               this$._register_routing_path(target_id, node_id, route_id);
+              this$._multiplexers.set(target_id_string, fixedSizeMultiplexer['Multiplexer'](this$._max_data_size, this$._max_packet_data_size));
+              this$._demultiplexers.set(target_id_string, fixedSizeMultiplexer['Demultiplexer'](this$._max_data_size, this$._max_packet_data_size));
             }
             this$._router['on']('data', path_confirmation);
             this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message));
@@ -631,18 +648,30 @@
       });
     };
     /**
-     * @param {!Uint8Array} target_id
-     * @param {!Uint8Array} data		Up to 65 KiB (limit defined in `@detox/transport`)
+     * @param {!Uint8Array}	target_id
+     * @param {number}		command		Command from range `0..255`
+     * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
      */
-    y$['send_to'] = function(target_id, data){
-      var target_id_string, encryptor_instance, data_encrypted;
+    y$['send_to'] = function(target_id, command, data){
+      var target_id_string, encryptor_instance, multiplexer, x$, data_with_header, data_block, data_block_encrypted;
       target_id_string = target_id.join(',');
       encryptor_instance = this._encryptor_instances.get(target_id_string);
       if (!encryptor_instance || data.length > this._max_data_size) {
         return;
       }
-      data_encrypted = encryptor_instance['encrypt'](data);
-      this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_encrypted);
+      multiplexer = this._multiplexers.get(target_id_string);
+      if (!multiplexer) {
+        return;
+      }
+      x$ = data_with_header = new Uint8Array(data.length + 1);
+      x$.set([command]);
+      x$.set(data, 1);
+      multiplexer['feed'](data_with_header);
+      while (multiplexer['have_more_blocks']()) {
+        data_block = multiplexer['get_block']();
+        data_block_encrypted = encryptor_instance['encrypt'](data_block);
+        this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_block_encrypted);
+      }
     };
     y$['destroy'] = function(){
       var this$ = this;
@@ -729,6 +758,8 @@
         clearInterval(announce_interval);
         this._announcements_from['delete'](target_id_string);
       }
+      this._multiplexers['delete'](target_id_string);
+      this._demultiplexers['delete'](target_id_string);
       this['fire']('disconnected', target_id);
     };
     /**
@@ -854,11 +885,11 @@
     };
   }
   if (typeof define === 'function' && define['amd']) {
-    define(['@detox/crypto', '@detox/transport', 'async-eventer'], Wrapper);
+    define(['@detox/crypto', '@detox/transport', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
   } else if (typeof exports === 'object') {
-    module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport').require('async-eventer'));
+    module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('fixed-size-multiplexer'), require('async-eventer'));
   } else {
-    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['async_eventer']);
+    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['fixed_size_multiplexer'], this['async_eventer']);
   }
   function in$(x, xs){
     var i = -1, l = xs.length >>> 0;
