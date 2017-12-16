@@ -285,30 +285,32 @@
       this._cleanup_interval = setInterval(function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
-        this$._routes_timeouts.forEach(function(arg$, key){
-          var last_updated, node_id, route_id;
-          last_updated = arg$[0], node_id = arg$[1], route_id = arg$[2];
+        this$._routes_timeouts.forEach(function(last_updated, source_id){
+          var ref$, node_id, route_id;
           if (last_updated < unused_older_than) {
-            this$._router['destroy_routing_path'](node_id, route_id);
-            this$._unregister_routing_path(node_id, route_id);
-            this$._routes_timeouts['delete'](key);
+            if (this$._routing_paths.has(source_id)) {
+              ref$ = this$._routing_paths.get(source_id), node_id = ref$[0], route_id = ref$[1];
+              this$._unregister_routing_path(node_id, route_id);
+            }
+            this$._routes_timeouts['delete'](source_id);
           }
         });
-        this$._connections_timeouts.forEach(function(arg$, key){
+        this$._connections_timeouts.forEach(function(arg$, node_id_string){
           var last_updated, node_id;
           last_updated = arg$[0], node_id = arg$[1];
           if (last_updated < unused_older_than) {
             this$._del_used_tag(node_id);
+            this$._connections_timeouts['delete'](node_id_string);
           }
         });
       }, LAST_USED_TIMEOUT * 1000);
       this._keep_announce_routes_interval = setInterval(function(){
         var reannounce_if_older_than;
-        this$._announced_to.forEach(function(introduction_node){
-          var introduction_node_string, ref$, node_id, route_id;
-          introduction_node_string = introduction_node.join(',');
+        this$._announced_to.forEach(function(introduction_node, introduction_node_string){
+          var ref$, node_id, route_id, source_id;
           ref$ = this$._id_to_routing_path.get(introduction_node_string), node_id = ref$[0], route_id = ref$[1];
           if (this$._send_ping(node_id, route_id)) {
+            source_id = compute_source_id(node_id, route_id);
             this$._pending_pings.add(source_id);
           }
         });
@@ -345,8 +347,13 @@
         }
       });
       this._router['on']('activity', function(node_id, route_id){
+        var source_id;
+        source_id = compute_source_id(node_id, route_id);
+        if (!this$._routing_paths.has(source_id)) {
+          this$._routing_paths.set(source_id, [node_id, route_id]);
+        }
         this$._update_connection_timeout(node_id);
-        this$._update_route_timeout(node_id, route_id);
+        this$._routes_timeouts.set(source_id, +new Date);
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
@@ -464,8 +471,8 @@
           if (this$._routing_path_to_id.has(source_id)) {
             target_id = this$._routing_path_to_id.get(source_id);
             target_id_string = target_id.join(',');
-            if (this$._pending_pings.has(target_id_string)) {
-              this$._pending_pings['delete'](target_id_string);
+            if (this$._pending_pings.has(source_id)) {
+              this$._pending_pings['delete'](source_id);
               return;
             }
           }
@@ -642,8 +649,14 @@
       this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_encrypted);
     };
     y$['destroy'] = function(){
+      var this$ = this;
       clearInterval(this._cleanup_interval);
       clearInterval(this._keep_announce_routes_interval);
+      this._routing_paths.forEach(function(arg$){
+        var node_id, route_id;
+        node_id = arg$[0], route_id = arg$[1];
+        this$._unregister_routing_path(node_id, route_id);
+      });
       this._dht['destroy']();
       this._router['destroy']();
     };
@@ -682,10 +695,9 @@
       var source_id, target_id_string;
       source_id = compute_source_id(node_id, route_id);
       target_id_string = target_id.join(',');
-      if (this._routing_paths.has(source_id)) {
+      if (this._routing_path_to_id.has(source_id)) {
         return;
       }
-      this._routing_paths.set(source_id, [node_id, route_id]);
       this._id_to_routing_path.set(target_id_string, [node_id, route_id]);
       this._routing_path_to_id.set(source_id, target_id);
       this['fire']('connected', target_id);
@@ -700,10 +712,15 @@
       if (!this._routing_paths.has(source_id)) {
         return;
       }
-      target_id = this._routing_path_to_id.get(source_id);
-      target_id_string = target_id.join(',');
       this._routing_paths['delete'](source_id);
+      this._router['destroy_routing_path'](node_id, route_id);
       this._routing_path_to_id['delete'](source_id);
+      this._pending_pings['delete'](source_id);
+      target_id = this._routing_path_to_id.get(source_id);
+      if (!target_id) {
+        return;
+      }
+      target_id_string = target_id.join(',');
       this._id_to_routing_path['delete'](target_id_string);
       this._announced_to['delete'](target_id_string);
       encryptor_instance = this._encryptor_instances.get(target_id_string);
@@ -716,7 +733,6 @@
         clearInterval(announce_interval);
         this._announcements_from['delete'](target_id_string);
       }
-      this._pending_pings['delete'](target_id_string);
       this['fire']('disconnected', target_id);
     };
     /**
@@ -785,14 +801,6 @@
         this._add_used_tag(node_id);
       }
       this._connections_timeouts.set(node_id_string, [+new Date, node_id]);
-    };
-    /**
-     * @param {!Uint8Array} node_id
-     */
-    y$._update_route_timeout = function(node_id, route_id){
-      var source_id;
-      source_id = compute_source_id(node_id, route_id);
-      this._routes_timeouts.set(source_id, [+new Date, node_id, route_id]);
     };
     /**
      * @param {!Uint8Array} node_id

@@ -254,20 +254,22 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 
 		@_cleanup_interval				= setInterval (!~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
-			@_routes_timeouts.forEach ([last_updated, node_id, route_id], key) !~>
+			@_routes_timeouts.forEach (last_updated, source_id) !~>
 				if last_updated < unused_older_than
-					@_router['destroy_routing_path'](node_id, route_id)
-					@_unregister_routing_path(node_id, route_id)
-					@_routes_timeouts.delete(key)
-			@_connections_timeouts.forEach ([last_updated, node_id], key) !~>
+					if @_routing_paths.has(source_id)
+						[node_id, route_id]	= @_routing_paths.get(source_id)
+						@_unregister_routing_path(node_id, route_id)
+					@_routes_timeouts.delete(source_id)
+			@_connections_timeouts.forEach ([last_updated, node_id], node_id_string) !~>
 				if last_updated < unused_older_than
 					@_del_used_tag(node_id)
+					@_connections_timeouts.delete(node_id_string)
 		), LAST_USED_TIMEOUT * 1000
 		@_keep_announce_routes_interval	= setInterval (!~>
-			@_announced_to.forEach (introduction_node) !~>
-				introduction_node_string	= introduction_node.join(',')
-				[node_id, route_id]			= @_id_to_routing_path.get(introduction_node_string)
+			@_announced_to.forEach (introduction_node, introduction_node_string) !~>
+				[node_id, route_id]	= @_id_to_routing_path.get(introduction_node_string)
 				if @_send_ping(node_id, route_id)
+					source_id	= compute_source_id(node_id, route_id)
 					@_pending_pings.add(source_id)
 			if @_announced_to.size < @_number_of_introduction_nodes && @_last_announcement
 				# Give at least 3x time for announcement process to complete and to announce to some node
@@ -313,8 +315,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 		@_router
 			.'on'('activity', (node_id, route_id) !~>
+				source_id	= compute_source_id(node_id, route_id)
+				if !@_routing_paths.has(source_id)
+					@_routing_paths.set(source_id, [node_id, route_id])
 				@_update_connection_timeout(node_id)
-				@_update_route_timeout(node_id, route_id)
+				@_routes_timeouts.set(source_id, +(new Date))
 			)
 			.'on'('send', (node_id, data) !~>
 				@_send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data)
@@ -437,9 +442,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						if @_routing_path_to_id.has(source_id)
 							target_id			= @_routing_path_to_id.get(source_id)
 							target_id_string	= target_id.join(',')
-							if @_pending_pings.has(target_id_string)
+							if @_pending_pings.has(source_id)
 								# Don't ping back if we have sent ping ourselves
-								@_pending_pings.delete(target_id_string)
+								@_pending_pings.delete(source_id)
 								return
 						# Send ping back
 						@_send_ping(node_id, route_id)
@@ -622,6 +627,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		..'destroy' = !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
+			@_routing_paths.forEach ([node_id, route_id]) !~>
+				@_unregister_routing_path(node_id, route_id)
 			@_dht['destroy']()
 			@_router['destroy']()
 		/**
@@ -651,10 +658,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		.._register_routing_path = (target_id, node_id, route_id) !->
 			source_id			= compute_source_id(node_id, route_id)
 			target_id_string	= target_id.join(',')
-			if @_routing_paths.has(source_id)
+			if @_routing_path_to_id.has(source_id)
 				# Something went wrong, ignore
 				return
-			@_routing_paths.set(source_id, [node_id, route_id])
 			@_id_to_routing_path.set(target_id_string, [node_id, route_id])
 			@_routing_path_to_id.set(source_id, target_id)
 			@'fire'('connected', target_id)
@@ -666,10 +672,14 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			source_id	= compute_source_id(node_id, route_id)
 			if !@_routing_paths.has(source_id)
 				return
-			target_id			= @_routing_path_to_id.get(source_id)
-			target_id_string	= target_id.join(',')
 			@_routing_paths.delete(source_id)
+			@_router['destroy_routing_path'](node_id, route_id)
 			@_routing_path_to_id.delete(source_id)
+			@_pending_pings.delete(source_id)
+			target_id	= @_routing_path_to_id.get(source_id)
+			if !target_id
+				return
+			target_id_string	= target_id.join(',')
 			@_id_to_routing_path.delete(target_id_string)
 			@_announced_to.delete(target_id_string)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
@@ -680,7 +690,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				[, , , announce_interval]	= @_announcements_from.get(target_id_string)
 				clearInterval(announce_interval)
 				@_announcements_from.delete(target_id_string)
-			@_pending_pings.delete(target_id_string)
 			@'fire'('disconnected', target_id)
 		/**
 		 * @param {!Uint8Array}	node_id
@@ -735,12 +744,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			if !@_connections_timeouts.has(node_id_string)
 				@_add_used_tag(node_id)
 			@_connections_timeouts.set(node_id_string, [+(new Date), node_id])
-		/**
-		 * @param {!Uint8Array} node_id
-		 */
-		.._update_route_timeout = (node_id, route_id) !->
-			source_id	= compute_source_id(node_id, route_id)
-			@_routes_timeouts.set(source_id, [+(new Date), node_id, route_id])
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
