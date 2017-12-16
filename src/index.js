@@ -246,7 +246,6 @@
      * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
      * @param {!Array<!Object>}	bootstrap_nodes
      * @param {!Array<!Object>}	ice_servers
-     * @param {number}			packet_size
      * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
      * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
@@ -255,14 +254,13 @@
      *
      * @throws {Error}
      */
-    function Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size, max_pending_segments){
+    function Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments){
       var this$ = this;
-      packet_size == null && (packet_size = 512);
       packets_per_second == null && (packets_per_second = 1);
       bucket_size == null && (bucket_size = 2);
       max_pending_segments == null && (max_pending_segments = 10);
       if (!(this instanceof Core)) {
-        return new Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size, max_pending_segments);
+        return new Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments);
       }
       asyncEventer.call(this);
       this._real_keypair = detoxCrypto['create_keypair'](real_key_seed);
@@ -321,8 +319,8 @@
           }
         }
       }, LAST_USED_TIMEOUT / 2 * 1000);
-      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
-      this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
+      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size);
+      this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments);
       this._sign = function(data){
         return detoxCrypto['sign'](data, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
       };
@@ -343,7 +341,7 @@
             return;
           }
           ref$ = this$._announcements_from.get(target_id_string), target_node_id = ref$[1], target_route_id = ref$[2];
-          this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
+          this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
         }
       });
       this._router['on']('activity', function(node_id, route_id){
@@ -395,7 +393,7 @@
             return;
           }
           clearTimeout(connection_timeout);
-          this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
+          this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
           target_source_id = compute_source_id(target_node_id, target_route_id);
           this$._forwarding_mapping.set(source_id, [target_node_id, target_route_id]);
           this$._forwarding_mapping.set(target_source_id, [node_id, route_id]);
@@ -455,7 +453,7 @@
         case ROUTING_COMMAND_DATA:
           if (this$._forwarding_mapping.has(source_id)) {
             ref$ = this$._forwarding_mapping.get(source_id), target_node_id = ref$[0], target_route_id = ref$[1];
-            this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
+            this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
           } else if (this$._routing_path_to_id.has(source_id)) {
             target_id = this$._routing_path_to_id.get(source_id);
             target_id_string = target_id.join(',');
@@ -617,7 +615,7 @@
               this$._register_routing_path(target_id, node_id, route_id);
             }
             this$._router['on']('data', path_confirmation);
-            this$._router['send_to'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message));
+            this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message));
             this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
             path_confirmation_timeout = setTimeout(function(){
               this$._ronion['off']('data', path_confirmation);
@@ -788,7 +786,7 @@
       if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
         return false;
       }
-      this._router['send_to'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0));
+      this._router['send_data'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0));
       return true;
     };
     /**

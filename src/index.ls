@@ -218,7 +218,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 	 * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
 	 * @param {!Array<!Object>}	bootstrap_nodes
 	 * @param {!Array<!Object>}	ice_servers
-	 * @param {number}			packet_size
 	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
 	 * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
@@ -227,9 +226,9 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 	 *
 	 * @throws {Error}
 	 */
-	!function Core (real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packet_size = 512, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10)
+	!function Core (real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10)
 		if !(@ instanceof Core)
-			return new Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size, max_pending_segments)
+			return new Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments)
 		async-eventer.call(@)
 
 		@_real_keypair	= detox-crypto['create_keypair'](real_key_seed)
@@ -283,11 +282,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_dht_keypair['ed25519']['private']
 			bootstrap_nodes
 			ice_servers
-			packet_size
 			packets_per_second
 			bucket_size
 		)
-		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], packet_size, max_pending_segments)
+		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 		@_sign		= (data) ~>
 			detox-crypto['sign'](
 				data
@@ -311,7 +309,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						if !@_announcements_from.has(target_id_string)
 							return
 						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
-						@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
+						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 			)
 		@_router
 			.'on'('activity', (node_id, route_id) !~>
@@ -360,7 +358,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						if !detox-crypto['verify'](signature, rendezvous_token, target_id)
 							return
 						clearTimeout(connection_timeout)
-						@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
+						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
 						target_source_id	= compute_source_id(target_node_id, target_route_id)
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
 						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
@@ -429,7 +427,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					case ROUTING_COMMAND_DATA
 						if @_forwarding_mapping.has(source_id)
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
-							@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
+							@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
 						else if @_routing_path_to_id.has(source_id)
 							target_id			= @_routing_path_to_id.get(source_id)
 							target_id_string	= target_id.join(',')
@@ -593,7 +591,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									clearTimeout(path_confirmation_timeout)
 									@_register_routing_path(target_id, node_id, route_id)
 								@_router['on']('data', path_confirmation)
-								@_router['send_to'](
+								@_router['send_data'](
 									first_node
 									route_id
 									ROUTING_COMMAND_INITIALIZE_CONNECTION
@@ -734,7 +732,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			source_id	= compute_source_id(node_id, route_id)
 			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
-			@_router['send_to'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0))
+			@_router['send_data'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0))
 			true
 		/**
 		 * @param {!Uint8Array} node_id
