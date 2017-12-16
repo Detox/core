@@ -272,6 +272,7 @@
       this._announcements_from = new Map;
       this._forwarding_mapping = new Map;
       this._pending_pings = new Set;
+      this._last_announcement = 0;
       this._cleanup_interval = setInterval(function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
@@ -293,6 +294,7 @@
         });
       }, LAST_USED_TIMEOUT * 1000);
       this._keep_announce_routes_interval = setInterval(function(){
+        var reannounce_if_older_than;
         this$._announced_to.forEach(function(introduction_node){
           var introduction_node_string, ref$, node_id, route_id;
           introduction_node_string = introduction_node.join(',');
@@ -301,8 +303,11 @@
             this$._pending_pings.add(source_id);
           }
         });
-        if (!this$._announced_to.size) {
-          return;
+        if (this$._announced_to.size < this$._number_of_introduction_nodes && this$._last_announcement) {
+          reannounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
+          if (this$._last_announcement < reannounce_if_older_than) {
+            this$._announce(this$._number_of_introduction_nodes, this$._number_of_intermediate_nodes);
+          }
         }
       }, LAST_USED_TIMEOUT / 2 * 1000);
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
@@ -462,8 +467,22 @@
      * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
      */
     y$['announce'] = function(number_of_introduction_nodes, number_of_intermediate_nodes){
-      var introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
-      introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes);
+      this._number_of_introduction_nodes = number_of_introduction_nodes;
+      this._number_of_intermediate_nodes = number_of_intermediate_nodes;
+      this._announce(number_of_introduction_nodes, number_of_intermediate_nodes);
+    };
+    /**
+     * @param {number}
+     * @param {number}
+     */
+    y$._announce = function(number_of_introduction_nodes, number_of_intermediate_nodes){
+      var old_introduction_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
+      this._last_announcement = +new Date;
+      old_introduction_nodes = [];
+      this._announced_to.forEach(function(introduction_node){
+        old_introduction_nodes.push(introduction_node);
+      });
+      introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes);
       introductions_pending = number_of_introduction_nodes;
       introduction_nodes_confirmed = [];
       function announced(introduction_node){
@@ -494,7 +513,7 @@
       }
       function fn$(introduction_node){
         var nodes, first_node, this$ = this;
-        nodes = this._pick_random_nodes(number_of_intermediate_nodes);
+        nodes = this._pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
         if (!nodes) {
           return;
         }

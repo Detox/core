@@ -240,6 +240,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
 		@_pending_pings			= new Set
+		@_last_announcement		= 0
 
 		@_cleanup_interval				= setInterval (!~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
@@ -258,10 +259,11 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				[node_id, route_id]			= @_id_to_routing_path.get(introduction_node_string)
 				if @_send_ping(node_id, route_id)
 					@_pending_pings.add(source_id)
-			if !@_announced_to.size
-				# TODO: Re-announce itself if disconnected from all or from part of introduction nodes
-				# TODO: (remember `number_of_introduction_nodes` and `number_of_intermediate_nodes` from `announce()` call)
-				return
+			if @_announced_to.size < @_number_of_introduction_nodes && @_last_announcement
+				# Give at least 3x time for announcement process to complete and to announce to some node
+				reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
+				if @_last_announcement < reannounce_if_older_than
+					@_announce(@_number_of_introduction_nodes, @_number_of_intermediate_nodes)
 		), LAST_USED_TIMEOUT / 2 * 1000
 
 		@_dht		= detox-transport['DHT'](
@@ -437,7 +439,19 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		 * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
 		 */
 		..'announce' = (number_of_introduction_nodes, number_of_intermediate_nodes) !->
-			introduction_nodes				= @_pick_random_nodes(number_of_introduction_nodes)
+			@_number_of_introduction_nodes	= number_of_introduction_nodes
+			@_number_of_intermediate_nodes	= number_of_intermediate_nodes
+			@_announce(number_of_introduction_nodes, number_of_intermediate_nodes)
+		/**
+		 * @param {number}
+		 * @param {number}
+		 */
+		.._announce = (number_of_introduction_nodes, number_of_intermediate_nodes) !->
+			@_last_announcement				= +(new Date)
+			old_introduction_nodes			= []
+			@_announced_to.forEach (introduction_node) !->
+				old_introduction_nodes.push(introduction_node)
+			introduction_nodes				= @_pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes)
 			introductions_pending			= number_of_introduction_nodes
 			introduction_nodes_confirmed	= []
 			!~function announced (introduction_node)
@@ -465,7 +479,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					@_announced_to.set(introduction_node_string, introduction_node)
 				@'fire'('announced')
 			for let introduction_node in introduction_nodes
-				nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+				nodes	= @_pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
 				if !nodes
 					# TODO: Retry?
 					return
