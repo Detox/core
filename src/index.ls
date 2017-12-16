@@ -13,6 +13,7 @@ const ROUTING_COMMAND_INTRODUCTION			= 2
 const ROUTING_COMMAND_CONFIRM_CONNECTION	= 3
 const ROUTING_COMMAND_CONNECTED				= 4
 const ROUTING_COMMAND_DATA					= 5
+const ROUTING_COMMAND_PING					= 6
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
@@ -233,12 +234,13 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_connections_timeouts	= new Map
 		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
-		# TODO: Re-announce itself to avoid routing path disconnection
+		# TODO: Re-announce itself each hour to keep itself in DHT
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
+		@_pending_pings			= new Set
 
-		@_cleanup_interval	= setInterval (!~>
+		@_cleanup_interval				= setInterval (!~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
 			@_routes_timeouts.forEach ([last_updated, node_id, route_id], key) !~>
 				if last_updated < unused_older_than
@@ -249,6 +251,17 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				if last_updated < unused_older_than
 					@_del_used_tag(node_id)
 		), LAST_USED_TIMEOUT * 1000
+		@_keep_announce_routes_interval	= setInterval (!~>
+			@_announced_to.forEach (introduction_node) !~>
+				introduction_node_string	= introduction_node.join(',')
+				[node_id, route_id]			= @_id_to_routing_path.get(introduction_node_string)
+				if @_send_ping(node_id, route_id)
+					@_pending_pings.add(source_id)
+			if !@_announced_to.size
+				# TODO: Re-announce itself if disconnected from all or from part of introduction nodes
+				# TODO: (remember `number_of_introduction_nodes` and `number_of_intermediate_nodes` from `announce()` call)
+				return
+		), LAST_USED_TIMEOUT / 2 * 1000
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -390,6 +403,16 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						else if @_routing_path_to_id.has(source_id)
 							origin_node_id	= @_routing_path_to_id.get(source_id)
 							@'fire'('data', origin_node_id, data)
+					case ROUTING_COMMAND_PING
+						if @_routing_path_to_id.has(source_id)
+							target_id			= @_routing_path_to_id.get(source_id)
+							target_id_string	= target_id.join(',')
+							if @_pending_pings.has(target_id_string)
+								# Don't ping back if we have sent ping ourselves
+								@_pending_pings.delete(target_id_string)
+								return
+						# Send ping back
+						@_send_ping(node_id, route_id)
 			)
 	Core
 		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES
@@ -541,6 +564,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data)
 		..'destroy' = !->
 			clearInterval(@_cleanup_interval)
+			clearInterval(@_keep_announce_routes_interval)
 			@_dht['destroy']()
 			@_router['destroy']()
 		/**
@@ -592,6 +616,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_id_to_routing_path.delete(target_id_string)
 			@_announced_to.delete(target_id_string)
 			@_announcements_from.delete(target_id_string)
+			@_pending_pings.delete(target_id_string)
 			@'fire'('disconnected', target_id)
 		/**
 		 * @param {!Uint8Array}	node_id
@@ -626,6 +651,18 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(target_id_string)
 			@_router['send_data'](node_id, route_id, command, data)
+		/**
+		 * @param {!Uint8Array} node_id
+		 * @param {!Uint8Array} route_id
+		 *
+		 * @return {boolean} `true` if ping was sent (not necessary delivered)
+		 */
+		.._send_ping = (node_id, route_id) ->
+			source_id	= compute_source_id(node_id, route_id)
+			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
+				return false
+			@_router['send_to'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0))
+			true
 		/**
 		 * @param {!Uint8Array} node_id
 		 */

@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -15,6 +15,7 @@
   ROUTING_COMMAND_CONFIRM_CONNECTION = 3;
   ROUTING_COMMAND_CONNECTED = 4;
   ROUTING_COMMAND_DATA = 5;
+  ROUTING_COMMAND_PING = 6;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   CONNECTION_TIMEOUT = 30;
@@ -269,6 +270,7 @@
       this._announced_to = new Map;
       this._announcements_from = new Map;
       this._forwarding_mapping = new Map;
+      this._pending_pings = new Set;
       this._cleanup_interval = setInterval(function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
@@ -289,6 +291,19 @@
           }
         });
       }, LAST_USED_TIMEOUT * 1000);
+      this._keep_announce_routes_interval = setInterval(function(){
+        this$._announced_to.forEach(function(introduction_node){
+          var introduction_node_string, ref$, node_id, route_id;
+          introduction_node_string = introduction_node.join(',');
+          ref$ = this$._id_to_routing_path.get(introduction_node_string), node_id = ref$[0], route_id = ref$[1];
+          if (this$._send_ping(node_id, route_id)) {
+            this$._pending_pings.add(source_id);
+          }
+        });
+        if (!this$._announced_to.size) {
+          return;
+        }
+      }, LAST_USED_TIMEOUT / 2 * 1000);
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packet_size, packets_per_second, bucket_size);
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], packet_size, max_pending_segments);
       this._sign = function(data){
@@ -320,7 +335,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, origin_node_id;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, origin_node_id, target_id_string;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -411,6 +426,17 @@
             origin_node_id = this$._routing_path_to_id.get(source_id);
             this$['fire']('data', origin_node_id, data);
           }
+          break;
+        case ROUTING_COMMAND_PING:
+          if (this$._routing_path_to_id.has(source_id)) {
+            target_id = this$._routing_path_to_id.get(source_id);
+            target_id_string = target_id.join(',');
+            if (this$._pending_pings.has(target_id_string)) {
+              this$._pending_pings['delete'](target_id_string);
+              return;
+            }
+          }
+          this$._send_ping(node_id, route_id);
         }
       });
     }
@@ -552,6 +578,7 @@
     };
     y$['destroy'] = function(){
       clearInterval(this._cleanup_interval);
+      clearInterval(this._keep_announce_routes_interval);
       this._dht['destroy']();
       this._router['destroy']();
     };
@@ -615,6 +642,7 @@
       this._id_to_routing_path['delete'](target_id_string);
       this._announced_to['delete'](target_id_string);
       this._announcements_from['delete'](target_id_string);
+      this._pending_pings['delete'](target_id_string);
       this['fire']('disconnected', target_id);
     };
     /**
@@ -657,6 +685,21 @@
       }
       ref$ = this._id_to_routing_path.get(target_id_string), node_id = ref$[0], route_id = ref$[1];
       this._router['send_data'](node_id, route_id, command, data);
+    };
+    /**
+     * @param {!Uint8Array} node_id
+     * @param {!Uint8Array} route_id
+     *
+     * @return {boolean} `true` if ping was sent (not necessary delivered)
+     */
+    y$._send_ping = function(node_id, route_id){
+      var source_id;
+      source_id = compute_source_id(node_id, route_id);
+      if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
+        return false;
+      }
+      this._router['send_to'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0));
+      return true;
     };
     /**
      * @param {!Uint8Array} node_id
