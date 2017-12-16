@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -21,6 +21,7 @@
   CONNECTION_TIMEOUT = 30;
   ROUTING_PATH_SEGMENT_TIMEOUT = 10;
   LAST_USED_TIMEOUT = 60;
+  ANNOUNCE_INTERVAL = 30 * 60;
   CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES = 0;
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 2;
@@ -335,7 +336,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, origin_node_id, target_id_string;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, origin_node_id, target_id_string;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -344,8 +345,14 @@
             return;
           }
           public_key_string = public_key.join(',');
-          this$._announcements_from.set(public_key_string, [public_key, node_id, route_id]);
-          this$['fire']('announcement_received', public_key);
+          announce_interval = setInterval(function(){
+            if (!this$._routing_paths.has(source_id)) {
+              return;
+            }
+            this$._dht['publish_announcement_message'](announcement_message);
+          }, ANNOUNCE_INTERVAL * 1000);
+          this$._announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval]);
+          this$._dht['publish_announcement_message'](announcement_message);
           break;
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
@@ -630,7 +637,7 @@
      * @param {!Uint8Array} route_id	ID of the route on `node_id`
      */
     y$._unregister_routing_path = function(node_id, route_id){
-      var source_id, target_id, target_id_string;
+      var source_id, target_id, target_id_string, ref$, announce_interval;
       source_id = compute_source_id(node_id, route_id);
       if (!this._routing_paths.has(source_id)) {
         return;
@@ -641,7 +648,11 @@
       this._routing_path_to_id['delete'](source_id);
       this._id_to_routing_path['delete'](target_id_string);
       this._announced_to['delete'](target_id_string);
-      this._announcements_from['delete'](target_id_string);
+      if (this._announcements_from.has(target_id_string)) {
+        ref$ = this._announcements_from.get(target_id_string), announce_interval = ref$[3];
+        clearInterval(announce_interval);
+        this._announcements_from['delete'](target_id_string);
+      }
       this._pending_pings['delete'](target_id_string);
       this['fire']('disconnected', target_id);
     };

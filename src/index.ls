@@ -23,6 +23,8 @@ const CONNECTION_TIMEOUT			= 30
 const ROUTING_PATH_SEGMENT_TIMEOUT	= 10
 # After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
 const LAST_USED_TIMEOUT				= 60
+# Re-announce each 30 minutes
+const ANNOUNCE_INTERVAL				= 30 * 60
 
 const CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES		= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
@@ -234,7 +236,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_connections_timeouts	= new Map
 		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
-		# TODO: Re-announce itself each hour to keep itself in DHT
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
@@ -314,8 +315,13 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						if !detox-crypto['verify'](signature, announcement_message, public_key)
 							return
 						public_key_string	= public_key.join(',')
-						@_announcements_from.set(public_key_string, [public_key, node_id, route_id])
-						@'fire'('announcement_received', public_key)
+						announce_interval	= setInterval (!~>
+							if !@_routing_paths.has(source_id)
+								return
+							@_dht['publish_announcement_message'](announcement_message)
+						), ANNOUNCE_INTERVAL * 1000
+						@_announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval])
+						@_dht['publish_announcement_message'](announcement_message)
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						rendezvous_token_string													= rendezvous_token.join(',')
@@ -615,7 +621,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(target_id_string)
 			@_announced_to.delete(target_id_string)
-			@_announcements_from.delete(target_id_string)
+			if @_announcements_from.has(target_id_string)
+				[, , , announce_interval]	= @_announcements_from.get(target_id_string)
+				clearInterval(announce_interval)
+				@_announcements_from.delete(target_id_string)
 			@_pending_pings.delete(target_id_string)
 			@'fire'('disconnected', target_id)
 		/**
