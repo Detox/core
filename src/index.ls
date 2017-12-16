@@ -587,7 +587,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									clearTimeout(path_confirmation_timeout)
 									@_register_routing_path(target_id, node_id, route_id)
-									#TODO
 								@_router['on']('data', path_confirmation)
 								@_router['send_to'](
 									first_node
