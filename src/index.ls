@@ -17,6 +17,8 @@ const ROUTING_COMMAND_PING					= 6
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
+# Handshake message length for Noise_NK_25519_ChaChaPoly_BLAKE2b
+const HANDSHAKE_MESSAGE_LENGTH		= 48
 # How long node should wait for rendezvous node to receive incoming connection from intended responder
 const CONNECTION_TIMEOUT			= 30
 # The same as in `@detox/transport`
@@ -86,29 +88,32 @@ function is_string_equal_to_array (string, array)
  * @param {!Uint8Array} introduction_node
  * @param {!Uint8Array} rendezvous_node
  * @param {!Uint8Array} rendezvous_token
+ * @param {!Uint8Array} handshake_message
  * @param {!Uint8Array} secret
  *
  * @return {!Uint8Array}
  */
-function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, secret)
+function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret)
 	new Uint8Array(ID_LENGTH * 3 + secret.length)
 		..set(target_id)
 		..set(introduction_node, ID_LENGTH)
 		..set(rendezvous_node, ID_LENGTH * 2)
 		..set(rendezvous_token, ID_LENGTH * 3)
-		..set(secret, ID_LENGTH * 4)
+		..set(handshake_message, ID_LENGTH * 4)
+		..set(secret, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
 /**
  * @param {!Uint8Array} introduction_payload
  *
- * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, secret]
+ * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
  */
 function parse_introduction_payload (introduction_payload)
 	target_id			= introduction_payload.subarray(0, ID_LENGTH)
 	introduction_node	= introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
 	rendezvous_node		= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
 	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 4)
-	secret				= introduction_payload.subarray(ID_LENGTH * 4)
-	[introduction_node, rendezvous_node, rendezvous_token, secret]
+	handshake_message	= introduction_payload.subarray(ID_LENGTH * 4, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
+	secret				= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
+	[introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
 /**
  * @param {!Uint8Array} public_key
  * @param {!Uint8Array} announcement_message
@@ -159,22 +164,25 @@ function parse_initialize_connection_data (message)
 /**
  * @param {!Uint8Array} signature
  * @param {!Uint8Array} rendezvous_token
+ * @param {!Uint8Array} handshake_message
  *
  * @return {!Uint8Array}
  */
-function compose_confirm_connection_data (signature, rendezvous_token)
+function compose_confirm_connection_data (signature, rendezvous_token, handshake_message)
 	new Uint8Array(SIGNATURE_LENGTH + rendezvous_token.length)
 		..set(signature)
 		..set(rendezvous_token, SIGNATURE_LENGTH)
+		..set(handshake_message, SIGNATURE_LENGTH + ID_LENGTH)
 /**
  * @param {!Uint8Array} message
  *
- * @return {!Array<Uint8Array>} [signature, rendezvous_token]
+ * @return {!Array<Uint8Array>} [signature, rendezvous_token, handshake_message]
  */
 function parse_confirm_connection_data (message)
 	signature			= message.subarray(0, SIGNATURE_LENGTH)
-	rendezvous_token	= message.subarray(SIGNATURE_LENGTH)
-	[signature, rendezvous_token]
+	rendezvous_token	= message.subarray(SIGNATURE_LENGTH, SIGNATURE_LENGTH + ID_LENGTH)
+	handshake_message	= message.subarray(SIGNATURE_LENGTH + ID_LENGTH)
+	[signature, rendezvous_token, handshake_message]
 /**
  * @param {!Uint8Array} target_id
  * @param {!Uint8Array} introduction_message
@@ -226,6 +234,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 
 		@_real_keypair	= detox-crypto['create_keypair'](real_key_seed)
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
+		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
 		@_connected_nodes		= new Map
 		@_routing_paths			= new Map
@@ -241,6 +250,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 		@_forwarding_mapping	= new Map
 		@_pending_pings			= new Set
 		@_last_announcement		= 0
+		@_encryptor_instances	= new Map
 
 		@_cleanup_interval				= setInterval (!~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
@@ -337,8 +347,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							compose_introduce_to_data(target_id, introduction_message)
 						)
 					case ROUTING_COMMAND_CONFIRM_CONNECTION
-						[signature, rendezvous_token]	= parse_confirm_connection_data(data)
-						rendezvous_token_string			= rendezvous_token.join(',')
+						[signature, rendezvous_token, handshake_message]	= parse_confirm_connection_data(data)
+						rendezvous_token_string								= rendezvous_token.join(',')
 						if !@_pending_connection.has(rendezvous_token_string)
 							return
 						[target_node_id, target_route_id, target_id, connection_timeout]	= @_pending_connection.get(rendezvous_token_string)
@@ -367,6 +377,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								introduction_node_received
 								rendezvous_node
 								rendezvous_token
+								handshake_message
 								secret
 							]								= parse_introduction_payload(introduction_payload)
 							if (
@@ -374,7 +385,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								!detox-crypto['verify'](signature, introduction_payload, target_id)
 							)
 								return
-							if @_id_to_routing_path.has(target_id.join(','))
+							target_id_string	= target_id.join(',')
+							if @_id_to_routing_path.has(target_id_string)
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
 								return
@@ -385,6 +397,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							<~! @'fire'('introduction', data).then
 							number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
 							if !number_of_intermediate_nodes
+								throw new Error('Direct connections are not yet supported')
 								# TODO: Support direct connections here?
 								return
 							nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
@@ -395,12 +408,16 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							first_node	= nodes[0]
 							@_router['construct_routing_path'](nodes)
 								.then (route_id) !~>
+									encryptor_instance			= detox-crypto['Encryptor'](false, @_real_keypair['x25519']['private'])
+									encryptor_instance['put_handshake_message'](handshake_message)
+									response_handshake_message	= encryptor_instance['get_handshake_message']()
+									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									@_register_routing_path(target_id, first_node, route_id)
-									signature	= @_sign(announcement_message)
+									signature	= @_sign(rendezvous_token)
 									@_send_to_routing_node(
 										target_id
 										ROUTING_COMMAND_CONFIRM_CONNECTION
-										compose_confirm_connection_data(signature, rendezvous_token)
+										compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message)
 									)
 								.catch !~>
 									# TODO: Retry?
@@ -409,8 +426,13 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
 							@_router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
 						else if @_routing_path_to_id.has(source_id)
-							origin_node_id	= @_routing_path_to_id.get(source_id)
-							@'fire'('data', origin_node_id, data)
+							target_id			= @_routing_path_to_id.get(source_id)
+							target_id_string	= target_id.join(',')
+							if !@_encryptor_instances.has(target_id_string)
+								return
+							encryptor_instance	= @_encryptor_instances.get(target_id_string)
+							data_decrypted		= encryptor_instance['decrypt'](data)
+							@'fire'('data', target_id, data_decrypted)
 					case ROUTING_COMMAND_PING
 						if @_routing_path_to_id.has(source_id)
 							target_id			= @_routing_path_to_id.get(source_id)
@@ -502,7 +524,8 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
 				return
-			if @_id_to_routing_path.has(target_id.join(','))
+			target_id_string	= target_id.join(',')
+			if @_id_to_routing_path.has(target_id_string)
 				# Already connected, do nothing
 				return
 			@_dht['find_introduction_nodes'](
@@ -527,15 +550,18 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									return
 								introduction_node		= pull_random_item_from_array(introduction_nodes)
 								rendezvous_token		= randombytes(ID_LENGTH)
+								x25519_public_key		= detox-crypto['convert_public_key'](target_id)
+								encryptor_instance		= detox-crypto['Encryptor'](true, x25519_public_key)
+								handshake_message		= encryptor_instance['get_handshake_message']()
 								introduction_payload	= compose_introduction_payload(
 									@_real_keypair['ed25519']['public']
 									introduction_node
 									rendezvous_node
 									rendezvous_token
+									handshake_message
 									secret
 								)
 								signature				= @_sign(introduction_payload)
-								x25519_public_key		= detox-crypto['convert_public_key'](target_id)
 								introduction_message	= detox-crypto['one_way_encrypt'](
 									x25519_public_key
 									new Uint8Array(introduction_payload.length + signature.length)
@@ -548,13 +574,20 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 									if (
 										!is_string_equal_to_array(first_node_string, node_id) ||
 										!is_string_equal_to_array(responder_id_string, route_id) ||
-										command != ROUTING_COMMAND_CONNECTED ||
-										data.subarray(0, ID_LENGTH).join(',') != rendezvous_token.join(',') ||
-										!detox-crypto['verify'](data.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH), rendezvous_token, target_id)
+										command != ROUTING_COMMAND_CONNECTED
 									)
 										return
+									[signature, rendezvous_token_received, handshake_message_received]	= parse_confirm_connection_data(data)
+									if (
+										rendezvous_token_received.join(',') != rendezvous_token.join(',') ||
+										!detox-crypto['verify'](signature, rendezvous_token, target_id)
+									)
+										return
+									encryptor_instance['put_handshake_message'](handshake_message_received)
+									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									clearTimeout(path_confirmation_timeout)
 									@_register_routing_path(target_id, node_id, route_id)
+									#TODO
 								@_router['on']('data', path_confirmation)
 								@_router['send_to'](
 									first_node
@@ -565,6 +598,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 								@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
 								path_confirmation_timeout	= setTimeout (!~>
 									@_ronion['off']('data', path_confirmation)
+									encryptor_instance['destroy']()
 									try_to_introduce()
 								), CONNECTION_TIMEOUT * 1000
 							try_to_introduce()
@@ -577,11 +611,15 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			)
 		/**
 		 * @param {!Uint8Array} target_id
-		 * @param {!Uint8Array} data
+		 * @param {!Uint8Array} data		Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
 		..'send_to' = (target_id, data) !->
-			# TODO: end-to-end encryption?
-			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data)
+			target_id_string	= target_id.join(',')
+			encryptor_instance	= @_encryptor_instances.get(target_id_string)
+			if !encryptor_instance || data.length > @_max_data_size
+				return
+			data_encrypted		= encryptor_instance['encrypt'](data)
+			@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_encrypted)
 		..'destroy' = !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
@@ -635,6 +673,10 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(target_id_string)
 			@_announced_to.delete(target_id_string)
+			encryptor_instance	= @_encryptor_instances.get(target_id_string)
+			if encryptor_instance
+				encryptor_instance['destroy']()
+				@_encryptor_instances.delete(target_id_string)
 			if @_announcements_from.has(target_id_string)
 				[, , , announce_interval]	= @_announcements_from.get(target_id_string)
 				clearInterval(announce_interval)

@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -18,6 +18,7 @@
   ROUTING_COMMAND_PING = 6;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
+  HANDSHAKE_MESSAGE_LENGTH = 48;
   CONNECTION_TIMEOUT = 30;
   ROUTING_PATH_SEGMENT_TIMEOUT = 10;
   LAST_USED_TIMEOUT = 60;
@@ -89,33 +90,36 @@
    * @param {!Uint8Array} introduction_node
    * @param {!Uint8Array} rendezvous_node
    * @param {!Uint8Array} rendezvous_token
+   * @param {!Uint8Array} handshake_message
    * @param {!Uint8Array} secret
    *
    * @return {!Uint8Array}
    */
-  function compose_introduction_payload(target_id, introduction_node, rendezvous_node, rendezvous_token, secret){
+  function compose_introduction_payload(target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret){
     var x$;
     x$ = new Uint8Array(ID_LENGTH * 3 + secret.length);
     x$.set(target_id);
     x$.set(introduction_node, ID_LENGTH);
     x$.set(rendezvous_node, ID_LENGTH * 2);
     x$.set(rendezvous_token, ID_LENGTH * 3);
-    x$.set(secret, ID_LENGTH * 4);
+    x$.set(handshake_message, ID_LENGTH * 4);
+    x$.set(secret, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH);
     return x$;
   }
   /**
    * @param {!Uint8Array} introduction_payload
    *
-   * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, secret]
+   * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
    */
   function parse_introduction_payload(introduction_payload){
-    var target_id, introduction_node, rendezvous_node, rendezvous_token, secret;
+    var target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret;
     target_id = introduction_payload.subarray(0, ID_LENGTH);
     introduction_node = introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2);
     rendezvous_node = introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
     rendezvous_token = introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 4);
-    secret = introduction_payload.subarray(ID_LENGTH * 4);
-    return [introduction_node, rendezvous_node, rendezvous_token, secret];
+    handshake_message = introduction_payload.subarray(ID_LENGTH * 4, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH);
+    secret = introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH);
+    return [introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret];
   }
   /**
    * @param {!Uint8Array} public_key
@@ -177,26 +181,29 @@
   /**
    * @param {!Uint8Array} signature
    * @param {!Uint8Array} rendezvous_token
+   * @param {!Uint8Array} handshake_message
    *
    * @return {!Uint8Array}
    */
-  function compose_confirm_connection_data(signature, rendezvous_token){
+  function compose_confirm_connection_data(signature, rendezvous_token, handshake_message){
     var x$;
     x$ = new Uint8Array(SIGNATURE_LENGTH + rendezvous_token.length);
     x$.set(signature);
     x$.set(rendezvous_token, SIGNATURE_LENGTH);
+    x$.set(handshake_message, SIGNATURE_LENGTH + ID_LENGTH);
     return x$;
   }
   /**
    * @param {!Uint8Array} message
    *
-   * @return {!Array<Uint8Array>} [signature, rendezvous_token]
+   * @return {!Array<Uint8Array>} [signature, rendezvous_token, handshake_message]
    */
   function parse_confirm_connection_data(message){
-    var signature, rendezvous_token;
+    var signature, rendezvous_token, handshake_message;
     signature = message.subarray(0, SIGNATURE_LENGTH);
-    rendezvous_token = message.subarray(SIGNATURE_LENGTH);
-    return [signature, rendezvous_token];
+    rendezvous_token = message.subarray(SIGNATURE_LENGTH, SIGNATURE_LENGTH + ID_LENGTH);
+    handshake_message = message.subarray(SIGNATURE_LENGTH + ID_LENGTH);
+    return [signature, rendezvous_token, handshake_message];
   }
   /**
    * @param {!Uint8Array} target_id
@@ -260,6 +267,7 @@
       asyncEventer.call(this);
       this._real_keypair = detoxCrypto['create_keypair'](real_key_seed);
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
+      this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._connected_nodes = new Map;
       this._routing_paths = new Map;
       this._id_to_routing_path = new Map;
@@ -273,6 +281,7 @@
       this._forwarding_mapping = new Map;
       this._pending_pings = new Set;
       this._last_announcement = 0;
+      this._encryptor_instances = new Map;
       this._cleanup_interval = setInterval(function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
@@ -341,7 +350,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, origin_node_id, target_id_string;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, target_id_string, encryptor_instance, data_decrypted;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -369,7 +378,7 @@
           this$._send_to_dht_node(introduction_node, DHT_COMMAND_INTRODUCE_TO, compose_introduce_to_data(target_id, introduction_message));
           break;
         case ROUTING_COMMAND_CONFIRM_CONNECTION:
-          ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token = ref$[1];
+          ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token = ref$[1], handshake_message = ref$[2];
           rendezvous_token_string = rendezvous_token.join(',');
           if (!this$._pending_connection.has(rendezvous_token_string)) {
             return;
@@ -397,11 +406,12 @@
             introduction_message_decrypted = detoxCrypto['one_way_decrypt'](this$._real_keypair['x25519']['public'], data);
             signature = introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH);
             introduction_payload = introduction_message_decrypted.subarray(SIGNATURE_LENGTH);
-            ref$ = parse_introduction_payload(introduction_payload), target_id = ref$[0], introduction_node_received = ref$[1], rendezvous_node = ref$[2], rendezvous_token = ref$[3], secret = ref$[4];
+            ref$ = parse_introduction_payload(introduction_payload), target_id = ref$[0], introduction_node_received = ref$[1], rendezvous_node = ref$[2], rendezvous_token = ref$[3], handshake_message = ref$[4], secret = ref$[5];
             if (!is_string_equal_to_array(introduction_node_received.join(','), introduction_node) || !detoxCrypto['verify'](signature, introduction_payload, target_id)) {
               return;
             }
-            if (this$._id_to_routing_path.has(target_id.join(','))) {
+            target_id_string = target_id.join(',');
+            if (this$._id_to_routing_path.has(target_id_string)) {
               return;
             }
             data = {
@@ -413,6 +423,7 @@
               var number_of_intermediate_nodes, nodes, first_node;
               number_of_intermediate_nodes = data['number_of_intermediate_nodes'];
               if (!number_of_intermediate_nodes) {
+                throw new Error('Direct connections are not yet supported');
                 return;
               }
               nodes = this$._pick_random_nodes(number_of_intermediate_nodes);
@@ -422,10 +433,14 @@
               nodes.push(rendezvous_node);
               first_node = nodes[0];
               this$._router['construct_routing_path'](nodes).then(function(route_id){
-                var signature;
+                var encryptor_instance, response_handshake_message, signature;
+                encryptor_instance = detoxCrypto['Encryptor'](false, this$._real_keypair['x25519']['private']);
+                encryptor_instance['put_handshake_message'](handshake_message);
+                response_handshake_message = encryptor_instance['get_handshake_message']();
+                this$._encryptor_instances.set(target_id_string, encryptor_instance);
                 this$._register_routing_path(target_id, first_node, route_id);
-                signature = this$._sign(announcement_message);
-                this$._send_to_routing_node(target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token));
+                signature = this$._sign(rendezvous_token);
+                this$._send_to_routing_node(target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(){});
             });
           } catch (e$) {}
@@ -435,8 +450,14 @@
             ref$ = this$._forwarding_mapping.get(source_id), target_node_id = ref$[0], target_route_id = ref$[1];
             this$._router['send_to'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
           } else if (this$._routing_path_to_id.has(source_id)) {
-            origin_node_id = this$._routing_path_to_id.get(source_id);
-            this$['fire']('data', origin_node_id, data);
+            target_id = this$._routing_path_to_id.get(source_id);
+            target_id_string = target_id.join(',');
+            if (!this$._encryptor_instances.has(target_id_string)) {
+              return;
+            }
+            encryptor_instance = this$._encryptor_instances.get(target_id_string);
+            data_decrypted = encryptor_instance['decrypt'](data);
+            this$['fire']('data', target_id, data_decrypted);
           }
           break;
         case ROUTING_COMMAND_PING:
@@ -533,12 +554,13 @@
      * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
      */
     y$['connect_to'] = function(target_id, secret, number_of_intermediate_nodes){
-      var this$ = this;
+      var target_id_string, this$ = this;
       if (!number_of_intermediate_nodes) {
         throw new Error('Direct connections are not yet supported');
         return;
       }
-      if (this._id_to_routing_path.has(target_id.join(','))) {
+      target_id_string = target_id.join(',');
+      if (this._id_to_routing_path.has(target_id_string)) {
         return;
       }
       this._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
@@ -558,23 +580,32 @@
         rendezvous_node = nodes[nodes.length - 1];
         this$._router['construct_routing_path'](nodes).then(function(route_id){
           function try_to_introduce(){
-            var introduction_node, rendezvous_token, introduction_payload, signature, x25519_public_key, introduction_message, first_node_string, route_id_string, path_confirmation_timeout;
+            var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, signature, introduction_message, first_node_string, route_id_string, path_confirmation_timeout;
             if (!introduction_nodes.length) {
               this$['fire']('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
               return;
             }
             introduction_node = pull_random_item_from_array(introduction_nodes);
             rendezvous_token = randombytes(ID_LENGTH);
-            introduction_payload = compose_introduction_payload(this$._real_keypair['ed25519']['public'], introduction_node, rendezvous_node, rendezvous_token, secret);
-            signature = this$._sign(introduction_payload);
             x25519_public_key = detoxCrypto['convert_public_key'](target_id);
+            encryptor_instance = detoxCrypto['Encryptor'](true, x25519_public_key);
+            handshake_message = encryptor_instance['get_handshake_message']();
+            introduction_payload = compose_introduction_payload(this$._real_keypair['ed25519']['public'], introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret);
+            signature = this$._sign(introduction_payload);
             introduction_message = detoxCrypto['one_way_encrypt'](x25519_public_key, new Uint8Array(introduction_payload.length + signature.length), y$.set(signature), y$.set(introduction_payload, SIGNATURE_LENGTH));
             first_node_string = first_node.join(',');
             route_id_string = route_id.join(',');
             function path_confirmation(node_id, route_id, command, data){
-              if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(responder_id_string, route_id) || command !== ROUTING_COMMAND_CONNECTED || data.subarray(0, ID_LENGTH).join(',') !== rendezvous_token.join(',') || !detoxCrypto['verify'](data.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH), rendezvous_token, target_id)) {
+              var ref$, signature, rendezvous_token_received, handshake_message_received;
+              if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(responder_id_string, route_id) || command !== ROUTING_COMMAND_CONNECTED) {
                 return;
               }
+              ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token_received = ref$[1], handshake_message_received = ref$[2];
+              if (rendezvous_token_received.join(',') !== rendezvous_token.join(',') || !detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
+                return;
+              }
+              encryptor_instance['put_handshake_message'](handshake_message_received);
+              this$._encryptor_instances.set(target_id_string, encryptor_instance);
               clearTimeout(path_confirmation_timeout);
               this$._register_routing_path(target_id, node_id, route_id);
             }
@@ -583,6 +614,7 @@
             this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
             path_confirmation_timeout = setTimeout(function(){
               this$._ronion['off']('data', path_confirmation);
+              encryptor_instance['destroy']();
               try_to_introduce();
             }, CONNECTION_TIMEOUT * 1000);
           }
@@ -597,10 +629,17 @@
     };
     /**
      * @param {!Uint8Array} target_id
-     * @param {!Uint8Array} data
+     * @param {!Uint8Array} data		Up to 65 KiB (limit defined in `@detox/transport`)
      */
     y$['send_to'] = function(target_id, data){
-      this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data);
+      var target_id_string, encryptor_instance, data_encrypted;
+      target_id_string = target_id.join(',');
+      encryptor_instance = this._encryptor_instances.get(target_id_string);
+      if (!encryptor_instance || data.length > this._max_data_size) {
+        return;
+      }
+      data_encrypted = encryptor_instance['encrypt'](data);
+      this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_encrypted);
     };
     y$['destroy'] = function(){
       clearInterval(this._cleanup_interval);
@@ -656,7 +695,7 @@
      * @param {!Uint8Array} route_id	ID of the route on `node_id`
      */
     y$._unregister_routing_path = function(node_id, route_id){
-      var source_id, target_id, target_id_string, ref$, announce_interval;
+      var source_id, target_id, target_id_string, encryptor_instance, ref$, announce_interval;
       source_id = compute_source_id(node_id, route_id);
       if (!this._routing_paths.has(source_id)) {
         return;
@@ -667,6 +706,11 @@
       this._routing_path_to_id['delete'](source_id);
       this._id_to_routing_path['delete'](target_id_string);
       this._announced_to['delete'](target_id_string);
+      encryptor_instance = this._encryptor_instances.get(target_id_string);
+      if (encryptor_instance) {
+        encryptor_instance['destroy']();
+        this._encryptor_instances['delete'](target_id_string);
+      }
       if (this._announcements_from.has(target_id_string)) {
         ref$ = this._announcements_from.get(target_id_string), announce_interval = ref$[3];
         clearInterval(announce_interval);
