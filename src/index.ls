@@ -521,7 +521,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			for let introduction_node in introduction_nodes
 				nodes	= @_pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
 				if !nodes
-					# TODO: Retry?
 					return
 				nodes.push(introduction_node)
 				first_node	= nodes[0]
@@ -530,7 +529,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						@_register_routing_path(introduction_node, first_node, route_id)
 						announced(introduction_node)
 					.catch !~>
-						# TODO: Retry?
 						announced()
 		/**
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
