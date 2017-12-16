@@ -272,11 +272,17 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 					@_pending_pings.add(source_id)
 			if @_announced_to.size < @_number_of_introduction_nodes && @_last_announcement
 				# Give at least 3x time for announcement process to complete and to announce to some node
-				reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
-				if @_last_announcement < reannounce_if_older_than
+				re-announce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
+				if @_last_announcement < re-announce_if_older_than
 					@_announce(@_number_of_introduction_nodes, @_number_of_intermediate_nodes)
 		), LAST_USED_TIMEOUT / 2 * 1000
 
+		@_sign		= (data) ~>
+			detox-crypto['sign'](
+				data
+				@_real_keypair['ed25519']['public']
+				@_real_keypair['ed25519']['private']
+			)
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
 			@_dht_keypair['ed25519']['private']
@@ -285,14 +291,6 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 			packets_per_second
 			bucket_size
 		)
-		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
-		@_sign		= (data) ~>
-			detox-crypto['sign'](
-				data
-				@_real_keypair['ed25519']['public']
-				@_real_keypair['ed25519']['private']
-			)
-		@_dht
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.set(node_id.join(','), node_id)
 			)
@@ -311,7 +309,7 @@ function Wrapper (detox-crypto, detox-transport, async-eventer)
 						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 			)
-		@_router
+		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= compute_source_id(node_id, route_id)
 				if !@_routing_paths.has(source_id)

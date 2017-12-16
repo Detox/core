@@ -303,7 +303,7 @@
         });
       }, LAST_USED_TIMEOUT * 1000);
       this._keep_announce_routes_interval = setInterval(function(){
-        var reannounce_if_older_than;
+        var reAnnounce_if_older_than;
         this$._announced_to.forEach(function(introduction_node, introduction_node_string){
           var ref$, node_id, route_id, source_id;
           ref$ = this$._id_to_routing_path.get(introduction_node_string), node_id = ref$[0], route_id = ref$[1];
@@ -313,18 +313,16 @@
           }
         });
         if (this$._announced_to.size < this$._number_of_introduction_nodes && this$._last_announcement) {
-          reannounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
-          if (this$._last_announcement < reannounce_if_older_than) {
+          reAnnounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
+          if (this$._last_announcement < reAnnounce_if_older_than) {
             this$._announce(this$._number_of_introduction_nodes, this$._number_of_intermediate_nodes);
           }
         }
       }, LAST_USED_TIMEOUT / 2 * 1000);
-      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size);
-      this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments);
       this._sign = function(data){
         return detoxCrypto['sign'](data, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
       };
-      this._dht['on']('node_connected', function(node_id){
+      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
         this$._connected_nodes.set(node_id.join(','), node_id);
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id.join(','));
@@ -344,7 +342,7 @@
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
         }
       });
-      this._router['on']('activity', function(node_id, route_id){
+      this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
         var source_id;
         source_id = compute_source_id(node_id, route_id);
         if (!this$._routing_paths.has(source_id)) {
