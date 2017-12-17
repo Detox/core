@@ -30,7 +30,7 @@ const LAST_USED_TIMEOUT				= 60
 # Re-announce each 30 minutes
 const ANNOUNCE_INTERVAL				= 30 * 60
 
-const CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES		= 0
+const CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES	= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
 const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 2
 const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 3
@@ -38,7 +38,9 @@ const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 3
 const CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES		= 0
 const CONNECTION_PROGRESS_INTRODUCTION_SENT				= 1
 
-const ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS	= 0
+const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED	= 0
+const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
+const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
 if typeof crypto != 'undefined'
 	randombytes	= (size) ->
@@ -313,6 +315,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 			)
+			.'on'('ready', !~>
+				@'fire'('ready')
+			)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= compute_source_id(node_id, route_id)
@@ -460,7 +465,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: 1 byte for command, 2 bytes for multiplexer and MAC on top of that
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH # 468 bytes
 	Core
-		..'CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'			= CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES
+		..'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
 		..'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
 		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
@@ -468,7 +473,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		..'CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'		= CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES
 		..'CONNECTION_PROGRESS_INTRODUCTION_SENT'				= CONNECTION_PROGRESS_INTRODUCTION_SENT
 
-		..'ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS'		= ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS
+		..'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED
+		..'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED
+		..'ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'	= ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core:: = Object.create(async-eventer::)
 	Core::
 		/**
@@ -497,6 +504,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			@_announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
 			introduction_nodes				= @_pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes)
+			if !introduction_nodes
+				@_last_announcement	= 0
+				@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
+				return
 			introductions_pending			= number_of_introduction_nodes
 			introduction_nodes_confirmed	= []
 			!~function announced (introduction_node)
@@ -506,7 +517,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				if introductions_pending
 					return
 				if !introduction_nodes_confirmed.length
-					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS)
+					@_last_announcement	= 0
+					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED)
 					return
 				announcement_message	= @_dht['generate_announcement_message'](
 					@_real_keypair['ed25519']['public']
@@ -526,6 +538,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			for let introduction_node in introduction_nodes
 				nodes	= @_pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
 				if !nodes
+					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 					return
 				nodes.push(introduction_node)
 				first_node	= nodes[0]
@@ -559,7 +572,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					connected_nodes	= Array.from(@_connected_nodes.values())
 					nodes			= @_pick_random_nodes(number_of_intermediate_nodes + 1) # Number of nodes doesn't include rendezvous node, hence +1
 					if !nodes
-						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES)
+						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 						return
 					first_node		= nodes[0]
 					rendezvous_node	= nodes[nodes.length - 1]

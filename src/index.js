@@ -6,7 +6,7 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_INTRODUCE_TO, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_INTRODUCE_TO = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
@@ -24,13 +24,15 @@
   ROUTING_PATH_SEGMENT_TIMEOUT = 10;
   LAST_USED_TIMEOUT = 60;
   ANNOUNCE_INTERVAL = 30 * 60;
-  CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES = 0;
+  CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 0;
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 2;
   CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES = 3;
   CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES = 0;
   CONNECTION_PROGRESS_INTRODUCTION_SENT = 1;
-  ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS = 0;
+  ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED = 0;
+  ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
+  ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
   if (typeof crypto !== 'undefined') {
     randombytes = function(size){
       var array;
@@ -344,6 +346,8 @@
           ref$ = this$._announcements_from.get(target_id_string), target_node_id = ref$[1], target_route_id = ref$[2];
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
         }
+      })['on']('ready', function(){
+        this$['fire']('ready');
       });
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
         var source_id;
@@ -490,13 +494,15 @@
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH;
     }
     x$ = Core;
-    x$['CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES;
+    x$['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
     x$['CONNECTION_ERROR_NO_INTRODUCTION_NODES'] = CONNECTION_ERROR_NO_INTRODUCTION_NODES;
     x$['CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'] = CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT;
     x$['CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'] = CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES;
     x$['CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'] = CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES;
     x$['CONNECTION_PROGRESS_INTRODUCTION_SENT'] = CONNECTION_PROGRESS_INTRODUCTION_SENT;
-    x$['ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS'] = ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS;
+    x$['ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'] = ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED;
+    x$['ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'] = ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED;
+    x$['ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
     Core.prototype = Object.create(asyncEventer.prototype);
     y$ = Core.prototype;
     /**
@@ -529,6 +535,11 @@
         old_introduction_nodes.push(introduction_node);
       });
       introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes);
+      if (!introduction_nodes) {
+        this._last_announcement = 0;
+        this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
+        return;
+      }
       introductions_pending = number_of_introduction_nodes;
       introduction_nodes_confirmed = [];
       function announced(introduction_node){
@@ -541,7 +552,8 @@
           return;
         }
         if (!introduction_nodes_confirmed.length) {
-          this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_SUCCESSFUL_ANNOUNCEMENTS);
+          this$._last_announcement = 0;
+          this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED);
           return;
         }
         announcement_message = this$._dht['generate_announcement_message'](this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private'], introduction_nodes_confirmed);
@@ -561,6 +573,7 @@
         var nodes, first_node, this$ = this;
         nodes = this._pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
         if (!nodes) {
+          this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return;
         }
         nodes.push(introduction_node);
@@ -598,7 +611,7 @@
         connected_nodes = Array.from(this$._connected_nodes.values());
         nodes = this$._pick_random_nodes(number_of_intermediate_nodes + 1);
         if (!nodes) {
-          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_CONNECTED_NODES);
+          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return;
         }
         first_node = nodes[0];
