@@ -644,7 +644,7 @@
       });
     };
     /**
-     * @param {!Uint8Array}	target_id
+     * @param {!Uint8Array}	target_id	Should be connected already
      * @param {number}		command		Command from range `0..255`
      * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
      */

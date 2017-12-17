@@ -615,14 +615,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								), CONNECTION_TIMEOUT * 1000
 							try_to_introduce()
 						.catch !~>
-							# TODO: Retry?
 							@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 							return
 				!~>
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
 		/**
-		 * @param {!Uint8Array}	target_id
+		 * @param {!Uint8Array}	target_id	Should be connected already
 		 * @param {number}		command		Command from range `0..255`
 		 * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
