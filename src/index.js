@@ -500,6 +500,15 @@
     Core.prototype = Object.create(asyncEventer.prototype);
     y$ = Core.prototype;
     /**
+     * Start WebSocket server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
+     *
+     * @param {string}	ip
+     * @param {number}	port
+     */
+    y$['start_bootstrap_node'] = function(ip, port){
+      this._dht['start_bootstrap_node'](ip, port);
+    };
+    /**
      * @param {number} number_of_introduction_nodes
      * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
      */

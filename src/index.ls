@@ -472,6 +472,14 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 	Core:: = Object.create(async-eventer::)
 	Core::
 		/**
+		 * Start WebSocket server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
+		 *
+		 * @param {string}	ip
+		 * @param {number}	port
+		 */
+		..'start_bootstrap_node' = (ip, port) !->
+			@_dht['start_bootstrap_node'](ip, port)
+		/**
 		 * @param {number} number_of_introduction_nodes
 		 * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
 		 */
