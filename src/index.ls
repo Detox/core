@@ -505,7 +505,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				old_introduction_nodes.push(introduction_node)
 			introduction_nodes				= @_pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes)
 			if !introduction_nodes
-				@_last_announcement	= 0
+				@_last_announcement	= 1
 				@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
 				return
 			introductions_pending			= number_of_introduction_nodes
@@ -517,7 +517,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				if introductions_pending
 					return
 				if !introduction_nodes_confirmed.length
-					@_last_announcement	= 0
+					@_last_announcement	= 1
 					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED)
 					return
 				announcement_message	= @_dht['generate_announcement_message'](

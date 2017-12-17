@@ -536,7 +536,7 @@
       });
       introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes);
       if (!introduction_nodes) {
-        this._last_announcement = 0;
+        this._last_announcement = 1;
         this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
         return;
       }
@@ -552,7 +552,7 @@
           return;
         }
         if (!introduction_nodes_confirmed.length) {
-          this$._last_announcement = 0;
+          this$._last_announcement = 1;
           this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED);
           return;
         }
