@@ -126,7 +126,7 @@ function parse_introduction_payload (introduction_payload)
  * @return {!Uint8Array}
  */
 function compose_announcement_data (public_key, announcement_message, signature)
-	new Uint8Array(ID_LENGTH + announcement_message.length)
+	new Uint8Array(ID_LENGTH + SIGNATURE_LENGTH + announcement_message.length)
 		..set(public_key)
 		..set(signature, ID_LENGTH)
 		..set(announcement_message, ID_LENGTH + SIGNATURE_LENGTH)
@@ -137,8 +137,8 @@ function compose_announcement_data (public_key, announcement_message, signature)
  */
 function parse_announcement_data (message)
 	public_key				= message.subarray(0, ID_LENGTH)
-	announcement_message	= message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH)
-	signature				= message.subarray(ID_LENGTH + SIGNATURE_LENGTH)
+	signature				= message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH)
+	announcement_message	= message.subarray(ID_LENGTH + SIGNATURE_LENGTH)
 	[public_key, announcement_message, signature]
 /**
  * @param {!Uint8Array} rendezvous_token
@@ -542,12 +542,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					return
 				nodes.push(introduction_node)
 				first_node	= nodes[0]
-				@_router['construct_routing_path'](nodes)
-					.then (route_id) !~>
+				@_router['construct_routing_path'](nodes).then(
+					(route_id) !~>
 						@_register_routing_path(introduction_node, first_node, route_id)
 						announced(introduction_node)
-					.catch !~>
+					!~>
 						announced()
+				)
 		/**
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
 		 * @param {!Uint8Array}	secret
@@ -680,6 +681,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		.._pick_random_nodes = (number_of_nodes, exclude_nodes = null) ->
 			# Require at least 3 times as much nodes to be connected
 			if @_connected_nodes.size / 3 < number_of_nodes
+				# Make random lookup in order to fill DHT with known nodes
+				@_dht['lookup'](randombytes(ID_LENGTH))
 				return null
 			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
 			connected_nodes	= Array.from(@_connected_nodes.values())

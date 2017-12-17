@@ -133,7 +133,7 @@
    */
   function compose_announcement_data(public_key, announcement_message, signature){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH + announcement_message.length);
+    x$ = new Uint8Array(ID_LENGTH + SIGNATURE_LENGTH + announcement_message.length);
     x$.set(public_key);
     x$.set(signature, ID_LENGTH);
     x$.set(announcement_message, ID_LENGTH + SIGNATURE_LENGTH);
@@ -145,10 +145,10 @@
    * @return {!Array<Uint8Array>} [public_key, announcement_message, signature]
    */
   function parse_announcement_data(message){
-    var public_key, announcement_message, signature;
+    var public_key, signature, announcement_message;
     public_key = message.subarray(0, ID_LENGTH);
-    announcement_message = message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH);
-    signature = message.subarray(ID_LENGTH + SIGNATURE_LENGTH);
+    signature = message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH);
+    announcement_message = message.subarray(ID_LENGTH + SIGNATURE_LENGTH);
     return [public_key, announcement_message, signature];
   }
   /**
@@ -581,7 +581,7 @@
         this._router['construct_routing_path'](nodes).then(function(route_id){
           this$._register_routing_path(introduction_node, first_node, route_id);
           announced(introduction_node);
-        })['catch'](function(){
+        }, function(){
           announced();
         });
       }
@@ -715,6 +715,7 @@
       var connected_nodes, i$, i, results$ = [];
       exclude_nodes == null && (exclude_nodes = null);
       if (this._connected_nodes.size / 3 < number_of_nodes) {
+        this._dht['lookup'](randombytes(ID_LENGTH));
         return null;
       }
       connected_nodes = Array.from(this._connected_nodes.values());
