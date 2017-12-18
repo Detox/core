@@ -520,7 +520,7 @@
      * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
      */
     y$['get_bootstrap_nodes'] = function(){
-      this._dht['get_bootstrap_nodes']();
+      return this._dht['get_bootstrap_nodes']();
     };
     /**
      * @param {number} number_of_introduction_nodes

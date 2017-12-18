@@ -491,7 +491,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 *
 		 * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
 		 */
-		..'get_bootstrap_nodes' = !->
+		..'get_bootstrap_nodes' = ->
 			@_dht['get_bootstrap_nodes']()
 		/**
 		 * @param {number} number_of_introduction_nodes

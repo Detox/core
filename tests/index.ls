@@ -15,7 +15,7 @@ bootstrap_port	= 16882
 
 <-! lib.ready
 test('Core', (t) !->
-	t.plan(NUMBER_OF_NODES + 1)
+	t.plan(NUMBER_OF_NODES + 2)
 
 	bootstrap_node_info	=
 		node_id	: Buffer(detox-crypto.create_keypair(new Uint8Array(32)).ed25519.public).toString('hex')
@@ -55,6 +55,8 @@ test('Core', (t) !->
 		node_1	= nodes[1]
 		node_12	= nodes[12]
 		node_19	= nodes[19]
+
+		t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
 
 		node_1
 			.once('announced', !->

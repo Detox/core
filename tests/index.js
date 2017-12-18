@@ -16,7 +16,7 @@
   lib.ready(function(){
     test('Core', function(t){
       var bootstrap_node_info, nodes, i;
-      t.plan(NUMBER_OF_NODES + 1);
+      t.plan(NUMBER_OF_NODES + 2);
       bootstrap_node_info = {
         node_id: Buffer(detoxCrypto.create_keypair(new Uint8Array(32)).ed25519['public']).toString('hex'),
         host: bootstrap_ip,
@@ -60,6 +60,7 @@
         node_1 = nodes[1];
         node_12 = nodes[12];
         node_19 = nodes[19];
+        t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
         node_1.once('announced', function(){
           t.pass('Announced successfully');
           destroy_nodes();
