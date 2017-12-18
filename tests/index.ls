@@ -32,7 +32,7 @@ test('Core', (t) !->
 			..set([i])
 		if i == 0
 			instance	= lib.Core(real_seed, dht_seed, [], [], 5, 3)
-			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port) #TODO: not implemented?
+			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port)
 		else
 			instance	= lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 5)
 		instance.once('ready', !->
@@ -47,6 +47,10 @@ test('Core', (t) !->
 		nodes.push(instance)
 	start_node()
 
+	!function destroy_nodes
+		for node in nodes
+			node.destroy()
+
 	!function ready_callback
 		node_1	= nodes[1]
 		node_12	= nodes[12]
@@ -55,9 +59,13 @@ test('Core', (t) !->
 		node_1
 			.once('announced', !->
 				t.pass('Announced successfully')
+
+				destroy_nodes()
 			)
 			.once('announcement_failed', (reason) !->
 				t.fail('Announcement failed with ' + reason)
+
+				destroy_nodes()
 			)
 		console.log 'Announcing...'
 		node_1.announce(2, 1)

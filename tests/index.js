@@ -48,6 +48,13 @@
         nodes.push(instance);
       }
       start_node();
+      function destroy_nodes(){
+        var i$, ref$, len$, node;
+        for (i$ = 0, len$ = (ref$ = nodes).length; i$ < len$; ++i$) {
+          node = ref$[i$];
+          node.destroy();
+        }
+      }
       function ready_callback(){
         var node_1, node_12, node_19;
         node_1 = nodes[1];
@@ -55,8 +62,10 @@
         node_19 = nodes[19];
         node_1.once('announced', function(){
           t.pass('Announced successfully');
+          destroy_nodes();
         }).once('announcement_failed', function(reason){
           t.fail('Announcement failed with ' + reason);
+          destroy_nodes();
         });
         console.log('Announcing...');
         node_1.announce(2, 1);
