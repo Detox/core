@@ -487,6 +487,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		..'start_bootstrap_node' = (ip, port) !->
 			@_dht['start_bootstrap_node'](ip, port)
 		/**
+		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
+		 *
+		 * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
+		 */
+		..'get_bootstrap_nodes' = !->
+			@_dht['get_bootstrap_nodes']()
+		/**
 		 * @param {number} number_of_introduction_nodes
 		 * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
 		 */
