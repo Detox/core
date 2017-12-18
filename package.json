@@ -32,7 +32,7 @@
 	},
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.4.0",
-		"@detox/transport"       : "^0.11.1",
+		"@detox/transport"       : "^0.11.2",
 		"fixed-size-multiplexer" : "^0.1.1"
 	},
 	"devDependencies" : {
