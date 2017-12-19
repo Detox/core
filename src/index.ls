@@ -636,6 +636,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 									encryptor_instance['put_handshake_message'](handshake_message_received)
 									@_encryptor_instances.set(target_id_string, encryptor_instance)
 									clearTimeout(path_confirmation_timeout)
+									@_router['off']('data', path_confirmation)
 									@_register_routing_path(target_id, node_id, route_id)
 								@_router['on']('data', path_confirmation)
 								@_router['send_data'](
@@ -697,12 +698,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
 		 */
 		.._pick_random_nodes = (number_of_nodes, exclude_nodes = null) ->
-			# Require at least 3 times as much nodes to be connected
-			if @_connected_nodes.size / 3 < number_of_nodes
+			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
+			# Require at least 2 times as much nodes to be connected
+			if @_connected_nodes.size / 2 < number_of_nodes
 				# Make random lookup in order to fill DHT with known nodes
 				@_dht['lookup'](randombytes(ID_LENGTH))
 				return null
-			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
 			connected_nodes	= Array.from(@_connected_nodes.values())
 			if exclude_nodes
 				connected_nodes	= connected_nodes.filter (node) ->
@@ -771,6 +772,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				if !is_string_equal_to_array(node_id_string, node_id)
 					return
 				clearTimeout(connected_timeout)
+				@_dht['off']('node_connected', connected)
 				@_update_connection_timeout(node_id)
 				@_dht['send_data'](node_id, command, data)
 			@_dht['on']('node_connected', connected)

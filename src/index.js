@@ -669,6 +669,7 @@
               encryptor_instance['put_handshake_message'](handshake_message_received);
               this$._encryptor_instances.set(target_id_string, encryptor_instance);
               clearTimeout(path_confirmation_timeout);
+              this$._router['off']('data', path_confirmation);
               this$._register_routing_path(target_id, node_id, route_id);
             }
             this$._router['on']('data', path_confirmation);
@@ -744,7 +745,7 @@
     y$._pick_random_nodes = function(number_of_nodes, exclude_nodes){
       var connected_nodes, i$, i, results$ = [];
       exclude_nodes == null && (exclude_nodes = null);
-      if (this._connected_nodes.size / 3 < number_of_nodes) {
+      if (this._connected_nodes.size / 2 < number_of_nodes) {
         this._dht['lookup'](randombytes(ID_LENGTH));
         return null;
       }
@@ -831,6 +832,7 @@
           return;
         }
         clearTimeout(connected_timeout);
+        this$._dht['off']('node_connected', connected);
         this$._update_connection_timeout(node_id);
         this$._dht['send_data'](node_id, command, data);
       }
