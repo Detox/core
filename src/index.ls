@@ -98,7 +98,7 @@ function is_string_equal_to_array (string, array)
  * @return {!Uint8Array}
  */
 function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret)
-	new Uint8Array(ID_LENGTH * 3 + secret.length)
+	new Uint8Array(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + secret.length)
 		..set(target_id)
 		..set(introduction_node, ID_LENGTH)
 		..set(rendezvous_node, ID_LENGTH * 2)
@@ -206,6 +206,10 @@ function parse_introduce_to_data (message)
 	target_id				= message.subarray(0, ID_LENGTH)
 	introduction_message	= message.subarray(ID_LENGTH)
 	[target_id, introduction_message]
+
+function error_handler (error)
+	if error instanceof Error
+		console.error(error)
 
 function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-eventer)
 	/**
@@ -404,33 +408,39 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								'target_id'						: target_id
 								'secret'						: secret
 								'number_of_intermediate_nodes'	: null
-							<~! @'fire'('introduction', data).then
-							number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
-							if !number_of_intermediate_nodes
-								throw new Error('Direct connections are not yet supported')
-								# TODO: Support direct connections here?
-								return
-							nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
-							if !nodes
-								# TODO: Retry?
-								return
-							nodes.push(rendezvous_node)
-							first_node	= nodes[0]
-							@_router['construct_routing_path'](nodes)
-								.then (route_id) !~>
-									encryptor_instance	= detox-crypto['Encryptor'](false, @_real_keypair['x25519']['private'])
-									encryptor_instance['put_handshake_message'](handshake_message)
-									response_handshake_message	= encryptor_instance['get_handshake_message']()
-									@_encryptor_instances.set(target_id_string, encryptor_instance)
-									@_register_routing_path(target_id, first_node, route_id)
-									signature	= @_sign(rendezvous_token)
-									@_send_to_routing_node(
-										target_id
-										ROUTING_COMMAND_CONFIRM_CONNECTION
-										compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message)
-									)
-								.catch !~>
-									# TODO: Retry?
+							@'fire'('introduction', data)
+								.then !~>
+									number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
+									if !number_of_intermediate_nodes
+										throw new Error('Direct connections are not yet supported')
+										# TODO: Support direct connections here?
+										return
+									nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+									if !nodes
+										# TODO: Retry?
+										return
+									nodes.push(rendezvous_node)
+									first_node	= nodes[0]
+									@_router['construct_routing_path'](nodes)
+										.then (route_id) !~>
+											encryptor_instance	= detox-crypto['Encryptor'](false, @_real_keypair['x25519']['private'])
+											encryptor_instance['put_handshake_message'](handshake_message)
+											response_handshake_message	= encryptor_instance['get_handshake_message']()
+											@_encryptor_instances.set(target_id_string, encryptor_instance)
+											@_register_routing_path(target_id, first_node, route_id)
+											signature	= @_sign(rendezvous_token)
+											@_send_to_routing_node(
+												target_id
+												ROUTING_COMMAND_CONFIRM_CONNECTION
+												compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message)
+											)
+										.catch !~>
+											error_handler(error)
+											# TODO: Retry?
+								.catch (error) !~>
+									error_handler(error)
+						catch error
+							error_handler(error)
 					case ROUTING_COMMAND_DATA
 						if @_forwarding_mapping.has(source_id)
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
@@ -549,13 +559,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					return
 				nodes.push(introduction_node)
 				first_node	= nodes[0]
-				@_router['construct_routing_path'](nodes).then(
-					(route_id) !~>
+				@_router['construct_routing_path'](nodes)
+					.then (route_id) !~>
 						@_register_routing_path(introduction_node, first_node, route_id)
 						announced(introduction_node)
-					!~>
+					.catch (error) !~>
+						error_handler(error)
 						announced()
-				)
 		/**
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
 		 * @param {!Uint8Array}	secret
@@ -590,12 +600,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								if !introduction_nodes.length
 									@'fire'('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 									return
-								introduction_node		= pull_random_item_from_array(introduction_nodes)
-								rendezvous_token		= randombytes(ID_LENGTH)
-								x25519_public_key		= detox-crypto['convert_public_key'](target_id)
-								encryptor_instance		= detox-crypto['Encryptor'](true, x25519_public_key)
-								handshake_message		= encryptor_instance['get_handshake_message']()
-								introduction_payload	= compose_introduction_payload(
+								introduction_node				= pull_random_item_from_array(introduction_nodes)
+								rendezvous_token				= randombytes(ID_LENGTH)
+								x25519_public_key				= detox-crypto['convert_public_key'](target_id)
+								encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
+								handshake_message				= encryptor_instance['get_handshake_message']()
+								introduction_payload			= compose_introduction_payload(
 									@_real_keypair['ed25519']['public']
 									introduction_node
 									rendezvous_node
@@ -603,15 +613,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 									handshake_message
 									secret
 								)
-								signature				= @_sign(introduction_payload)
-								introduction_message	= detox-crypto['one_way_encrypt'](
-									x25519_public_key
-									new Uint8Array(introduction_payload.length + signature.length)
-										..set(signature)
-										..set(introduction_payload, SIGNATURE_LENGTH)
-								)
-								first_node_string		= first_node.join(',')
-								route_id_string			= route_id.join(',')
+								signature						= @_sign(introduction_payload)
+								introduction_message			= new Uint8Array(introduction_payload.length + signature.length)
+									..set(signature)
+									..set(introduction_payload, SIGNATURE_LENGTH)
+								introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
+								first_node_string				= first_node.join(',')
+								route_id_string					= route_id.join(',')
 								!~function path_confirmation (node_id, route_id, command, data)
 									if (
 										!is_string_equal_to_array(first_node_string, node_id) ||
@@ -634,16 +642,17 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 									first_node
 									route_id
 									ROUTING_COMMAND_INITIALIZE_CONNECTION
-									compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message)
+									compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted)
 								)
 								@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
 								path_confirmation_timeout	= setTimeout (!~>
-									@_ronion['off']('data', path_confirmation)
+									@_router['off']('data', path_confirmation)
 									encryptor_instance['destroy']()
 									try_to_introduce()
 								), CONNECTION_TIMEOUT * 1000
 							try_to_introduce()
-						.catch !~>
+						.catch (error) !~>
+							error_handler(error)
 							@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 							return
 				!~>
