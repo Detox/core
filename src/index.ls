@@ -108,7 +108,7 @@ function compose_introduction_payload (target_id, introduction_node, rendezvous_
 /**
  * @param {!Uint8Array} introduction_payload
  *
- * @return {!Array<Uint8Array>} [introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
+ * @return {!Array<Uint8Array>} [target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
  */
 function parse_introduction_payload (introduction_payload)
 	target_id			= introduction_payload.subarray(0, ID_LENGTH)
@@ -117,7 +117,7 @@ function parse_introduction_payload (introduction_payload)
 	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 4)
 	handshake_message	= introduction_payload.subarray(ID_LENGTH * 4, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
 	secret				= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
-	[introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
+	[target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
 /**
  * @param {!Uint8Array} public_key
  * @param {!Uint8Array} announcement_message
@@ -173,7 +173,7 @@ function parse_initialize_connection_data (message)
  * @return {!Uint8Array}
  */
 function compose_confirm_connection_data (signature, rendezvous_token, handshake_message)
-	new Uint8Array(SIGNATURE_LENGTH + rendezvous_token.length)
+	new Uint8Array(SIGNATURE_LENGTH + ID_LENGTH + HANDSHAKE_MESSAGE_LENGTH)
 		..set(signature)
 		..set(rendezvous_token, SIGNATURE_LENGTH)
 		..set(handshake_message, SIGNATURE_LENGTH + ID_LENGTH)
@@ -383,7 +383,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							# We do not expect introductions on this connection
 							return
 						try
-							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](@_real_keypair['x25519']['public'], data)
+							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](@_real_keypair['x25519']['private'], data)
 							signature						= introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH)
 							introduction_payload			= introduction_message_decrypted.subarray(SIGNATURE_LENGTH)
 							[
@@ -434,7 +434,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 												ROUTING_COMMAND_CONFIRM_CONNECTION
 												compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message)
 											)
-										.catch !~>
+										.catch (error) !~>
 											error_handler(error)
 											# TODO: Retry?
 								.catch (error) !~>
@@ -623,7 +623,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								!~function path_confirmation (node_id, route_id, command, data)
 									if (
 										!is_string_equal_to_array(first_node_string, node_id) ||
-										!is_string_equal_to_array(responder_id_string, route_id) ||
+										!is_string_equal_to_array(route_id_string, route_id) ||
 										command != ROUTING_COMMAND_CONNECTED
 									)
 										return
@@ -684,6 +684,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			clearInterval(@_keep_announce_routes_interval)
 			@_routing_paths.forEach ([node_id, route_id]) !~>
 				@_unregister_routing_path(node_id, route_id)
+			@_pending_connection.forEach ([, , , connection_timeout]) !~>
+				clearTimeout(connection_timeout)
 			@_dht['destroy']()
 			@_router['destroy']()
 		/**
