@@ -655,7 +655,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						.catch (error) !~>
 							error_handler(error)
 							@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
-							return
 				!~>
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
