@@ -739,6 +739,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			@_router['destroy_routing_path'](node_id, route_id)
 			@_routing_path_to_id.delete(source_id)
 			@_pending_pings.delete(source_id)
+			@_announcements_from.forEach ([, node_id, route_id, announce_interval], target_id_string_local) !~>
+				source_id_local	= compute_source_id(node_id, route_id)
+				if source_id != source_id_local
+					return
+				clearInterval(announce_interval)
+				@_announcements_from.delete(target_id_string_local)
 			target_id	= @_routing_path_to_id.get(source_id)
 			if !target_id
 				return
@@ -749,10 +755,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if encryptor_instance
 				encryptor_instance['destroy']()
 				@_encryptor_instances.delete(target_id_string)
-			if @_announcements_from.has(target_id_string)
-				[, , , announce_interval]	= @_announcements_from.get(target_id_string)
-				clearInterval(announce_interval)
-				@_announcements_from.delete(target_id_string)
 			@_multiplexers.delete(target_id_string)
 			@_demultiplexers.delete(target_id_string)
 			@'fire'('disconnected', target_id)

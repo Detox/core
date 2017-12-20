@@ -10,19 +10,22 @@
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 10;
+  NUMBER_OF_NODES = 12;
   bootstrap_ip = '127.0.0.1';
   bootstrap_port = 16882;
   lib.ready(function(){
     test('Core', function(t){
-      var bootstrap_node_info, nodes, i;
-      t.plan(NUMBER_OF_NODES + 2);
+      var bootstrap_node_info, node_1_real_public_key, x$, node_1_secret, nodes, i;
+      t.plan(NUMBER_OF_NODES + 4);
       bootstrap_node_info = {
         node_id: Buffer(detoxCrypto.create_keypair(new Uint8Array(32)).ed25519['public']).toString('hex'),
         host: bootstrap_ip,
         port: bootstrap_port
       };
+      node_1_real_public_key = detoxCrypto.create_keypair((x$ = new Uint8Array(32), x$.set([1, 1]), x$)).ed25519['public'];
+      node_1_secret = Buffer.from('c2fd7c6349f0bb25ed28', 'hex');
       nodes = [];
+      global.nodes = nodes;
       i = 0;
       function start_node(){
         var x$, real_seed, y$, dht_seed, instance;
@@ -31,10 +34,10 @@
         y$ = dht_seed = new Uint8Array(32);
         y$.set([i]);
         if (i === 0) {
-          instance = lib.Core(real_seed, dht_seed, [], [], 5, 3);
+          instance = lib.Core(real_seed, dht_seed, [], [], 2, 10);
           instance.start_bootstrap_node(bootstrap_ip, bootstrap_port);
         } else {
-          instance = lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 5);
+          instance = lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 2);
         }
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready');
@@ -56,16 +59,35 @@
         }
       }
       function ready_callback(){
-        var node_1, node_12, node_19;
+        var node_1, node_7;
         node_1 = nodes[1];
-        node_12 = nodes[12];
-        node_19 = nodes[19];
+        node_7 = nodes[7];
         t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
         node_1.once('announced', function(){
+          var target_id;
           t.pass('Announced successfully');
-          destroy_nodes();
+          target_id = node_1._real;
+          node_1.once('introduction', function(data){
+            t.equal(data.secret.join(','), node_1_secret.join(','), 'Correct secret on introduction');
+            data.number_of_intermediate_nodes = 1;
+          });
+          node_7.once('connected', function(target_id){
+            if (target_id.join(',') === node_1_real_public_key.join(',')) {
+              t.pass('Connected successfully');
+              destroy_nodes();
+            }
+          });
+          node_7.once('connection_failed', function(arg$, reason){
+            t.fail('Connection failed with code ' + reason);
+            destroy_nodes();
+          });
+          console.log('Preparing for connection (8s)...');
+          setTimeout(function(){
+            console.log('Connecting...');
+            node_7.connect_to(node_1_real_public_key, node_1_secret, 1);
+          }, 8000);
         }).once('announcement_failed', function(reason){
-          t.fail('Announcement failed with ' + reason);
+          t.fail('Announcement failed with code ' + reason);
           destroy_nodes();
         });
         console.log('Announcing...');

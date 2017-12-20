@@ -783,7 +783,7 @@
      * @param {!Uint8Array} route_id	ID of the route on `node_id`
      */
     y$._unregister_routing_path = function(node_id, route_id){
-      var source_id, target_id, target_id_string, encryptor_instance, ref$, announce_interval;
+      var source_id, target_id, target_id_string, encryptor_instance, this$ = this;
       source_id = compute_source_id(node_id, route_id);
       if (!this._routing_paths.has(source_id)) {
         return;
@@ -792,6 +792,16 @@
       this._router['destroy_routing_path'](node_id, route_id);
       this._routing_path_to_id['delete'](source_id);
       this._pending_pings['delete'](source_id);
+      this._announcements_from.forEach(function(arg$, target_id_string_local){
+        var node_id, route_id, announce_interval, source_id_local;
+        node_id = arg$[1], route_id = arg$[2], announce_interval = arg$[3];
+        source_id_local = compute_source_id(node_id, route_id);
+        if (source_id !== source_id_local) {
+          return;
+        }
+        clearInterval(announce_interval);
+        this$._announcements_from['delete'](target_id_string_local);
+      });
       target_id = this._routing_path_to_id.get(source_id);
       if (!target_id) {
         return;
@@ -803,11 +813,6 @@
       if (encryptor_instance) {
         encryptor_instance['destroy']();
         this._encryptor_instances['delete'](target_id_string);
-      }
-      if (this._announcements_from.has(target_id_string)) {
-        ref$ = this._announcements_from.get(target_id_string), announce_interval = ref$[3];
-        clearInterval(announce_interval);
-        this._announcements_from['delete'](target_id_string);
       }
       this._multiplexers['delete'](target_id_string);
       this._demultiplexers['delete'](target_id_string);
