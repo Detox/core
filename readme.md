@@ -5,6 +5,50 @@ Essentially glues together `@detox/crypto` and `@detox/transport` together and p
 
 WIP, kind of works, but very fragile at the moment (also see https://github.com/js-platform/node-webrtc/issues/325), don't use for anything more that light experiments.
 
+## Key features
+Detox network is an overlay network that uses WebSocket and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some WebSocket bootstrap nodes are still needed).
+
+Here are 3 key features that Detox network aims to offer:
+* security
+* strong anonymity
+* robustness
+* scalability
+
+For features mentioned above we sacrifice maximum throughput, latency (to a degree) and efficiency (there is a lot of cover traffic), which makes it only suitable for low-bandwidth and relatively low-latency (few seconds) data transfers.
+
+### Security
+Relies on [The Noise Protocol Framework](https://noiseprotocol.org/), more specifically, on `Noise_NK_25519_ChaChaPoly_BLAKE2b` for end-to-end encryption.
+
+Should be secure already (WARNING: not proven by independent cryptographer yet, so don't rely on it being actually secure!).
+
+### Strong anonymity
+Data transfer is always at constant rate, regardless of data presence and its size.
+
+[Ronion](https://github.com/nazar-pc/ronion) anonymous routing framework with AEZ block cipher (not secure, but functionally working implementation, see [aez.wasm](https://github.com/nazar-pc/aez.wasm)) and `Noise_NK_25519_ChaChaPoly_BLAKE2b` used for anonymous routing (WARNING: not proven by independent cryptographer yet, so don't rely on it being actually secure!).
+
+Higher level glue is used to select introduction nodes, announce them to DHT, then on other node select rendezvous node and introduce itself using rendezvous node through introduction node to a friend.
+
+Anonymity is implemented on architecture level, but implementation is not anonymous yet.
+
+### Robustness
+Code and its dependencies are fragile right not. Partially robustness is responsibility of the higher level consumer (for instance, there is no confirmation that data were received).
+
+Robustness is not yet implemented yet.
+
+### Scalability
+Scalability is based on scalability of DHT implementation (currently [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is functionally identical to BitTorrent DHT).
+
+Should be scalable already (WARNING: not proven yet, large-scale testing is needed).
+
+## Major open issues
+Major open issues in the order from more important to less important (the order is not strict):
+* Document overall system design and write specification for implementers
+* Improve performance (looks like [node-webrtc](https://github.com/js-platform/node-webrtc) is holding us on backend, but more testing is needed, also zlib compression with dictionary would be nice for DHT traffic)
+* Nodes selection for anonymous routing (consider Brahms for DHT re-implementation)
+* Make AEZ implementation secure (timings attacks in particular)
+* Conduct security audit for Ronion
+* Conduct security audit of a project as the whole
+
 ## API
 ### detox_core.ready(callback)
 * `callback` - Callback function that is called when library is ready for use

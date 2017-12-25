@@ -2,7 +2,8 @@
 	"name"            : "@detox/core",
 	"description"     : "Core library of Detox project that provides high-level APIs used when building end-user applications",
 	"keywords"        : [
-		"detox"
+		"detox",
+		"anonymous"
 	],
 	"version"         : "",
 	"homepage"        : "https://github.com/Detox/detox-core",
