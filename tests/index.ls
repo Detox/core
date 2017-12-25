@@ -25,8 +25,8 @@ test('Core', (t) !->
 
 	generated_seed	= lib.generate_seed()
 
-	t.ok(generate_seed instanceof Uint8Array, 'Seed is Uint8Array')
-	t.equal(generate_seed.length, 32, 'Seed length is 32 bytes')
+	t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array')
+	t.equal(generated_seed.length, 32, 'Seed length is 32 bytes')
 
 	bootstrap_node_info	=
 		node_id	: Buffer(detox-crypto.create_keypair(new Uint8Array(32)).ed25519.public).toString('hex')
