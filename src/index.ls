@@ -569,7 +569,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
 		 * @param {!Uint8Array}	secret
-		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
+		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
 		 */
 		..'connect_to' = (target_id, secret, number_of_intermediate_nodes) !->
 			if !number_of_intermediate_nodes
@@ -588,7 +588,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						return
 					@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
 					connected_nodes	= Array.from(@_connected_nodes.values())
-					nodes			= @_pick_random_nodes(number_of_intermediate_nodes + 1) # Number of nodes doesn't include rendezvous node, hence +1
+					nodes			= @_pick_random_nodes(number_of_intermediate_nodes)
 					if !nodes
 						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 						return
@@ -658,6 +658,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				!~>
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
 			)
+		..'get_max_data_size' = ->
+			@_max_data_size
 		/**
 		 * @param {!Uint8Array}	target_id	Should be connected already
 		 * @param {number}		command		Command from range `0..255`

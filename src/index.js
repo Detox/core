@@ -610,7 +610,7 @@
     /**
      * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
      * @param {!Uint8Array}	secret
-     * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
+     * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
      */
     y$['connect_to'] = function(target_id, secret, number_of_intermediate_nodes){
       var target_id_string, this$ = this;
@@ -630,7 +630,7 @@
         }
         this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
         connected_nodes = Array.from(this$._connected_nodes.values());
-        nodes = this$._pick_random_nodes(number_of_intermediate_nodes + 1);
+        nodes = this$._pick_random_nodes(number_of_intermediate_nodes);
         if (!nodes) {
           this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return;
@@ -689,6 +689,9 @@
       }, function(){
         this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES);
       });
+    };
+    y$['get_max_data_size'] = function(){
+      return this._max_data_size;
     };
     /**
      * @param {!Uint8Array}	target_id	Should be connected already

@@ -21,7 +21,12 @@ data	= Buffer.from(
 
 <-! lib.ready
 test('Core', (t) !->
-	t.plan(NUMBER_OF_NODES + 6)
+	t.plan(NUMBER_OF_NODES + 9)
+
+	generated_seed	= lib.generate_seed()
+
+	t.ok(generate_seed instanceof Uint8Array, 'Seed is Uint8Array')
+	t.equal(generate_seed.length, 32, 'Seed length is 32 bytes')
 
 	bootstrap_node_info	=
 		node_id	: Buffer(detox-crypto.create_keypair(new Uint8Array(32)).ed25519.public).toString('hex')
@@ -71,6 +76,8 @@ test('Core', (t) !->
 
 		t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
 
+		t.deepEqual(node_1.get_max_data_size(), 2 ** 16 - 1, 'Max data size returned correctly')
+
 		node_1
 			.once('announced', !->
 				t.pass('Announced successfully')
@@ -104,7 +111,7 @@ test('Core', (t) !->
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
-					node_7.connect_to(node_1_real_public_key, node_1_secret, 1)
+					node_7.connect_to(node_1_real_public_key, node_1_secret, 2)
 				), 8000
 			)
 			.once('announcement_failed', (reason) !->
