@@ -4,8 +4,8 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
-const DHT_COMMAND_ROUTING			= 0
-const DHT_COMMAND_INTRODUCE_TO		= 1
+const DHT_COMMAND_ROUTING				= 0
+const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
 
 const ROUTING_COMMAND_ANNOUNCE				= 0
 const ROUTING_COMMAND_INITIALIZE_CONNECTION	= 1
@@ -311,7 +311,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				switch command
 					case DHT_COMMAND_ROUTING
 						@_router['process_packet'](node_id, data)
-					case DHT_COMMAND_INTRODUCE_TO
+					case DHT_COMMAND_FORWARD_INTRODUCTION
 						[target_id, introduction_message]	= parse_introduce_to_data(data)
 						target_id_string					= target_id.join(',')
 						if !@_announcements_from.has(target_id_string)
@@ -354,10 +354,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						connection_timeout														= setTimeout (!~>
 							@_pending_connection.delete(rendezvous_token_string)
 						), CONNECTION_TIMEOUT * 1000
+						# TODO: add node ID to the Map's key, so that multiple nodes with the same rendezvous token don't collide
 						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout])
 						@_send_to_dht_node(
 							introduction_node
-							DHT_COMMAND_INTRODUCE_TO
+							DHT_COMMAND_FORWARD_INTRODUCTION
 							compose_introduce_to_data(target_id, introduction_message)
 						)
 					case ROUTING_COMMAND_CONFIRM_CONNECTION
@@ -580,6 +581,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if @_id_to_routing_path.has(target_id_string)
 				# Already connected, do nothing
 				return
+			# TODO: Don't make DHT lookup of a friend directly, do this from rendezvous node (possibly, as part of introduction)
 			@_dht['find_introduction_nodes'](
 				target_id
 				(introduction_nodes) !~>
