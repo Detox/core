@@ -1,7 +1,7 @@
 # Detox core [![Travis CI](https://img.shields.io/travis/Detox/detox-core/master.svg?label=Travis%20CI)](https://travis-ci.org/Detox/detox-core)
 Core library of Detox project that provides high-level APIs used when building end-user applications.
 
-Essentially glues together `@detox/crypto` and `@detox/transport` together and provides very simple API for connecting to and interacting with Detox network.
+Essentially glues `@detox/crypto` and `@detox/transport` together and provides very simple API for connecting to and interacting with Detox network.
 
 WIP, kind of works, but very fragile at the moment (also see https://github.com/js-platform/node-webrtc/issues/325), don't use for anything more that light experiments.
 
