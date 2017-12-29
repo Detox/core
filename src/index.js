@@ -451,6 +451,9 @@
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
           rendezvous_token_string = rendezvous_token.join(',');
+          if (this$._pending_connection.has(rendezvous_token_string)) {
+            return;
+          }
           connection_timeout = setTimeout(function(){
             this$._pending_connection['delete'](rendezvous_token_string);
           }, CONNECTION_TIMEOUT * 1000);

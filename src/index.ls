@@ -404,10 +404,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						rendezvous_token_string													= rendezvous_token.join(',')
+						if @_pending_connection.has(rendezvous_token_string)
+							# Ignore subsequent usages of the same rendezvous token
+							return
 						connection_timeout														= setTimeout (!~>
 							@_pending_connection.delete(rendezvous_token_string)
 						), CONNECTION_TIMEOUT * 1000
-						# TODO: add node ID to the Map's key, so that multiple nodes with the same rendezvous token don't collide
 						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout])
 						@_send_to_dht_node(
 							introduction_node
