@@ -7,13 +7,15 @@
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
 
-const ROUTING_COMMAND_ANNOUNCE				= 0
-const ROUTING_COMMAND_INITIALIZE_CONNECTION	= 1
-const ROUTING_COMMAND_INTRODUCTION			= 2
-const ROUTING_COMMAND_CONFIRM_CONNECTION	= 3
-const ROUTING_COMMAND_CONNECTED				= 4
-const ROUTING_COMMAND_DATA					= 5
-const ROUTING_COMMAND_PING					= 6
+const ROUTING_COMMAND_ANNOUNCE							= 0
+const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
+const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE	= 2
+const ROUTING_COMMAND_INITIALIZE_CONNECTION				= 3
+const ROUTING_COMMAND_INTRODUCTION						= 4
+const ROUTING_COMMAND_CONFIRM_CONNECTION				= 5
+const ROUTING_COMMAND_CONNECTED							= 6
+const ROUTING_COMMAND_DATA								= 7
+const ROUTING_COMMAND_PING								= 8
 
 const ID_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
@@ -30,13 +32,16 @@ const LAST_USED_TIMEOUT				= 60
 # Re-announce each 30 minutes
 const ANNOUNCE_INTERVAL				= 30 * 60
 
-const CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES	= 0
-const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
-const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 2
-const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 3
+const CONNECTION_ERROR_OK								= 0
+const CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES		= 1
+const CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES	= 2
+const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 3
+const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 4
+const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 5
 
-const CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES		= 0
-const CONNECTION_PROGRESS_INTRODUCTION_SENT				= 1
+const CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE	= 0
+const CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES		= 1
+const CONNECTION_PROGRESS_INTRODUCTION_SENT				= 2
 
 const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED	= 0
 const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
@@ -87,6 +92,33 @@ function compute_source_id (address, route_id)
  */
 function is_string_equal_to_array (string, array)
 	string == array.join(',')
+/**
+ * @param {number}				code
+ * @param {!Uint8Array}			target_id
+ * @param {!Array<!Uint8Array>}	nodes
+ *
+ * @return {!Uint8Array}
+ */
+function compose_find_introduction_nodes_response (code, target_id, nodes)
+	result	= new Uint8Array(1 + ID_LENGTH + nodes.length * ID_LENGTH)
+		..set([code])
+		..set(target_id, 1)
+	for node, i in nodes
+		result.set(node, 1 + ID_LENGTH + i * ID_LENGTH)
+	result
+/**
+ * @param {!Uint8Array} data
+ *
+ * @return {!Array} [code, target_id, nodes]
+ */
+function parse_find_introduction_nodes_response (data)
+	code		= data[0]
+	target_id	= data.subarray(1, 1 + ID_LENGTH)
+	nodes		= []
+	data		= data.subarray(1 + ID_LENGTH)
+	for i from 0 til data.length / ID_LENGTH
+		nodes.push(data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH))
+	[code, target_id, nodes]
 /**
  * @param {!Uint8Array} target_id
  * @param {!Uint8Array} introduction_node
@@ -348,6 +380,27 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						), ANNOUNCE_INTERVAL * 1000
 						@_announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval])
 						@_dht['publish_announcement_message'](announcement_message)
+					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
+						target_id	= data
+						if target_id.length != ID_LENGTH
+							return
+						/**
+						 * @param {number}				code
+						 * @param {!Array<!Uint8Array>}	nodes
+						 */
+						send_response	= (code, nodes) !~>
+							data	= compose_find_introduction_nodes_response(code, target_id, nodes)
+							@_router['send_data'](node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data)
+						@_dht['find_introduction_nodes'](
+							target_id
+							(introduction_nodes) !~>
+								if !introduction_nodes.length
+									send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
+								else
+									send_response(CONNECTION_ERROR_OK, introduction_nodes)
+							!~>
+								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
+						)
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						rendezvous_token_string													= rendezvous_token.join(',')
@@ -476,11 +529,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: 1 byte for command, 2 bytes for multiplexer and MAC on top of that
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH # 468 bytes
 	Core
+		..'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 		..'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
 		..'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
 		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
 
+		..'CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'	= CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE
 		..'CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'		= CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES
 		..'CONNECTION_PROGRESS_INTRODUCTION_SENT'				= CONNECTION_PROGRESS_INTRODUCTION_SENT
 
@@ -581,85 +636,95 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if @_id_to_routing_path.has(target_id_string)
 				# Already connected, do nothing
 				return
-			# TODO: Don't make DHT lookup of a friend directly, do this from rendezvous node (possibly, as part of introduction)
-			@_dht['find_introduction_nodes'](
-				target_id
-				(introduction_nodes) !~>
-					if !introduction_nodes.length
-						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
-						return
-					@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
-					connected_nodes	= Array.from(@_connected_nodes.values())
-					nodes			= @_pick_random_nodes(number_of_intermediate_nodes)
-					if !nodes
-						@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
-						return
-					first_node		= nodes[0]
-					rendezvous_node	= nodes[nodes.length - 1]
-					@_router['construct_routing_path'](nodes)
-						.then (route_id) !~>
-							!~function try_to_introduce
-								if !introduction_nodes.length
-									@'fire'('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
+			nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+			if !nodes
+				@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
+				return
+			first_node		= nodes[0]
+			rendezvous_node	= nodes[nodes.length - 1]
+			@_router['construct_routing_path'](nodes)
+				.then (route_id) !~>
+					@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
+					first_node_string	= first_node.join(',')
+					route_id_string		= route_id.join(',')
+					!~function found_introduction_nodes (node_id, route_id, command, data)
+						if (
+							!is_string_equal_to_array(first_node_string, node_id) ||
+							!is_string_equal_to_array(route_id_string, route_id) ||
+							command != ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE
+						)
+							return
+						[code, target_id, introduction_nodes]	= parse_find_introduction_nodes_response(data)
+						if !is_string_equal_to_array(target_id_string, target_id)
+							return
+						clearTimeout(find_introduction_nodes_timeout)
+						if code != CONNECTION_ERROR_OK
+							@'fire'('connection_failed', target_id, code)
+							return
+						@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
+						!~function try_to_introduce
+							if !introduction_nodes.length
+								@'fire'('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
+								return
+							introduction_node				= pull_random_item_from_array(introduction_nodes)
+							rendezvous_token				= randombytes(ID_LENGTH)
+							x25519_public_key				= detox-crypto['convert_public_key'](target_id)
+							encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
+							handshake_message				= encryptor_instance['get_handshake_message']()
+							introduction_payload			= compose_introduction_payload(
+								@_real_keypair['ed25519']['public']
+								introduction_node
+								rendezvous_node
+								rendezvous_token
+								handshake_message
+								secret
+							)
+							signature						= @_sign(introduction_payload)
+							introduction_message			= new Uint8Array(introduction_payload.length + signature.length)
+								..set(signature)
+								..set(introduction_payload, SIGNATURE_LENGTH)
+							introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
+							!~function path_confirmation (node_id, route_id, command, data)
+								if (
+									!is_string_equal_to_array(first_node_string, node_id) ||
+									!is_string_equal_to_array(route_id_string, route_id) ||
+									command != ROUTING_COMMAND_CONNECTED
+								)
 									return
-								introduction_node				= pull_random_item_from_array(introduction_nodes)
-								rendezvous_token				= randombytes(ID_LENGTH)
-								x25519_public_key				= detox-crypto['convert_public_key'](target_id)
-								encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
-								handshake_message				= encryptor_instance['get_handshake_message']()
-								introduction_payload			= compose_introduction_payload(
-									@_real_keypair['ed25519']['public']
-									introduction_node
-									rendezvous_node
-									rendezvous_token
-									handshake_message
-									secret
+								[signature, rendezvous_token_received, handshake_message_received]	= parse_confirm_connection_data(data)
+								if (
+									rendezvous_token_received.join(',') != rendezvous_token.join(',') ||
+									!detox-crypto['verify'](signature, rendezvous_token, target_id)
 								)
-								signature						= @_sign(introduction_payload)
-								introduction_message			= new Uint8Array(introduction_payload.length + signature.length)
-									..set(signature)
-									..set(introduction_payload, SIGNATURE_LENGTH)
-								introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
-								first_node_string				= first_node.join(',')
-								route_id_string					= route_id.join(',')
-								!~function path_confirmation (node_id, route_id, command, data)
-									if (
-										!is_string_equal_to_array(first_node_string, node_id) ||
-										!is_string_equal_to_array(route_id_string, route_id) ||
-										command != ROUTING_COMMAND_CONNECTED
-									)
-										return
-									[signature, rendezvous_token_received, handshake_message_received]	= parse_confirm_connection_data(data)
-									if (
-										rendezvous_token_received.join(',') != rendezvous_token.join(',') ||
-										!detox-crypto['verify'](signature, rendezvous_token, target_id)
-									)
-										return
-									encryptor_instance['put_handshake_message'](handshake_message_received)
-									@_encryptor_instances.set(target_id_string, encryptor_instance)
-									clearTimeout(path_confirmation_timeout)
-									@_router['off']('data', path_confirmation)
-									@_register_routing_path(target_id, node_id, route_id)
-								@_router['on']('data', path_confirmation)
-								@_router['send_data'](
-									first_node
-									route_id
-									ROUTING_COMMAND_INITIALIZE_CONNECTION
-									compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted)
-								)
-								@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
-								path_confirmation_timeout	= setTimeout (!~>
-									@_router['off']('data', path_confirmation)
-									encryptor_instance['destroy']()
-									try_to_introduce()
-								), CONNECTION_TIMEOUT * 1000
-							try_to_introduce()
-						.catch (error) !~>
-							error_handler(error)
-							@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
-				!~>
-					@'fire'('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES)
-			)
+									return
+								encryptor_instance['put_handshake_message'](handshake_message_received)
+								@_encryptor_instances.set(target_id_string, encryptor_instance)
+								clearTimeout(path_confirmation_timeout)
+								@_router['off']('data', path_confirmation)
+								@_register_routing_path(target_id, node_id, route_id)
+							@_router['on']('data', path_confirmation)
+							@_router['send_data'](
+								first_node
+								route_id
+								ROUTING_COMMAND_INITIALIZE_CONNECTION
+								compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted)
+							)
+							@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
+							path_confirmation_timeout	= setTimeout (!~>
+								@_router['off']('data', path_confirmation)
+								encryptor_instance['destroy']()
+								try_to_introduce()
+							), CONNECTION_TIMEOUT * 1000
+						try_to_introduce()
+					@_router['on']('data', found_introduction_nodes)
+					@_router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
+					find_introduction_nodes_timeout	= setTimeout (!~>
+						@_router['off']('data', found_introduction_nodes)
+						@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
+					), CONNECTION_TIMEOUT * 1000
+				.catch (error) !~>
+					error_handler(error)
+					@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 		..'get_max_data_size' = ->
 			@_max_data_size
 		/**

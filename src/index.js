@@ -6,16 +6,18 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_OK, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
   ROUTING_COMMAND_ANNOUNCE = 0;
-  ROUTING_COMMAND_INITIALIZE_CONNECTION = 1;
-  ROUTING_COMMAND_INTRODUCTION = 2;
-  ROUTING_COMMAND_CONFIRM_CONNECTION = 3;
-  ROUTING_COMMAND_CONNECTED = 4;
-  ROUTING_COMMAND_DATA = 5;
-  ROUTING_COMMAND_PING = 6;
+  ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST = 1;
+  ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE = 2;
+  ROUTING_COMMAND_INITIALIZE_CONNECTION = 3;
+  ROUTING_COMMAND_INTRODUCTION = 4;
+  ROUTING_COMMAND_CONFIRM_CONNECTION = 5;
+  ROUTING_COMMAND_CONNECTED = 6;
+  ROUTING_COMMAND_DATA = 7;
+  ROUTING_COMMAND_PING = 8;
   ID_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   HANDSHAKE_MESSAGE_LENGTH = 48;
@@ -24,12 +26,15 @@
   ROUTING_PATH_SEGMENT_TIMEOUT = 10;
   LAST_USED_TIMEOUT = 60;
   ANNOUNCE_INTERVAL = 30 * 60;
-  CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 0;
-  CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
-  CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 2;
-  CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES = 3;
-  CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES = 0;
-  CONNECTION_PROGRESS_INTRODUCTION_SENT = 1;
+  CONNECTION_ERROR_OK = 0;
+  CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES = 1;
+  CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
+  CONNECTION_ERROR_NO_INTRODUCTION_NODES = 3;
+  CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 4;
+  CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES = 5;
+  CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE = 0;
+  CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES = 1;
+  CONNECTION_PROGRESS_INTRODUCTION_SENT = 2;
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED = 0;
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
   ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
@@ -87,6 +92,42 @@
    */
   function is_string_equal_to_array(string, array){
     return string === array.join(',');
+  }
+  /**
+   * @param {number}				code
+   * @param {!Uint8Array}			target_id
+   * @param {!Array<!Uint8Array>}	nodes
+   *
+   * @return {!Uint8Array}
+   */
+  function compose_find_introduction_nodes_response(code, target_id, nodes){
+    var x$, result, i$, len$, i, node;
+    x$ = result = new Uint8Array(1 + ID_LENGTH + nodes.length * ID_LENGTH);
+    x$.set([code]);
+    x$.set(target_id, 1);
+    for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
+      i = i$;
+      node = nodes[i$];
+      result.set(node, 1 + ID_LENGTH + i * ID_LENGTH);
+    }
+    return result;
+  }
+  /**
+   * @param {!Uint8Array} data
+   *
+   * @return {!Array} [code, target_id, nodes]
+   */
+  function parse_find_introduction_nodes_response(data){
+    var code, target_id, nodes, i$, to$, i;
+    code = data[0];
+    target_id = data.subarray(1, 1 + ID_LENGTH);
+    nodes = [];
+    data = data.subarray(1 + ID_LENGTH);
+    for (i$ = 0, to$ = data.length / ID_LENGTH; i$ < to$; ++i$) {
+      i = i$;
+      nodes.push(data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH));
+    }
+    return [code, target_id, nodes];
   }
   /**
    * @param {!Uint8Array} target_id
@@ -365,7 +406,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, rendezvous_token, introduction_node, target_id, introduction_message, rendezvous_token_string, connection_timeout, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, target_id, send_response, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, secret, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -382,6 +423,30 @@
           }, ANNOUNCE_INTERVAL * 1000);
           this$._announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval]);
           this$._dht['publish_announcement_message'](announcement_message);
+          break;
+        case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
+          target_id = data;
+          if (target_id.length !== ID_LENGTH) {
+            return;
+          }
+          /**
+           * @param {number}				code
+           * @param {!Array<!Uint8Array>}	nodes
+           */
+          send_response = function(code, nodes){
+            var data;
+            data = compose_find_introduction_nodes_response(code, target_id, nodes);
+            this$._router['send_data'](node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data);
+          };
+          this$._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
+            if (!introduction_nodes.length) {
+              send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, []);
+            } else {
+              send_response(CONNECTION_ERROR_OK, introduction_nodes);
+            }
+          }, function(){
+            send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, []);
+          });
           break;
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
@@ -506,10 +571,12 @@
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH;
     }
     x$ = Core;
+    x$['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
     x$['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
     x$['CONNECTION_ERROR_NO_INTRODUCTION_NODES'] = CONNECTION_ERROR_NO_INTRODUCTION_NODES;
     x$['CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'] = CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT;
     x$['CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'] = CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES;
+    x$['CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'] = CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE;
     x$['CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'] = CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES;
     x$['CONNECTION_PROGRESS_INTRODUCTION_SENT'] = CONNECTION_PROGRESS_INTRODUCTION_SENT;
     x$['ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'] = ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED;
@@ -613,7 +680,7 @@
      * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
      */
     y$['connect_to'] = function(target_id, secret, number_of_intermediate_nodes){
-      var target_id_string, this$ = this;
+      var target_id_string, nodes, first_node, rendezvous_node, this$ = this;
       if (!number_of_intermediate_nodes) {
         throw new Error('Direct connections are not yet supported');
         return;
@@ -622,24 +689,35 @@
       if (this._id_to_routing_path.has(target_id_string)) {
         return;
       }
-      this._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
-        var connected_nodes, nodes, first_node, rendezvous_node;
-        if (!introduction_nodes.length) {
-          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES);
-          return;
-        }
-        this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
-        connected_nodes = Array.from(this$._connected_nodes.values());
-        nodes = this$._pick_random_nodes(number_of_intermediate_nodes);
-        if (!nodes) {
-          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
-          return;
-        }
-        first_node = nodes[0];
-        rendezvous_node = nodes[nodes.length - 1];
-        this$._router['construct_routing_path'](nodes).then(function(route_id){
+      nodes = this._pick_random_nodes(number_of_intermediate_nodes);
+      if (!nodes) {
+        this['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
+        return;
+      }
+      first_node = nodes[0];
+      rendezvous_node = nodes[nodes.length - 1];
+      this._router['construct_routing_path'](nodes).then(function(route_id){
+        var first_node_string, route_id_string, find_introduction_nodes_timeout;
+        this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE);
+        first_node_string = first_node.join(',');
+        route_id_string = route_id.join(',');
+        function found_introduction_nodes(node_id, route_id, command, data){
+          var ref$, code, target_id, introduction_nodes;
+          if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(route_id_string, route_id) || command !== ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE) {
+            return;
+          }
+          ref$ = parse_find_introduction_nodes_response(data), code = ref$[0], target_id = ref$[1], introduction_nodes = ref$[2];
+          if (!is_string_equal_to_array(target_id_string, target_id)) {
+            return;
+          }
+          clearTimeout(find_introduction_nodes_timeout);
+          if (code !== CONNECTION_ERROR_OK) {
+            this$['fire']('connection_failed', target_id, code);
+            return;
+          }
+          this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
           function try_to_introduce(){
-            var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, signature, x$, introduction_message, introduction_message_encrypted, first_node_string, route_id_string, path_confirmation_timeout;
+            var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, signature, x$, introduction_message, introduction_message_encrypted, path_confirmation_timeout;
             if (!introduction_nodes.length) {
               this$['fire']('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
               return;
@@ -655,8 +733,6 @@
             x$.set(signature);
             x$.set(introduction_payload, SIGNATURE_LENGTH);
             introduction_message_encrypted = detoxCrypto['one_way_encrypt'](x25519_public_key, introduction_message);
-            first_node_string = first_node.join(',');
-            route_id_string = route_id.join(',');
             function path_confirmation(node_id, route_id, command, data){
               var ref$, signature, rendezvous_token_received, handshake_message_received;
               if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(route_id_string, route_id) || command !== ROUTING_COMMAND_CONNECTED) {
@@ -682,12 +758,16 @@
             }, CONNECTION_TIMEOUT * 1000);
           }
           try_to_introduce();
-        })['catch'](function(error){
-          error_handler(error);
-          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
-        });
-      }, function(){
-        this$['fire']('connection_failed', target_id, CONNECTION_ERROR_NO_INTRODUCTION_NODES);
+        }
+        this$._router['on']('data', found_introduction_nodes);
+        this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
+        find_introduction_nodes_timeout = setTimeout(function(){
+          this$._router['off']('data', found_introduction_nodes);
+          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
+        }, CONNECTION_TIMEOUT * 1000);
+      })['catch'](function(error){
+        error_handler(error);
+        this$['fire']('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
       });
     };
     y$['get_max_data_size'] = function(){
