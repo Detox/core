@@ -1,16 +1,10 @@
 # Detox design
 
-Complements specification version: ?
+Complements specification version: 0.0.1
 
 Author: Nazar Mokrynskyi
 
 License: Detox design (this document) is hereby placed in the public domain
-
-### Glossary
-* Initiator: the node that initiates communication
-* Responder: the node with which initiator wants to communicate
-* Routing path: a sequence of nodes that form a path through which initiator and responder are connected and can anonymously send encrypted data
-* Friend: a node that have established friendship with another node, so that these 2 nodes are friends with each other
 
 ### Introduction
 This document is a high level design overview of the Detox.
@@ -19,6 +13,12 @@ The goal of this document is to give general understanding what Detox is, how it
 Refer to the specification if you intend to create alternative implementation.
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this document are to be interpreted as described in IETF [RFC 2119](http://www.ietf.org/rfc/rfc2119.txt).
+
+#### Glossary
+* Initiator: the node that initiates communication
+* Responder: the node with which initiator wants to communicate
+* Routing path: a sequence of nodes that form a path through which initiator and responder are connected and can anonymously send encrypted data
+* Friend: a node that have established friendship with another node, so that these 2 nodes are friends with each other
 
 ### What Detox is
 Detox is an overlay network that is intended to offer security, strong anonymity, robustness and scalability, while having relatively low latency and capable of running in modern browsers without having any additional software installed.
@@ -68,7 +68,7 @@ When the node wants to announce itself to the network it will:
 When a friend wants to connect to other friend it will:
 * construct routing path of desired length to the node which will act as rendezvous node
 * gets introduction nodes through rendezvous node
-* generate invitation message that contains information about friend's long-term public key, rendezvous token, introduction node ID, encrypted and signed secret for a friend together with rendezvous node ID so that friend can connect back if needed
+* generate invitation message that contains information about friend's long-term public key, rendezvous token, introduction node ID, encrypted and signed application name and secret for a friend together with rendezvous node ID so that friend can connect back if needed
 
 Rendezvous node will connect to introduction node and will ask to forward introduction, after which a friend will have to choices:
 * accept introduction, build another routing path of desired length to rendezvous node and ask to confirm connection with a friend
