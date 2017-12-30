@@ -23,6 +23,8 @@ const SIGNATURE_LENGTH				= 64
 const HANDSHAKE_MESSAGE_LENGTH		= 48
 # ChaChaPoly+BLAKE2b
 const MAC_LENGTH					= 16
+# Length of the application name used during introduction
+const APPLICATION_LENGTH			= 128
 # How long node should wait for rendezvous node to receive incoming connection from intended responder
 const CONNECTION_TIMEOUT			= 30
 # The same as in `@detox/transport`
@@ -125,22 +127,24 @@ function parse_find_introduction_nodes_response (data)
  * @param {!Uint8Array} rendezvous_node
  * @param {!Uint8Array} rendezvous_token
  * @param {!Uint8Array} handshake_message
+ * @param {!Uint8Array} application
  * @param {!Uint8Array} secret
  *
  * @return {!Uint8Array}
  */
-function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret)
-	new Uint8Array(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + secret.length)
+function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret)
+	new Uint8Array(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
 		..set(target_id)
 		..set(introduction_node, ID_LENGTH)
 		..set(rendezvous_node, ID_LENGTH * 2)
 		..set(rendezvous_token, ID_LENGTH * 3)
 		..set(handshake_message, ID_LENGTH * 4)
-		..set(secret, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
+		..set(application, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
+		..set(secret, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
 /**
  * @param {!Uint8Array} introduction_payload
  *
- * @return {!Array<Uint8Array>} [target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
+ * @return {!Array<Uint8Array>} [target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret]
  */
 function parse_introduction_payload (introduction_payload)
 	target_id			= introduction_payload.subarray(0, ID_LENGTH)
@@ -148,8 +152,9 @@ function parse_introduction_payload (introduction_payload)
 	rendezvous_node		= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
 	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 4)
 	handshake_message	= introduction_payload.subarray(ID_LENGTH * 4, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
-	secret				= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
-	[target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, secret]
+	application			= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
+	secret				= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
+	[target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret]
 /**
  * @param {!Uint8Array} public_key
  * @param {!Uint8Array} announcement_message
@@ -448,6 +453,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								rendezvous_node
 								rendezvous_token
 								handshake_message
+								application
 								secret
 							]								= parse_introduction_payload(introduction_payload)
 							if (
@@ -463,6 +469,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							data	=
 								'target_id'						: target_id
 								'secret'						: secret
+								'application'					: application
 								'number_of_intermediate_nodes'	: null
 							@'fire'('introduction', data)
 								.then !~>
@@ -626,10 +633,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						announced()
 		/**
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
-		 * @param {!Uint8Array}	secret
+		 * @param {!Uint8Array}	application						Up to 128 bytes
+		 * @param {!Uint8Array}	secret							Up to 32 bytes
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
 		 */
-		..'connect_to' = (target_id, secret, number_of_intermediate_nodes) !->
+		..'connect_to' = (target_id, application, secret, number_of_intermediate_nodes) !->
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
@@ -679,6 +687,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								rendezvous_node
 								rendezvous_token
 								handshake_message
+								application
 								secret
 							)
 							signature						= @_sign(introduction_payload)

@@ -56,7 +56,7 @@ In order for friends to find each other they need to know public key from long-t
 
 Public key acts as ID and secret is a random unique string used for authentication.
 
-Secret might be of 2 kinds.
+Secret might be one of 2 kinds.
 The first is used for friendship requests and is not unique to a friend (MAY be changed at any time to prevent unwanted friendship requests).
 Once friendship is established friends generate a unique secret that they use during discovery for authentication between them, typically this secret is larger as user doesn't need to type it and is not needed to be rotated. If friendship is revoked by one friend the other one will not be able to connect using old secret and will need to request friendship again. A friend MAY notify the other one about revocation.
 
@@ -67,6 +67,7 @@ When the node wants to announce itself to the network it will:
 
 When a friend wants to connect to other friend it will:
 * construct routing path of desired length to the node which will act as rendezvous node
+* gets introduction nodes through rendezvous node
 * generate invitation message that contains information about friend's long-term public key, rendezvous token, introduction node ID, encrypted and signed secret for a friend together with rendezvous node ID so that friend can connect back if needed
 
 Rendezvous node will connect to introduction node and will ask to forward introduction, after which a friend will have to choices:

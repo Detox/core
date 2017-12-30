@@ -82,13 +82,14 @@ Listen for events to identify when/if announcement succeeded.
 * `number_of_intermediate_nodes` - non-zero number of intermediate nodes between this node and introduction node (not including it) used during routing path construction for anonymity
 
 
-### detox_core.Core.connect_to(target_id : Uint8Array, secret : Uint8Array, number_of_intermediate_nodes : number)
+### detox_core.Core.connect_to(target_id : Uint8Array, application : Uint8Array, secret : Uint8Array, number_of_intermediate_nodes : number)
 Connecting to a friend with `target_id` and `secret`.
 
 Listen for events to identify when/if connection succeeded. NOTE: there is no way to know if a friend refused to answer or simply not available.
 
 * `target_id` - long-term public key of a friend
-* `secret` - secret that will be sent to a friend, can be arbitrary length and content, typically used for friend requests and identification as kind of a password
+* `application` - Application-specific string up to 128 bytes that both friends should understand
+* `secret` - secret that will be sent to a friend, up to 32 bytes, typically used for friend requests and identification as kind of a password
 * `number_of_intermediate_nodes` - non-zero number of intermediate nodes between this node and rendezvous node (including it) used during routing path construction for anonymity
 
 ### detox_core.Core.get_max_data_size() : number
@@ -120,8 +121,8 @@ No payload.
 Event is fired when Core instance is ready to be used.
 
 ### Event: introduction
-Payload is `data` object with properties `target_id`, `secret` and `number_of_intermediate_nodes`.
-Event is fired when a `target_id` friend is asking for introduction with `secret`.
+Payload is `data` object with properties `target_id`, `application`, `secret` and `number_of_intermediate_nodes`.
+Event is fired when a `target_id` friend is asking for introduction using application `application` (exactly 128 bytes as used in `connect_to` method, if supplied application was smaller that 128 bytes then zeroes are appended) with `secret` (exactly 128 bytes as used in `connect_to` method, if supplied secret was smaller that 128 bytes then zeroes are appended).
 If node decides to accept introduction and establish connection, it sets `number_of_intermediate_nodes` property to the number of intermediate nodes between this node and rendezvous node of a friend (not including it) used during routing path construction for anonymity.
 
 ### Event: data
