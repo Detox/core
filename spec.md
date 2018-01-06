@@ -55,8 +55,8 @@ There are 4 commands supported on data channel level:
 * `COMMAND_DHT` means data are consumed by DHT
 * `COMMAND_TAG` - is used to notify the other node that the other node is using this connection for something more than DHT so that connection SHOULD NOT be closed immediately if not used by DHT itself
 * `COMMAND_UNTAG` - is used to notify the other node that this connection is not use for anything other than DHT anymore and MAY be closed is not needed for DHT
-* commands with numeric values `3..9` are reserved for future use.
-* commands with numeric values `10...255` are translated into Routing commands from range `0..245` (which are described in Routing section below)
+* Commands with numeric values `3..9` are reserved for future use.
+* Commands with numeric values `10...255` are translated into Routing commands from range `0..245` (which are described in Routing section below)
 
 #### DHT
 DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is in turn based on BitTorrent DHT, make yourself familiar with BitTorrent DHT and WebTorrent DHT first as this document will not cover them.

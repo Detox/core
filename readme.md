@@ -25,6 +25,7 @@ Should be secure already (WARNING: not proven by independent cryptographer yet, 
 Data transfer is always at constant rate, regardless of data presence and its size.
 
 [Ronion](https://github.com/nazar-pc/ronion) anonymous routing framework with AEZ block cipher (not secure, but functionally working implementation, see [aez.wasm](https://github.com/nazar-pc/aez.wasm)) and `Noise_NK_25519_ChaChaPoly_BLAKE2b` used for anonymous routing (WARNING: not proven by independent cryptographer yet, so don't rely on it being actually secure!).
+Nodes for anonymous routing will need to be somehow received from DHT, which is a challenging and currently unsolved issue.
 
 Higher level glue is used to select introduction nodes, announce them to DHT, then on other node select rendezvous node and introduce itself using rendezvous node through introduction node to a friend.
 
@@ -44,7 +45,7 @@ Should be scalable already (WARNING: not proven yet, large-scale testing is need
 Major open issues in the order from more important to less important (the order is not strict):
 * Document overall system design and write specification for implementers
 * Improve performance (looks like [node-webrtc](https://github.com/js-platform/node-webrtc) is holding us on backend, but more testing is needed, also zlib compression with dictionary would be nice for DHT traffic)
-* Nodes selection for anonymous routing (consider Brahms for DHT re-implementation)
+* Nodes selection for anonymous routing (will likely require DHT re-implementation)
 * Make AEZ implementation secure (timings attacks in particular)
 * Conduct security audit for Ronion
 * Conduct security audit of a project as the whole
