@@ -52,11 +52,20 @@ There are 4 commands supported on data channel level:
 | COMMAND_TAG     | 1             |
 | COMMAND_UNTAG   | 2             |
 
-* `COMMAND_DHT` means data are consumed by DHT
+* `COMMAND_DHT` - data are consumed by DHT
 * `COMMAND_TAG` - is used to notify the other node that the other node is using this connection for something more than DHT so that connection SHOULD NOT be closed immediately if not used by DHT itself
 * `COMMAND_UNTAG` - is used to notify the other node that this connection is not use for anything other than DHT anymore and MAY be closed is not needed for DHT
 * Commands with numeric values `3..9` are reserved for future use.
-* Commands with numeric values `10...255` are translated into Routing commands from range `0..245` (which are described in Routing section below)
+* Commands with numeric values `10...255` are translated into additional commands from range `0..245`
+
+Additional commands (from range `0..245`):
+| Command name                 | Numeric value |
+|------------------------------|---------------|
+| COMMAND_ROUTING              | 0             |
+| COMMAND_FORWARD_INTRODUCTION | 1             |
+
+* `COMMAND_ROUTING` - data are consumed by Router directly
+* `COMMAND_FORWARD_INTRODUCTION` - is used by rendezvous node in order to ask introduction node to forward introduction to target node (see "Announcement to the network" and "Discovery and connection to a friend" sections below)
 
 #### DHT
 DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is in turn based on BitTorrent DHT, make yourself familiar with BitTorrent DHT and WebTorrent DHT first as this document will not cover them.
@@ -68,9 +77,30 @@ This signature is present to ensure that WebRTC connection is established with i
 
 DHT queries and responses are sent with `COMMAND_DHT` as described in previous section.
 
-#### Routing
-Anonymous routing is based on [Ronion](https://github.com/nazar-pc/ronion) framework, make yourself familiar with Ronion first as this document will not cover it.
+If node acts as DHT bootstrap node it MUST NOT:
+* act as introduction node
+* act as rendezvous node
+* act as intermediate node on routing paths
 
+#### Router
+Anonymous router is based on [Ronion](https://github.com/nazar-pc/ronion) framework, make yourself familiar with Ronion first as this document will not cover it.
+
+Following choices were made for this particular implementation of Ronion:
+* packet size is 509 bytes (512 of data channel packet - 3 for data channel packet header)
+* address in 32 bytes DHT public key (see key pairs section below)
+* `Noise_NK_25519_ChaChaPoly_BLAKE2b` from [Noise Protocol Framework](https://noiseprotocol.org/) is used for encryption/decryption (payload on `CREATE_REQUEST`, `CREATE_RESPONSE` and `EXTEND_REQUEST` is Noise's handshake message)
+* [AEZ block cipher](http://web.cs.ucdavis.edu/%7Erogaway/aez/) is used for re-wrapping (keys for wrapping/unwrapping with AEZ are received by encrypting 32 zero bytes with empty additional data using send/receive Noise CipherState used for encryption/decryption, together with 16 bytes MAC it will give identical 48 bytes keys for wrapping and unwrapping on both sides; nonce is 12 zero bytes and before each wrapping/unwrapping it is incremented starting from the last byte and moving to the first one)
+* data MUST only be sent between initiator and responder, all other data sent by other nodes on routing path MUST be ignored
+
+### Selection of nodes for routing path creation
 TODO
+
+### Announcement to the network
+TODO
+
+### Discovery and connection to a friend
+TODO
+
+### Sending data to a friend
 
 TODO: The rest

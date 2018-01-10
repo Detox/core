@@ -576,7 +576,7 @@
           this$._send_ping(node_id, route_id);
         }
       });
-      this._max_packet_data_size = this._router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH;
+      this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
     }
     x$ = Core;
     x$['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;

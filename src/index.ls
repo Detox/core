@@ -535,8 +535,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						# Send ping back
 						@_send_ping(node_id, route_id)
 			)
-		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: 1 byte for command, 2 bytes for multiplexer and MAC on top of that
-		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - 1 - 2 - MAC_LENGTH # 468 bytes
+		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
+		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 471 bytes
 	Core
 		..'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 		..'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
@@ -560,6 +560,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {number}	port
 		 */
 		..'start_bootstrap_node' = (ip, port) !->
+			# TODO: After this node should refuse to act as introduction node, rendezvous node or intermediate node in routing paths
 			@_dht['start_bootstrap_node'](ip, port)
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
