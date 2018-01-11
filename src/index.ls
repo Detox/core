@@ -6,6 +6,8 @@
  */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
+const DHT_COMMAND_GET_NODES_REQUEST		= 2
+const DHT_COMMAND_GET_NODES_RESPONSE	= 3
 
 const ROUTING_COMMAND_ANNOUNCE							= 0
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
@@ -33,6 +35,12 @@ const ROUTING_PATH_SEGMENT_TIMEOUT	= 10
 const LAST_USED_TIMEOUT				= 60
 # Re-announce each 30 minutes
 const ANNOUNCE_INTERVAL				= 30 * 60
+# After 5 minutes aware of node is considered stale and needs refreshing or replacing with a new one
+const STALE_AWARE_OF_NODE_TIMEOUT	= 5 * 60
+# Keep at most 1000 nodes as aware of nodes
+const AWARE_OF_NODES_LIMIT			= 1000
+# New aware of nodes will be fetched and old refreshed each 30 seconds
+const GET_MORE_NODES_INTERVAL		= 30
 
 const CONNECTION_ERROR_OK								= 0
 const CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES		= 1
@@ -281,6 +289,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
 		@_connected_nodes		= new Map
+		@_aware_of_nodes		= new Map
+		@_get_nodes_requested	= new Set
 		@_routing_paths			= new Map
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path	= new Map
@@ -323,6 +333,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				if @_last_announcement < re-announce_if_older_than
 					@_announce(@_number_of_introduction_nodes, @_number_of_intermediate_nodes)
 		), LAST_USED_TIMEOUT / 2 * 1000
+		@_get_more_nodes_interval		= setInterval (!~>
+			if @_more_nodes_needed()
+				@_get_more_nodes()
+		), GET_MORE_NODES_INTERVAL * 1000
 
 		@_sign		= (data) ~>
 			detox-crypto['sign'](
@@ -340,9 +354,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		)
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.set(node_id.join(','), node_id)
+				if @_more_nodes_needed()
+					@_get_more_nodes_from(node_id)
 			)
 			.'on'('node_disconnected', (node_id) !~>
-				@_connected_nodes.delete(node_id.join(','))
+				node_id_string	= node_id.join(',')
+				@_connected_nodes.delete(node_id_string)
+				@_get_nodes_requested.delete(node_id_string)
 			)
 			.'on'('data', (node_id, command, data) !~>
 				switch command
@@ -355,6 +373,34 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							return
 						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
+					case DHT_COMMAND_GET_NODES_REQUEST
+						void # TODO: return up to 7 connected nodes (except bootstrap nodes) and the rest of aware of nodes up to 10 in total
+					case DHT_COMMAND_GET_NODES_RESPONSE
+						node_id_string	= node_id.join(',')
+						if !@_get_nodes_requested.has(node_id_string)
+							return
+						@_get_nodes_requested.delete(node_id_string)
+						if data.length % ID_LENGTH != 0
+							return
+						number_of_nodes			= data.length / ID_LENGTH
+						stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
+						for i from 0 til number_of_nodes
+							new_node_id			= data.substring(i * ID_LENGTH, (i + 1) * ID_LENGTH)
+							new_node_id_string	= new_node_id.join(',')
+							# Ignore already connected nodes and own ID or if there are enough nodes already
+							if (
+								is_string_equal_to_array(new_node_id_string, @_dht_keypair['ed25519']['public']) ||
+								@_connected_nodes.has(new_node_id_string)
+							)
+								continue
+							if @_aware_of_nodes.has(new_node_id_string) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
+								@_aware_of_nodes.set(new_node_id_string, [new_node_id, +(new Date)])
+							else if stale_aware_of_nodes.length
+								stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes)
+								@_aware_of_nodes.delete(stale_node_to_remove)
+								@_aware_of_nodes.set(new_node_id_string, [new_node_id, +(new Date)])
+							else
+								break
 			)
 			.'on'('ready', !~>
 				@'fire'('ready')
@@ -763,12 +809,46 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		..'destroy' = !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
+			clearInterval(@_get_more_nodes_interval)
 			@_routing_paths.forEach ([node_id, route_id]) !~>
 				@_unregister_routing_path(node_id, route_id)
 			@_pending_connection.forEach ([, , , connection_timeout]) !~>
 				clearTimeout(connection_timeout)
 			@_dht['destroy']()
 			@_router['destroy']()
+		/**
+		 * @return {boolean}
+		 */
+		.._more_nodes_needed = !->
+			@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length
+		/**
+		 * @param {boolean} early_exit Will return single node if present, used to check if stale nodes are present at all
+		 * @return {!Array<string>}
+		 */
+		.._get_stale_aware_of_nodes = (early_exit = false) !->
+			stale_aware_of_nodes	= []
+			stale_older_than		= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 1000
+			for [old_node_id, date] in Array.from(@_aware_of_nodes.values())
+				if date < stale_older_than
+					stale_aware_of_nodes.push(old_node_id.join(','))
+					if early_exit
+						break
+			stale_aware_of_nodes
+		/**
+		 * Request more nodes to be aware of from some of the nodes already connected to
+		 */
+		.._get_more_nodes = !->
+			nodes	= @_pick_random_connected_nodes(5)
+			if !nodes.length
+				return
+			for node_id in nodes
+				@_get_more_nodes_from(node_id)
+		/**
+		 * @param {!Uint8Array}
+		 */
+		.._get_more_nodes_from = (node_id) !->
+			@_get_nodes_requested.add(node_id.join(','))
+			@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0))
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
@@ -778,6 +858,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
 		 */
 		.._pick_random_nodes = (number_of_nodes, exclude_nodes = null) ->
+			# TODO: Rewrite this using @_pick_random_connected_nodes() and @_aware_of_nodes
 			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
 			# Require at least 2 times as much nodes to be connected
 			if @_connected_nodes.size / 2 < number_of_nodes
@@ -788,6 +869,21 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if exclude_nodes
 				connected_nodes	= connected_nodes.filter (node) ->
 					!(node in exclude_nodes)
+			for i from 0 til number_of_nodes
+				pull_random_item_from_array(connected_nodes)
+		/**
+		 * Get some random nodes from already connected nodes
+		 *
+		 * @param {number}	number_of_nodes
+		 *
+		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
+		 */
+		.._pick_random_connected_nodes = (number_of_nodes = 1) !->
+			if @_connected_nodes.size < number_of_nodes
+				# Make random lookup in order to fill DHT with known nodes
+				@_dht['lookup'](randombytes(ID_LENGTH))
+				return null
+			connected_nodes	= Array.from(@_connected_nodes.values())
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(connected_nodes)
 		/**

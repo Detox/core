@@ -6,9 +6,11 @@
  * @license   MIT License, see license.txt
  */
 (function(){
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, CONNECTION_ERROR_OK, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_ERROR_OK, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, randombytes;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
+  DHT_COMMAND_GET_NODES_REQUEST = 2;
+  DHT_COMMAND_GET_NODES_RESPONSE = 3;
   ROUTING_COMMAND_ANNOUNCE = 0;
   ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST = 1;
   ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE = 2;
@@ -27,6 +29,9 @@
   ROUTING_PATH_SEGMENT_TIMEOUT = 10;
   LAST_USED_TIMEOUT = 60;
   ANNOUNCE_INTERVAL = 30 * 60;
+  STALE_AWARE_OF_NODE_TIMEOUT = 5 * 60;
+  AWARE_OF_NODES_LIMIT = 1000;
+  GET_MORE_NODES_INTERVAL = 30;
   CONNECTION_ERROR_OK = 0;
   CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
@@ -320,6 +325,8 @@
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._connected_nodes = new Map;
+      this._aware_of_nodes = new Map;
+      this._get_nodes_requested = new Set;
       this._routing_paths = new Map;
       this._id_to_routing_path = new Map;
       this._routing_path_to_id = new Map;
@@ -374,15 +381,26 @@
           }
         }
       }, LAST_USED_TIMEOUT / 2 * 1000);
+      this._get_more_nodes_interval = setInterval(function(){
+        if (this$._more_nodes_needed()) {
+          this$._get_more_nodes();
+        }
+      }, GET_MORE_NODES_INTERVAL * 1000);
       this._sign = function(data){
         return detoxCrypto['sign'](data, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
       };
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
         this$._connected_nodes.set(node_id.join(','), node_id);
+        if (this$._more_nodes_needed()) {
+          this$._get_more_nodes_from(node_id);
+        }
       })['on']('node_disconnected', function(node_id){
-        this$._connected_nodes['delete'](node_id.join(','));
+        var node_id_string;
+        node_id_string = node_id.join(',');
+        this$._connected_nodes['delete'](node_id_string);
+        this$._get_nodes_requested['delete'](node_id_string);
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id;
+        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, node_id_string, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, new_node_id_string, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -395,6 +413,37 @@
           }
           ref$ = this$._announcements_from.get(target_id_string), target_node_id = ref$[1], target_route_id = ref$[2];
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
+          break;
+        case DHT_COMMAND_GET_NODES_REQUEST:
+          break;
+        case DHT_COMMAND_GET_NODES_RESPONSE:
+          node_id_string = node_id.join(',');
+          if (!this$._get_nodes_requested.has(node_id_string)) {
+            return;
+          }
+          this$._get_nodes_requested['delete'](node_id_string);
+          if (data.length % ID_LENGTH !== 0) {
+            return;
+          }
+          number_of_nodes = data.length / ID_LENGTH;
+          stale_aware_of_nodes = this$._get_stale_aware_of_nodes();
+          for (i$ = 0; i$ < number_of_nodes; ++i$) {
+            i = i$;
+            new_node_id = data.substring(i * ID_LENGTH, (i + 1) * ID_LENGTH);
+            new_node_id_string = new_node_id.join(',');
+            if (is_string_equal_to_array(new_node_id_string, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id_string)) {
+              continue;
+            }
+            if (this$._aware_of_nodes.has(new_node_id_string) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
+              this$._aware_of_nodes.set(new_node_id_string, [new_node_id, +new Date]);
+            } else if (stale_aware_of_nodes.length) {
+              stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes);
+              this$._aware_of_nodes['delete'](stale_node_to_remove);
+              this$._aware_of_nodes.set(new_node_id_string, [new_node_id, +new Date]);
+            } else {
+              break;
+            }
+          }
         }
       })['on']('ready', function(){
         this$['fire']('ready');
@@ -812,6 +861,7 @@
       var this$ = this;
       clearInterval(this._cleanup_interval);
       clearInterval(this._keep_announce_routes_interval);
+      clearInterval(this._get_more_nodes_interval);
       this._routing_paths.forEach(function(arg$){
         var node_id, route_id;
         node_id = arg$[0], route_id = arg$[1];
@@ -824,6 +874,53 @@
       });
       this._dht['destroy']();
       this._router['destroy']();
+    };
+    /**
+     * @return {boolean}
+     */
+    y$._more_nodes_needed = function(){
+      this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT || this._get_stale_aware_of_nodes(true).length;
+    };
+    /**
+     * @param {boolean} early_exit Will return single node if present, used to check if stale nodes are present at all
+     * @return {!Array<string>}
+     */
+    y$._get_stale_aware_of_nodes = function(early_exit){
+      var stale_aware_of_nodes, stale_older_than, i$, ref$, len$, ref1$, old_node_id, date;
+      early_exit == null && (early_exit = false);
+      stale_aware_of_nodes = [];
+      stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 1000;
+      for (i$ = 0, len$ = (ref$ = Array.from(this._aware_of_nodes.values())).length; i$ < len$; ++i$) {
+        ref1$ = ref$[i$], old_node_id = ref1$[0], date = ref1$[1];
+        if (date < stale_older_than) {
+          stale_aware_of_nodes.push(old_node_id.join(','));
+          if (early_exit) {
+            break;
+          }
+        }
+      }
+      stale_aware_of_nodes;
+    };
+    /**
+     * Request more nodes to be aware of from some of the nodes already connected to
+     */
+    y$._get_more_nodes = function(){
+      var nodes, i$, len$, node_id;
+      nodes = this._pick_random_connected_nodes(5);
+      if (!nodes.length) {
+        return;
+      }
+      for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
+        node_id = nodes[i$];
+        this._get_more_nodes_from(node_id);
+      }
+    };
+    /**
+     * @param {!Uint8Array}
+     */
+    y$._get_more_nodes_from = function(node_id){
+      this._get_nodes_requested.add(node_id.join(','));
+      this._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0));
     };
     /**
      * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -851,6 +948,26 @@
         results$.push(pull_random_item_from_array(connected_nodes));
       }
       return results$;
+    };
+    /**
+     * Get some random nodes from already connected nodes
+     *
+     * @param {number}	number_of_nodes
+     *
+     * @return {Array<Uint8Array>} `null` if there was not enough nodes
+     */
+    y$._pick_random_connected_nodes = function(number_of_nodes){
+      var connected_nodes, i$, i;
+      number_of_nodes == null && (number_of_nodes = 1);
+      if (this._connected_nodes.size < number_of_nodes) {
+        this._dht['lookup'](randombytes(ID_LENGTH));
+        return null;
+      }
+      connected_nodes = Array.from(this._connected_nodes.values());
+      for (i$ = 0; i$ < number_of_nodes; ++i$) {
+        i = i$;
+        pull_random_item_from_array(connected_nodes);
+      }
     };
     /**
      * @param {!Uint8Array} target_id	Last node in routing path, responder
