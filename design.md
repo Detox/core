@@ -1,6 +1,6 @@
 # Detox design
 
-Complements specification version: 0.0.2
+Complements specification version: 0.0.3
 
 Author: Nazar Mokrynskyi
 

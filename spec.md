@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.2
+Specification version: 0.0.3
 
 Author: Nazar Mokrynskyi
 
@@ -35,7 +35,7 @@ Data channel is WebRTC's RTCDataChannel, where data are sent in packets of 512 b
 As actual data being sent can be either for DHT's operation or for other purposes, also data will almost always be either larger or smaller that the packet size.
 In order to deal with these 2 issues each piece of data being sent is prepended with a command and then multiplexed into data channel and demultiplexed back on receiving side.
 
-Command is 1 byte number, maximum data length supported here is 65535 bytes, hence data length header will be 2 bytes.
+Command is 1 byte unsigned integer, maximum data length supported here is 65535 bytes, hence data length header will be 2 bytes.
 
 So each piece of data sent over data channel have at least 3 bytes overhead, if there is no useful data - empty data blocks (essentially just data length headers) are sent.
 
@@ -63,9 +63,13 @@ Additional commands (from range `0..245`):
 |------------------------------|---------------|
 | COMMAND_ROUTING              | 0             |
 | COMMAND_FORWARD_INTRODUCTION | 1             |
+| COMMAND_GET_NODES_REQUEST    | 2             |
+| COMMAND_GET_NODES_RESPONSE   | 3             |
 
 * `COMMAND_ROUTING` - data are consumed by Router directly
 * `COMMAND_FORWARD_INTRODUCTION` - is used by rendezvous node in order to ask introduction node to forward introduction to target node (see "Announcement to the network" and "Discovery and connection to a friend" sections below)
+* `COMMAND_GET_NODES_REQUEST` - is used to fetch up to 10 random nodes, queried node is aware of (not necessarily connected to, see "Selection of nodes for routing path creation" section below)
+* `COMMAND_GET_NODES_RESPONSE` - response for `COMMAND_GET_NODES_REQUEST` (see "Selection of nodes for routing path creation" section below)
 
 #### DHT
 DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is in turn based on BitTorrent DHT, make yourself familiar with BitTorrent DHT and WebTorrent DHT first as this document will not cover them.
@@ -93,7 +97,21 @@ Following choices were made for this particular implementation of Ronion:
 * data MUST only be sent between initiator and responder, all other data sent by other nodes on routing path MUST be ignored
 
 ### Selection of nodes for routing path creation
-TODO
+When routing path is created (see "Routing path creation" section below), we need a set of nodes through which to create this routing path.
+
+The first node in routing path MUST be always the random node to which direct connection is already established. The rest of the nodes MUST be those to which direct connections are not yet established.
+
+Node can send `COMMAND_GET_NODES_REQUEST` command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` command that will contain concatenated list of up to 10 unique random IDs of nodes queried node is aware of (not necessarily connected to directly, probably received from other nodes).
+When routing path is created, necessary number of nodes is selected from these known nodes.
+
+TODO: This is a very naive approach and must be improved in future iterations of the spec!
+
+### Routing path creation
+Routing path creation is regular Router routing path with pair of multiplexers/demultiplexers on both sides.
+
+Nodes for routing path are selected as described in "Selection of nodes for routing path creation" section above.
+
+Multiplexers/demultiplexers are only used for sending and receiving data, other commands MUST fit into single packet with max size of 509 bytes, so that they take at most 1 data channel packet.
 
 ### Announcement to the network
 TODO
@@ -102,5 +120,18 @@ TODO
 TODO
 
 ### Sending data to a friend
+In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 471 bytes:
+* 512 of data channel packet
+* - 3 for data channel packet header
+* - 16 for block-level MAC (we encrypt each block with `Noise_N_25519_ChaChaPoly_BLAKE2b` from Noise Protocol Framework as it will be sent through rendezvous node, which MUST NOT be able to read contents)
+* - 1 for Ronion's version
+* - 2 for Ronion's segment ID
+* - 1 for Ronion's command
+* - 2 for Ronion's command data length
+* - 16 for Ronion's MAC
+
+This way each encrypted block of data will be encrypted and will occupy exactly 1 data channel packet, so that even rendezvous node will not know what data of which size it forwards.
+
+TODO: the rest of data sending description
 
 TODO: The rest
