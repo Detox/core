@@ -682,6 +682,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					)
 					introduction_node_string	= introduction_node.join(',')
 					@_announced_to.set(introduction_node_string, introduction_node)
+				# TODO: Check using independent routing path that announcement indeed happened
 				@'fire'('announced')
 			for let introduction_node in introduction_nodes
 				nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
