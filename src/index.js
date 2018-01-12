@@ -406,6 +406,9 @@
           this$._router['process_packet'](node_id, data);
           break;
         case DHT_COMMAND_FORWARD_INTRODUCTION:
+          if (this$._bootstrap_node) {
+            return;
+          }
           ref$ = parse_introduce_to_data(data), target_id = ref$[0], introduction_message = ref$[1];
           target_id_string = target_id.join(',');
           if (!this$._announcements_from.has(target_id_string)) {
@@ -475,6 +478,9 @@
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
+          if (this$._bootstrap_node) {
+            return;
+          }
           ref$ = parse_announcement_data(data), public_key = ref$[0], announcement_message = ref$[1], signature = ref$[2];
           if (!detoxCrypto['verify'](signature, announcement_message, public_key)) {
             return;
@@ -490,6 +496,9 @@
           this$._dht['publish_announcement_message'](announcement_message);
           break;
         case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
+          if (this$._bootstrap_node) {
+            return;
+          }
           target_id = data;
           if (target_id.length !== ID_LENGTH) {
             return;
@@ -514,6 +523,9 @@
           });
           break;
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
+          if (this$._bootstrap_node) {
+            return;
+          }
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
           rendezvous_token_string = rendezvous_token.join(',');
           if (this$._pending_connection.has(rendezvous_token_string)) {
@@ -661,6 +673,7 @@
      */
     y$['start_bootstrap_node'] = function(ip, port){
       this._dht['start_bootstrap_node'](ip, port);
+      this._bootstrap_node = true;
     };
     /**
      * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor

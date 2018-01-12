@@ -40,10 +40,10 @@
         y$ = dht_seed = new Uint8Array(32);
         y$.set([i]);
         if (i === 0) {
-          instance = lib.Core(real_seed, dht_seed, [], [], 10, 10);
+          instance = lib.Core(real_seed, dht_seed, [], [], 5, 10);
           instance.start_bootstrap_node(bootstrap_ip, bootstrap_port);
         } else {
-          instance = lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 10);
+          instance = lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 5);
         }
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready');
@@ -96,7 +96,7 @@
             t.fail('Connection failed with code ' + reason);
             destroy_nodes();
           });
-          console.log('Preparing for connection (8s)...');
+          console.log('Preparing for connection (5s)...');
           setTimeout(function(){
             console.log('Connecting...');
             node_7.connect_to(node_1_real_public_key, application, node_1_secret, 2);
@@ -105,8 +105,11 @@
           t.fail('Announcement failed with code ' + reason);
           destroy_nodes();
         });
-        console.log('Announcing...');
-        node_1.announce(2, 1);
+        console.log('Preparing for announcement (3s)...');
+        setTimeout(function(){
+          console.log('Announcing...');
+          node_1.announce(2, 1);
+        }, 3000);
       }
     });
   });

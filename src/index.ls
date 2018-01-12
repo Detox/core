@@ -365,8 +365,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			.'on'('data', (node_id, command, data) !~>
 				switch command
 					case DHT_COMMAND_ROUTING
+						# TODO: Bootstrap node should refuse to act as intermediate node in routing paths
 						@_router['process_packet'](node_id, data)
 					case DHT_COMMAND_FORWARD_INTRODUCTION
+						if @_bootstrap_node
+							return
 						[target_id, introduction_message]	= parse_introduce_to_data(data)
 						target_id_string					= target_id.join(',')
 						if !@_announcements_from.has(target_id_string)
@@ -430,6 +433,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				source_id	= compute_source_id(node_id, route_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
+						if @_bootstrap_node
+							return
 						[public_key, announcement_message, signature]	= parse_announcement_data(data)
 						if !detox-crypto['verify'](signature, announcement_message, public_key)
 							return
@@ -442,6 +447,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						@_announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval])
 						@_dht['publish_announcement_message'](announcement_message)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
+						if @_bootstrap_node
+							return
 						target_id	= data
 						if target_id.length != ID_LENGTH
 							return
@@ -463,6 +470,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 						)
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
+						if @_bootstrap_node
+							return
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						rendezvous_token_string													= rendezvous_token.join(',')
 						if @_pending_connection.has(rendezvous_token_string)
@@ -616,8 +625,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {number}	port
 		 */
 		..'start_bootstrap_node' = (ip, port) !->
-			# TODO: After this node should refuse to act as introduction node, rendezvous node or intermediate node in routing paths
 			@_dht['start_bootstrap_node'](ip, port)
+			@_bootstrap_node	= true
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
 		 *

@@ -51,10 +51,10 @@ test('Core', (t) !->
 		dht_seed	= new Uint8Array(32)
 			..set([i])
 		if i == 0
-			instance	= lib.Core(real_seed, dht_seed, [], [], 10, 10)
+			instance	= lib.Core(real_seed, dht_seed, [], [], 5, 10)
 			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port)
 		else
-			instance	= lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 10)
+			instance	= lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 5)
 		instance.once('ready', !->
 			t.pass('Node ' + i + ' is ready')
 
@@ -110,7 +110,7 @@ test('Core', (t) !->
 					destroy_nodes()
 				)
 
-				console.log 'Preparing for connection (8s)...'
+				console.log 'Preparing for connection (5s)...'
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
@@ -122,6 +122,10 @@ test('Core', (t) !->
 
 				destroy_nodes()
 			)
-		console.log 'Announcing...'
-		node_1.announce(2, 1)
+
+		console.log 'Preparing for announcement (3s)...'
+		setTimeout (!->
+			console.log 'Announcing...'
+			node_1.announce(2, 1)
+		), 3000
 )
