@@ -956,24 +956,26 @@
      * Get some random nodes from already connected nodes
      *
      * @param {number}				up_to_number_of_nodes
-     * @param {Array<Uint8Array>}	exclude_nodes
+     * @param {!Array<Uint8Array>}	exclude_nodes
      *
      * @return {Array<Uint8Array>} `null` if there is no nodes to return
      */
     y$._pick_random_connected_nodes = function(up_to_number_of_nodes, exclude_nodes){
-      var connected_nodes, i$, i, results$ = [];
+      var connected_nodes, i$, ref$, len$, bootstrap_node, i, results$ = [];
       up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
-      exclude_nodes == null && (exclude_nodes = null);
+      exclude_nodes == null && (exclude_nodes = []);
       if (!this._connected_nodes.size) {
         this._dht['lookup'](randombytes(ID_LENGTH));
         return null;
       }
       connected_nodes = Array.from(this._connected_nodes.values());
-      if (exclude_nodes) {
-        connected_nodes = connected_nodes.filter(function(node){
-          return !in$(node, exclude_nodes);
-        });
+      for (i$ = 0, len$ = (ref$ = this['get_bootstrap_nodes']()).length; i$ < len$; ++i$) {
+        bootstrap_node = ref$[i$];
+        exclude_nodes.push(bootstrap_node['node_id']);
       }
+      connected_nodes = connected_nodes.filter(function(node){
+        return !in$(node, exclude_nodes);
+      });
       if (!connected_nodes.length) {
         return;
       }

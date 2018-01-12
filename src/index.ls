@@ -875,19 +875,20 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * Get some random nodes from already connected nodes
 		 *
 		 * @param {number}				up_to_number_of_nodes
-		 * @param {Array<Uint8Array>}	exclude_nodes
+		 * @param {!Array<Uint8Array>}	exclude_nodes
 		 *
 		 * @return {Array<Uint8Array>} `null` if there is no nodes to return
 		 */
-		.._pick_random_connected_nodes = (up_to_number_of_nodes = 1, exclude_nodes = null) ->
+		.._pick_random_connected_nodes = (up_to_number_of_nodes = 1, exclude_nodes = []) ->
 			if !@_connected_nodes.size
 				# Make random lookup in order to fill DHT with known nodes
 				@_dht['lookup'](randombytes(ID_LENGTH))
 				return null
 			connected_nodes	= Array.from(@_connected_nodes.values())
-			if exclude_nodes
-				connected_nodes	= connected_nodes.filter (node) ->
-					!(node in exclude_nodes)
+			for bootstrap_node in @'get_bootstrap_nodes'()
+				exclude_nodes.push(bootstrap_node['node_id'])
+			connected_nodes	= connected_nodes.filter (node) ->
+				!(node in exclude_nodes)
 			if !connected_nodes.length
 				return
 			for i from 0 til up_to_number_of_nodes
