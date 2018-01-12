@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.4
+Specification version: 0.0.5
 
 Author: Nazar Mokrynskyi
 
@@ -59,6 +59,7 @@ There are 4 commands supported on data channel level:
 * Commands with numeric values `10...255` are translated into additional commands from range `0..245`
 
 Additional commands (from range `0..245`):
+
 | Command name                 | Numeric value |
 |------------------------------|---------------|
 | COMMAND_ROUTING              | 0             |
@@ -67,7 +68,7 @@ Additional commands (from range `0..245`):
 | COMMAND_GET_NODES_RESPONSE   | 3             |
 
 * `COMMAND_ROUTING` - data are consumed by Router directly
-* `COMMAND_FORWARD_INTRODUCTION` - is used by rendezvous node in order to ask introduction node to forward introduction to target node (see "Announcement to the network" and "Discovery and connection to a friend" sections below)
+* `COMMAND_FORWARD_INTRODUCTION` - is used by rendezvous node in order to ask introduction node to forward introduction to target node ("Discovery and connection to a friend" section below)
 * `COMMAND_GET_NODES_REQUEST` - is used to fetch up to 10 random nodes, queried node is aware of (not necessarily connected to, see "Selection of nodes for routing path creation" section below)
 * `COMMAND_GET_NODES_RESPONSE` - response for `COMMAND_GET_NODES_REQUEST` (see "Selection of nodes for routing path creation" section below)
 
@@ -95,6 +96,30 @@ Following choices were made for this particular implementation of Ronion:
 * `Noise_NK_25519_ChaChaPoly_BLAKE2b` from [Noise Protocol Framework](https://noiseprotocol.org/) is used for encryption/decryption (payload on `CREATE_REQUEST`, `CREATE_RESPONSE` and `EXTEND_REQUEST` is Noise's handshake message)
 * [AEZ block cipher](http://web.cs.ucdavis.edu/%7Erogaway/aez/) is used for re-wrapping (keys for wrapping/unwrapping with AEZ are received by encrypting 32 zero bytes with empty additional data using send/receive Noise CipherState used for encryption/decryption, together with 16 bytes MAC it will give identical 48 bytes keys for wrapping and unwrapping on both sides; nonce is 12 zero bytes and before each wrapping/unwrapping it is incremented starting from the last byte and moving to the first one)
 * data MUST only be sent between initiator and responder, all other data sent by other nodes on routing path MUST be ignored
+
+Here is the list of commands supported on Router level:
+
+| Command name                             | Numeric value |
+|------------------------------------------|---------------|
+| COMMAND_ANNOUNCE                         | 0             |
+| COMMAND_FIND_INTRODUCTION_NODES_REQUEST  | 1             |
+| COMMAND_FIND_INTRODUCTION_NODES_RESPONSE | 2             |
+| COMMAND_INITIALIZE_CONNECTION            | 3             |
+| COMMAND_INTRODUCTION                     | 0             |
+| COMMAND_CONFIRM_CONNECTION               | 1             |
+| COMMAND_CONNECTED                        | 2             |
+| COMMAND_DATA                             | 3             |
+| COMMAND_PING                             | 3             |
+
+* `COMMAND_ANNOUNCE` - is used for announcement node to the network (see "Announcement to the network" section below)
+* `COMMAND_FIND_INTRODUCTION_NODES_REQUEST` - is used for requesting introduction nodes from rendezvous node (see "Discovery and connection to a friend" section below)
+* `COMMAND_FIND_INTRODUCTION_NODES_RESPONSE` - response for `ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST` (see "Discovery and connection to a friend" section below)
+* `COMMAND_INITIALIZE_CONNECTION` - is used for instructing rendezvous node to initialize connection to target node through introduction node (see "Discovery and connection to a friend" section below)
+* `COMMAND_INTRODUCTION` - is used by introduction node to send introduction to target node (see "Discovery and connection to a friend" section below)
+* `COMMAND_CONFIRM_CONNECTION` - is used by target node to respond to introduction and establish connection through rendezvous node (see "Discovery and connection to a friend" section below)
+* `COMMAND_CONNECTED` - is used by rendezvous node to confirm that connection to target node is established (see "Discovery and connection to a friend" section below)
+* `COMMAND_DATA` - is used for data sending and forwarding (see "Sending data to a friend" section below)
+* `COMMAND_PING` - is used for ensuring connection is still working (see "Discovery and connection to a friend" section below)
 
 ### Selection of nodes for routing path creation
 When routing path is created (see "Routing path creation" section below), we need a set of nodes through which to create this routing path.
