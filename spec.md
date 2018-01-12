@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.5
+Specification version: 0.0.6
 
 Author: Nazar Mokrynskyi
 
@@ -145,11 +145,10 @@ TODO
 TODO
 
 ### Sending data to a friend
-In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 471 bytes:
+In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 472 bytes:
 * 512 of data channel packet
 * - 3 for data channel packet header
 * - 16 for block-level MAC (we encrypt each block with `Noise_N_25519_ChaChaPoly_BLAKE2b` from Noise Protocol Framework as it will be sent through rendezvous node, which MUST NOT be able to read contents)
-* - 1 for Ronion's version
 * - 2 for Ronion's segment ID
 * - 1 for Ronion's command
 * - 2 for Ronion's command data length

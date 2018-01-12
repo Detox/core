@@ -601,7 +601,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						@_send_ping(node_id, route_id)
 			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
-		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 471 bytes
+		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
 	Core
 		..'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 		..'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
