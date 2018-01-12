@@ -409,6 +409,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								break
 			)
 			.'on'('ready', !~>
+				# Make 3 random lookups on start in order to connect to some nodes
+				@_dht['lookup'](randombytes(ID_LENGTH))
+				@_dht['lookup'](randombytes(ID_LENGTH))
+				@_dht['lookup'](randombytes(ID_LENGTH))
 				@'fire'('ready')
 			)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)

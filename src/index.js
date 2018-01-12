@@ -455,6 +455,9 @@
           }
         }
       })['on']('ready', function(){
+        this$._dht['lookup'](randombytes(ID_LENGTH));
+        this$._dht['lookup'](randombytes(ID_LENGTH));
+        this$._dht['lookup'](randombytes(ID_LENGTH));
         this$['fire']('ready');
       });
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
