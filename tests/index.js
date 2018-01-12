@@ -85,6 +85,7 @@
               node_1.once('data', function(arg$, received_command, received_data){
                 t.equal(received_command, command, 'Received command correctly');
                 t.equal(received_data.join(','), data.join(','), 'Received data correctly');
+                console.log('Destroying...');
                 destroy_nodes();
               });
               console.log('Sending data...');

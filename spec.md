@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.3
+Specification version: 0.0.4
 
 Author: Nazar Mokrynskyi
 
@@ -101,7 +101,7 @@ When routing path is created (see "Routing path creation" section below), we nee
 
 The first node in routing path MUST be always the random node to which direct connection is already established. The rest of the nodes MUST be those to which direct connections are not yet established.
 
-Node can send `COMMAND_GET_NODES_REQUEST` command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` command that will contain concatenated list of up to 10 unique random IDs of nodes queried node is aware of (not necessarily connected to directly, probably received from other nodes).
+Node can send `COMMAND_GET_NODES_REQUEST` command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` command that will contain concatenated list of up to 10 unique random IDs of nodes queried node is aware of (node SHOULD return up to 7 directly connected nodes and the rest will be nodes it is aware of).
 When routing path is created, necessary number of nodes is selected from these known nodes.
 
 TODO: This is a very naive approach and must be improved in future iterations of the spec!

@@ -400,7 +400,7 @@
         this$._connected_nodes['delete'](node_id_string);
         this$._get_nodes_requested['delete'](node_id_string);
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, node_id_string, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, new_node_id_string, stale_node_to_remove;
+        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, node_id_string, number_of_nodes, stale_aware_of_nodes, new_node_id, new_node_id_string, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -415,6 +415,15 @@
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
           break;
         case DHT_COMMAND_GET_NODES_REQUEST:
+          nodes = this$._pick_random_connected_nodes(7) || [];
+          nodes = nodes.concat(this$._pick_random_aware_of_nodes(10 - nodes.length) || []);
+          data = new Uint8Array(nodes.length * ID_LENGTH);
+          for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
+            i = i$;
+            node = nodes[i$];
+            data.set(node, i * ID_LENGTH);
+          }
+          this$._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data);
           break;
         case DHT_COMMAND_GET_NODES_RESPONSE:
           node_id_string = node_id.join(',');
@@ -422,14 +431,14 @@
             return;
           }
           this$._get_nodes_requested['delete'](node_id_string);
-          if (data.length % ID_LENGTH !== 0) {
+          if (!data.length || data.length % ID_LENGTH !== 0) {
             return;
           }
           number_of_nodes = data.length / ID_LENGTH;
           stale_aware_of_nodes = this$._get_stale_aware_of_nodes();
           for (i$ = 0; i$ < number_of_nodes; ++i$) {
             i = i$;
-            new_node_id = data.substring(i * ID_LENGTH, (i + 1) * ID_LENGTH);
+            new_node_id = data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH);
             new_node_id_string = new_node_id.join(',');
             if (is_string_equal_to_array(new_node_id_string, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id_string)) {
               continue;
@@ -563,7 +572,7 @@
                 throw new Error('Direct connections are not yet supported');
                 return;
               }
-              nodes = this$._pick_random_nodes(number_of_intermediate_nodes);
+              nodes = this$._pick_nodes_for_routing_path(number_of_intermediate_nodes, [rendezvous_node]);
               if (!nodes) {
                 return;
               }
@@ -678,7 +687,7 @@
       this._announced_to.forEach(function(introduction_node){
         old_introduction_nodes.push(introduction_node);
       });
-      introduction_nodes = this._pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes);
+      introduction_nodes = this._pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes);
       if (!introduction_nodes) {
         this._last_announcement = 1;
         this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
@@ -715,7 +724,7 @@
       }
       function fn$(introduction_node){
         var nodes, first_node, this$ = this;
-        nodes = this._pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
+        nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
         if (!nodes) {
           this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return;
@@ -747,7 +756,7 @@
       if (this._id_to_routing_path.has(target_id_string)) {
         return;
       }
-      nodes = this._pick_random_nodes(number_of_intermediate_nodes);
+      nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
       if (!nodes) {
         this['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
         return;
@@ -879,27 +888,27 @@
      * @return {boolean}
      */
     y$._more_nodes_needed = function(){
-      this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT || this._get_stale_aware_of_nodes(true).length;
+      return this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT || this._get_stale_aware_of_nodes(true).length;
     };
     /**
      * @param {boolean} early_exit Will return single node if present, used to check if stale nodes are present at all
      * @return {!Array<string>}
      */
     y$._get_stale_aware_of_nodes = function(early_exit){
-      var stale_aware_of_nodes, stale_older_than, i$, ref$, len$, ref1$, old_node_id, date;
+      var stale_aware_of_nodes, stale_older_than, i$, ref$, len$, ref1$, node_id, date;
       early_exit == null && (early_exit = false);
       stale_aware_of_nodes = [];
       stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 1000;
       for (i$ = 0, len$ = (ref$ = Array.from(this._aware_of_nodes.values())).length; i$ < len$; ++i$) {
-        ref1$ = ref$[i$], old_node_id = ref1$[0], date = ref1$[1];
+        ref1$ = ref$[i$], node_id = ref1$[0], date = ref1$[1];
         if (date < stale_older_than) {
-          stale_aware_of_nodes.push(old_node_id.join(','));
+          stale_aware_of_nodes.push(node_id.join(','));
           if (early_exit) {
             break;
           }
         }
       }
-      stale_aware_of_nodes;
+      return stale_aware_of_nodes;
     };
     /**
      * Request more nodes to be aware of from some of the nodes already connected to
@@ -907,7 +916,7 @@
     y$._get_more_nodes = function(){
       var nodes, i$, len$, node_id;
       nodes = this._pick_random_connected_nodes(5);
-      if (!nodes.length) {
+      if (!nodes) {
         return;
       }
       for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
@@ -930,10 +939,32 @@
      *
      * @return {Array<Uint8Array>} `null` if there was not enough nodes
      */
-    y$._pick_random_nodes = function(number_of_nodes, exclude_nodes){
-      var connected_nodes, i$, i, results$ = [];
+    y$._pick_nodes_for_routing_path = function(number_of_nodes, exclude_nodes){
+      var connected_node, intermediate_nodes;
       exclude_nodes == null && (exclude_nodes = null);
-      if (this._connected_nodes.size / 2 < number_of_nodes) {
+      connected_node = this._pick_random_connected_nodes(1, exclude_nodes);
+      if (!connected_node) {
+        return null;
+      }
+      intermediate_nodes = this._pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes);
+      if (!intermediate_nodes) {
+        return null;
+      }
+      return connected_node.concat(intermediate_nodes);
+    };
+    /**
+     * Get some random nodes from already connected nodes
+     *
+     * @param {number}				up_to_number_of_nodes
+     * @param {Array<Uint8Array>}	exclude_nodes
+     *
+     * @return {Array<Uint8Array>} `null` if there is no nodes to return
+     */
+    y$._pick_random_connected_nodes = function(up_to_number_of_nodes, exclude_nodes){
+      var connected_nodes, i$, i, results$ = [];
+      up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
+      exclude_nodes == null && (exclude_nodes = null);
+      if (!this._connected_nodes.size) {
         this._dht['lookup'](randombytes(ID_LENGTH));
         return null;
       }
@@ -943,31 +974,44 @@
           return !in$(node, exclude_nodes);
         });
       }
-      for (i$ = 0; i$ < number_of_nodes; ++i$) {
+      if (!connected_nodes.length) {
+        return;
+      }
+      for (i$ = 0; i$ < up_to_number_of_nodes; ++i$) {
         i = i$;
-        results$.push(pull_random_item_from_array(connected_nodes));
+        if (connected_nodes.length) {
+          results$.push(pull_random_item_from_array(connected_nodes));
+        }
       }
       return results$;
     };
     /**
-     * Get some random nodes from already connected nodes
+     * Get some random nodes from those that current node is aware of
      *
-     * @param {number}	number_of_nodes
+     * @param {number}				number_of_nodes
+     * @param {Array<Uint8Array>}	exclude_nodes
      *
      * @return {Array<Uint8Array>} `null` if there was not enough nodes
      */
-    y$._pick_random_connected_nodes = function(number_of_nodes){
-      var connected_nodes, i$, i;
-      number_of_nodes == null && (number_of_nodes = 1);
-      if (this._connected_nodes.size < number_of_nodes) {
-        this._dht['lookup'](randombytes(ID_LENGTH));
+    y$._pick_random_aware_of_nodes = function(number_of_nodes, exclude_nodes){
+      var aware_of_nodes, i$, i, results$ = [];
+      if (this._aware_of_nodes.size < number_of_nodes) {
         return null;
       }
-      connected_nodes = Array.from(this._connected_nodes.values());
+      aware_of_nodes = Array.from(this._aware_of_nodes.values());
+      if (exclude_nodes) {
+        aware_of_nodes = aware_of_nodes.filter(function(node){
+          return !in$(node, exclude_nodes);
+        });
+      }
+      if (aware_of_nodes.length < number_of_nodes) {
+        return null;
+      }
       for (i$ = 0; i$ < number_of_nodes; ++i$) {
         i = i$;
-        pull_random_item_from_array(connected_nodes);
+        results$.push(pull_random_item_from_array(aware_of_nodes)[0]);
       }
+      return results$;
     };
     /**
      * @param {!Uint8Array} target_id	Last node in routing path, responder

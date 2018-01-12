@@ -374,18 +374,24 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 					case DHT_COMMAND_GET_NODES_REQUEST
-						void # TODO: return up to 7 connected nodes (except bootstrap nodes) and the rest of aware of nodes up to 10 in total
+						# TODO: This is a naive implementation, can be attacked relatively easily
+						nodes	= @_pick_random_connected_nodes(7) || []
+						nodes	= nodes.concat(@_pick_random_aware_of_nodes(10 - nodes.length) || [])
+						data	= new Uint8Array(nodes.length * ID_LENGTH)
+						for node, i in nodes
+							data.set(node, i * ID_LENGTH)
+						@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data)
 					case DHT_COMMAND_GET_NODES_RESPONSE
 						node_id_string	= node_id.join(',')
 						if !@_get_nodes_requested.has(node_id_string)
 							return
 						@_get_nodes_requested.delete(node_id_string)
-						if data.length % ID_LENGTH != 0
+						if !data.length || data.length % ID_LENGTH != 0
 							return
 						number_of_nodes			= data.length / ID_LENGTH
 						stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
 						for i from 0 til number_of_nodes
-							new_node_id			= data.substring(i * ID_LENGTH, (i + 1) * ID_LENGTH)
+							new_node_id			= data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH)
 							new_node_id_string	= new_node_id.join(',')
 							# Ignore already connected nodes and own ID or if there are enough nodes already
 							if (
@@ -524,7 +530,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 										throw new Error('Direct connections are not yet supported')
 										# TODO: Support direct connections here?
 										return
-									nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+									nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, [rendezvous_node])
 									if !nodes
 										# TODO: Retry?
 										return
@@ -632,7 +638,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			old_introduction_nodes			= []
 			@_announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
-			introduction_nodes				= @_pick_random_nodes(number_of_introduction_nodes, old_introduction_nodes)
+			introduction_nodes				= @_pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes)
 			if !introduction_nodes
 				@_last_announcement	= 1
 				@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
@@ -665,7 +671,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					@_announced_to.set(introduction_node_string, introduction_node)
 				@'fire'('announced')
 			for let introduction_node in introduction_nodes
-				nodes	= @_pick_random_nodes(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
+				nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
 				if !nodes
 					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 					return
@@ -693,7 +699,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if @_id_to_routing_path.has(target_id_string)
 				# Already connected, do nothing
 				return
-			nodes	= @_pick_random_nodes(number_of_intermediate_nodes)
+			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
 			if !nodes
 				@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return
@@ -819,18 +825,18 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * @return {boolean}
 		 */
-		.._more_nodes_needed = !->
+		.._more_nodes_needed = ->
 			@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length
 		/**
 		 * @param {boolean} early_exit Will return single node if present, used to check if stale nodes are present at all
 		 * @return {!Array<string>}
 		 */
-		.._get_stale_aware_of_nodes = (early_exit = false) !->
+		.._get_stale_aware_of_nodes = (early_exit = false) ->
 			stale_aware_of_nodes	= []
 			stale_older_than		= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 1000
-			for [old_node_id, date] in Array.from(@_aware_of_nodes.values())
+			for [node_id, date] in Array.from(@_aware_of_nodes.values())
 				if date < stale_older_than
-					stale_aware_of_nodes.push(old_node_id.join(','))
+					stale_aware_of_nodes.push(node_id.join(','))
 					if early_exit
 						break
 			stale_aware_of_nodes
@@ -839,7 +845,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 */
 		.._get_more_nodes = !->
 			nodes	= @_pick_random_connected_nodes(5)
-			if !nodes.length
+			if !nodes
 				return
 			for node_id in nodes
 				@_get_more_nodes_from(node_id)
@@ -857,11 +863,24 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 *
 		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
 		 */
-		.._pick_random_nodes = (number_of_nodes, exclude_nodes = null) ->
-			# TODO: Rewrite this using @_pick_random_connected_nodes() and @_aware_of_nodes
-			# TODO: This is a naive implementation, should use unknown nodes and much bigger selection
-			# Require at least 2 times as much nodes to be connected
-			if @_connected_nodes.size / 2 < number_of_nodes
+		.._pick_nodes_for_routing_path = (number_of_nodes, exclude_nodes = null) ->
+			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)
+			if !connected_node
+				return null
+			intermediate_nodes	= @_pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes)
+			if !intermediate_nodes
+				return null
+			connected_node.concat(intermediate_nodes)
+		/**
+		 * Get some random nodes from already connected nodes
+		 *
+		 * @param {number}				up_to_number_of_nodes
+		 * @param {Array<Uint8Array>}	exclude_nodes
+		 *
+		 * @return {Array<Uint8Array>} `null` if there is no nodes to return
+		 */
+		.._pick_random_connected_nodes = (up_to_number_of_nodes = 1, exclude_nodes = null) ->
+			if !@_connected_nodes.size
 				# Make random lookup in order to fill DHT with known nodes
 				@_dht['lookup'](randombytes(ID_LENGTH))
 				return null
@@ -869,23 +888,30 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if exclude_nodes
 				connected_nodes	= connected_nodes.filter (node) ->
 					!(node in exclude_nodes)
-			for i from 0 til number_of_nodes
-				pull_random_item_from_array(connected_nodes)
+			if !connected_nodes.length
+				return
+			for i from 0 til up_to_number_of_nodes
+				if connected_nodes.length
+					pull_random_item_from_array(connected_nodes)
 		/**
-		 * Get some random nodes from already connected nodes
+		 * Get some random nodes from those that current node is aware of
 		 *
-		 * @param {number}	number_of_nodes
+		 * @param {number}				number_of_nodes
+		 * @param {Array<Uint8Array>}	exclude_nodes
 		 *
 		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
 		 */
-		.._pick_random_connected_nodes = (number_of_nodes = 1) !->
-			if @_connected_nodes.size < number_of_nodes
-				# Make random lookup in order to fill DHT with known nodes
-				@_dht['lookup'](randombytes(ID_LENGTH))
+		.._pick_random_aware_of_nodes = (number_of_nodes, exclude_nodes) ->
+			if @_aware_of_nodes.size < number_of_nodes
 				return null
-			connected_nodes	= Array.from(@_connected_nodes.values())
+			aware_of_nodes	= Array.from(@_aware_of_nodes.values())
+			if exclude_nodes
+				aware_of_nodes	= aware_of_nodes.filter (node) ->
+					!(node in exclude_nodes)
+			if aware_of_nodes.length < number_of_nodes
+				return null
 			for i from 0 til number_of_nodes
-				pull_random_item_from_array(connected_nodes)
+				pull_random_item_from_array(aware_of_nodes)[0]
 		/**
 		 * @param {!Uint8Array} target_id	Last node in routing path, responder
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
