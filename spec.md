@@ -197,7 +197,7 @@ Status codes:
 
 Once introduction nodes are found, random introduction node is selected and introduction message is created as follows:
 * 64 bytes Ed25519 signature if introduction payload using node's long-term keypair
-* 240 bytes introduction payload
+* 336 bytes introduction payload
 
 Introduction payload is creates as follows:
 * 32 bytes - Ed25519 long-term public key of a friend
@@ -205,7 +205,7 @@ Introduction payload is creates as follows:
 * 32 bytes - Ed25519 public key of rendezvous node
 * 32 bytes - rendezvous token (one-time randomly generated string)
 * 48 bytes - Noise handshake message for end-to-end encryption with a friend (the same `Noise_NK_25519_ChaChaPoly_BLAKE2b` is used as in routing, long-term public key is used as remote static key)
-* 32 bytes - application (to be interpreted by applications on both sides of conversation, if shorter than 32 bytes MUST be padded with zeroes)
+* 128 bytes - application (to be interpreted by applications on both sides of conversation, if shorter than 128 bytes MUST be padded with zeroes)
 * 32 bytes -  secret (to be interpreted by remote node, SHOULD be negotiated beforehand)
 
 Once introduction message is created, it is one-way encrypted (see "One-way encryption" section above) with long-term public key of a friend.
