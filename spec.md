@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.6
+Specification version: 0.0.7
 
 Author: Nazar Mokrynskyi
 
@@ -105,11 +105,11 @@ Here is the list of commands supported on Router level:
 | COMMAND_FIND_INTRODUCTION_NODES_REQUEST  | 1             |
 | COMMAND_FIND_INTRODUCTION_NODES_RESPONSE | 2             |
 | COMMAND_INITIALIZE_CONNECTION            | 3             |
-| COMMAND_INTRODUCTION                     | 0             |
-| COMMAND_CONFIRM_CONNECTION               | 1             |
-| COMMAND_CONNECTED                        | 2             |
-| COMMAND_DATA                             | 3             |
-| COMMAND_PING                             | 3             |
+| COMMAND_INTRODUCTION                     | 4             |
+| COMMAND_CONFIRM_CONNECTION               | 5             |
+| COMMAND_CONNECTED                        | 6             |
+| COMMAND_DATA                             | 7             |
+| COMMAND_PING                             | 8             |
 
 * `COMMAND_ANNOUNCE` - is used for announcement node to the network (see "Announcement to the network" section below)
 * `COMMAND_FIND_INTRODUCTION_NODES_REQUEST` - is used for requesting introduction nodes from rendezvous node (see "Discovery and connection to a friend" section below)
@@ -139,7 +139,23 @@ Nodes for routing path are selected as described in "Selection of nodes for rout
 Multiplexers/demultiplexers are only used for sending and receiving data, other commands MUST fit into single packet with max size of 509 bytes, so that they take at most 1 data channel packet.
 
 ### Announcement to the network
-TODO
+Announcement to the network is done anonymously through introduction nodes.
+
+Node that wants to introduce itself to the network first creates a few routing paths to introduction nodes.
+
+Once connections are established, node generates announcement message, which is a mutable item according to [BEP 44](http://bittorrent.org/beps/bep_0044.html) as follows:
+* key is a long-term Ed25519 public key that node wants to announce itself under
+* sequence number is Unix timestamp in milliseconds
+* value is a concatenated string of IDs of all of the introduction nodes to which routing paths were created
+
+Announcement message is then presented as object `{k, seq, sig, v}` in bencoded form, where keys are:
+* `k` - long-term Ed25519 public key
+* `seq` - sequence number
+* `sig` - signature
+* `v` - IDs of introduction nodes
+
+Announcement message is not published to DHT directly, instead node sends `COMMAND_ANNOUNCE` routing command to introduction nodes through previously created routing paths with announcement message as payload.
+When node receives `COMMAND_ANNOUNCE` it becomes aware that it is now acting as introduction node for someone and MUST publish to announcement message to DHT directly, also each 30 minutes introduction node MUST re-send announcement message to DHT.
 
 ### Discovery and connection to a friend
 TODO

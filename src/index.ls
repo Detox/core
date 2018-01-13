@@ -164,28 +164,6 @@ function parse_introduction_payload (introduction_payload)
 	secret				= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
 	[target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret]
 /**
- * @param {!Uint8Array} public_key
- * @param {!Uint8Array} announcement_message
- * @param {!Uint8Array} signature
- *
- * @return {!Uint8Array}
- */
-function compose_announcement_data (public_key, announcement_message, signature)
-	new Uint8Array(ID_LENGTH + SIGNATURE_LENGTH + announcement_message.length)
-		..set(public_key)
-		..set(signature, ID_LENGTH)
-		..set(announcement_message, ID_LENGTH + SIGNATURE_LENGTH)
-/**
- * @param {!Uint8Array} message
- *
- * @return {!Array<Uint8Array>} [public_key, announcement_message, signature]
- */
-function parse_announcement_data (message)
-	public_key				= message.subarray(0, ID_LENGTH)
-	signature				= message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH)
-	announcement_message	= message.subarray(ID_LENGTH + SIGNATURE_LENGTH)
-	[public_key, announcement_message, signature]
-/**
  * @param {!Uint8Array} rendezvous_token
  * @param {!Uint8Array} introduction_node
  * @param {!Uint8Array} target_id
@@ -331,7 +309,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				# Give at least 3x time for announcement process to complete and to announce to some node
 				re-announce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
 				if @_last_announcement < re-announce_if_older_than
-					@_announce(@_number_of_introduction_nodes, @_number_of_intermediate_nodes)
+					@_announce()
 		), LAST_USED_TIMEOUT / 2 * 1000
 		@_get_more_nodes_interval		= setInterval (!~>
 			if @_more_nodes_needed()
@@ -435,17 +413,20 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					case ROUTING_COMMAND_ANNOUNCE
 						if @_bootstrap_node
 							return
-						[public_key, announcement_message, signature]	= parse_announcement_data(data)
-						if !detox-crypto['verify'](signature, announcement_message, public_key)
+						public_key	= @_dht['verify_announcement_message'](data)
+						if !public_key
 							return
 						public_key_string	= public_key.join(',')
+						# If re-announcement, make sure to stop old interval
+						if @_announcements_from.has(public_key_string)
+							clearInterval(@_announcements_from.get(public_key_string)[3])
 						announce_interval	= setInterval (!~>
 							if !@_routing_paths.has(source_id)
 								return
-							@_dht['publish_announcement_message'](announcement_message)
+							@_dht['publish_announcement_message'](data)
 						), ANNOUNCE_INTERVAL * 1000
 						@_announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval])
-						@_dht['publish_announcement_message'](announcement_message)
+						@_dht['publish_announcement_message'](data)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
 						if @_bootstrap_node
 							return
@@ -641,16 +622,16 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		..'announce' = (number_of_introduction_nodes, number_of_intermediate_nodes) !->
 			@_number_of_introduction_nodes	= number_of_introduction_nodes
 			@_number_of_intermediate_nodes	= number_of_intermediate_nodes
-			@_announce(number_of_introduction_nodes, number_of_intermediate_nodes)
-		/**
-		 * @param {number}
-		 * @param {number}
-		 */
-		.._announce = (number_of_introduction_nodes, number_of_intermediate_nodes) !->
-			@_last_announcement				= +(new Date)
+			@_announce()
+		.._announce = !->
 			old_introduction_nodes			= []
 			@_announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
+			number_of_introduction_nodes	= @_number_of_introduction_nodes - old_introduction_nodes.length
+			if !number_of_introduction_nodes
+				return
+			number_of_intermediate_nodes	= @_number_of_intermediate_nodes
+			@_last_announcement				= +(new Date)
 			introduction_nodes				= @_pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes)
 			if !introduction_nodes
 				@_last_announcement	= 1
@@ -668,18 +649,15 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					@_last_announcement	= 1
 					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED)
 					return
-				announcement_message	= @_dht['generate_announcement_message'](
+				# Add old introduction nodes to the list
+				introduction_nodes_confirmed	:= introduction_nodes_confirmed.concat(old_introduction_nodes)
+				announcement_message			= @_dht['generate_announcement_message'](
 					@_real_keypair['ed25519']['public']
 					@_real_keypair['ed25519']['private']
 					introduction_nodes_confirmed
 				)
-				signature				= @_sign(announcement_message)
 				for introduction_node in introduction_nodes_confirmed
-					@_send_to_routing_node(
-						introduction_node
-						ROUTING_COMMAND_ANNOUNCE
-						compose_announcement_data(@_real_keypair['ed25519']['public'], announcement_message, signature)
-					)
+					@_send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message)
 					introduction_node_string	= introduction_node.join(',')
 					@_announced_to.set(introduction_node_string, introduction_node)
 				# TODO: Check using independent routing path that announcement indeed happened

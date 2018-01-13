@@ -73,7 +73,7 @@ test('Core', (t) !->
 
 	!function ready_callback
 		node_1	= nodes[1]
-		node_7	= nodes[7]
+		node_3	= nodes[3]
 
 		t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
 
@@ -89,7 +89,7 @@ test('Core', (t) !->
 					t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction')
 					data.number_of_intermediate_nodes	= 1
 				)
-				node_7.once('connected', (target_id) !->
+				node_3.once('connected', (target_id) !->
 					if target_id.join(',') == node_1_real_public_key.join(',')
 						t.pass('Connected successfully')
 
@@ -102,9 +102,9 @@ test('Core', (t) !->
 						)
 
 						console.log 'Sending data...'
-						node_7.send_to(node_1_real_public_key, command, data)
+						node_3.send_to(node_1_real_public_key, command, data)
 				)
-				node_7.once('connection_failed', (, reason) !->
+				node_3.once('connection_failed', (, reason) !->
 					t.fail('Connection failed with code ' + reason)
 
 					destroy_nodes()
@@ -114,7 +114,7 @@ test('Core', (t) !->
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
-					node_7.connect_to(node_1_real_public_key, application, node_1_secret, 2)
+					node_3.connect_to(node_1_real_public_key, application, node_1_secret, 2)
 				), 8000
 			)
 			.once('announcement_failed', (reason) !->

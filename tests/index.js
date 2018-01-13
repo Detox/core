@@ -65,9 +65,9 @@
         }
       }
       function ready_callback(){
-        var node_1, node_7;
+        var node_1, node_3;
         node_1 = nodes[1];
-        node_7 = nodes[7];
+        node_3 = nodes[3];
         t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
         t.deepEqual(node_1.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
         node_1.once('announced', function(){
@@ -79,7 +79,7 @@
             t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction');
             data.number_of_intermediate_nodes = 1;
           });
-          node_7.once('connected', function(target_id){
+          node_3.once('connected', function(target_id){
             if (target_id.join(',') === node_1_real_public_key.join(',')) {
               t.pass('Connected successfully');
               node_1.once('data', function(arg$, received_command, received_data){
@@ -89,17 +89,17 @@
                 destroy_nodes();
               });
               console.log('Sending data...');
-              node_7.send_to(node_1_real_public_key, command, data);
+              node_3.send_to(node_1_real_public_key, command, data);
             }
           });
-          node_7.once('connection_failed', function(arg$, reason){
+          node_3.once('connection_failed', function(arg$, reason){
             t.fail('Connection failed with code ' + reason);
             destroy_nodes();
           });
           console.log('Preparing for connection (5s)...');
           setTimeout(function(){
             console.log('Connecting...');
-            node_7.connect_to(node_1_real_public_key, application, node_1_secret, 2);
+            node_3.connect_to(node_1_real_public_key, application, node_1_secret, 2);
           }, 8000);
         }).once('announcement_failed', function(reason){
           t.fail('Announcement failed with code ' + reason);

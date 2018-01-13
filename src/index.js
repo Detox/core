@@ -175,33 +175,6 @@
     return [target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret];
   }
   /**
-   * @param {!Uint8Array} public_key
-   * @param {!Uint8Array} announcement_message
-   * @param {!Uint8Array} signature
-   *
-   * @return {!Uint8Array}
-   */
-  function compose_announcement_data(public_key, announcement_message, signature){
-    var x$;
-    x$ = new Uint8Array(ID_LENGTH + SIGNATURE_LENGTH + announcement_message.length);
-    x$.set(public_key);
-    x$.set(signature, ID_LENGTH);
-    x$.set(announcement_message, ID_LENGTH + SIGNATURE_LENGTH);
-    return x$;
-  }
-  /**
-   * @param {!Uint8Array} message
-   *
-   * @return {!Array<Uint8Array>} [public_key, announcement_message, signature]
-   */
-  function parse_announcement_data(message){
-    var public_key, signature, announcement_message;
-    public_key = message.subarray(0, ID_LENGTH);
-    signature = message.subarray(ID_LENGTH, ID_LENGTH + SIGNATURE_LENGTH);
-    announcement_message = message.subarray(ID_LENGTH + SIGNATURE_LENGTH);
-    return [public_key, announcement_message, signature];
-  }
-  /**
    * @param {!Uint8Array} rendezvous_token
    * @param {!Uint8Array} introduction_node
    * @param {!Uint8Array} target_id
@@ -377,7 +350,7 @@
         if (this$._announced_to.size < this$._number_of_introduction_nodes && this$._last_announcement) {
           reAnnounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
           if (this$._last_announcement < reAnnounce_if_older_than) {
-            this$._announce(this$._number_of_introduction_nodes, this$._number_of_intermediate_nodes);
+            this$._announce();
           }
         }
       }, LAST_USED_TIMEOUT / 2 * 1000);
@@ -474,26 +447,29 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, ref$, public_key, announcement_message, signature, public_key_string, announce_interval, target_id, send_response, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, application, secret, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, introduction_node_received, rendezvous_node, application, secret, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
           if (this$._bootstrap_node) {
             return;
           }
-          ref$ = parse_announcement_data(data), public_key = ref$[0], announcement_message = ref$[1], signature = ref$[2];
-          if (!detoxCrypto['verify'](signature, announcement_message, public_key)) {
+          public_key = this$._dht['verify_announcement_message'](data);
+          if (!public_key) {
             return;
           }
           public_key_string = public_key.join(',');
+          if (this$._announcements_from.has(public_key_string)) {
+            clearInterval(this$._announcements_from.get(public_key_string)[3]);
+          }
           announce_interval = setInterval(function(){
             if (!this$._routing_paths.has(source_id)) {
               return;
             }
-            this$._dht['publish_announcement_message'](announcement_message);
+            this$._dht['publish_announcement_message'](data);
           }, ANNOUNCE_INTERVAL * 1000);
           this$._announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval]);
-          this$._dht['publish_announcement_message'](announcement_message);
+          this$._dht['publish_announcement_message'](data);
           break;
         case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
           if (this$._bootstrap_node) {
@@ -690,19 +666,20 @@
     y$['announce'] = function(number_of_introduction_nodes, number_of_intermediate_nodes){
       this._number_of_introduction_nodes = number_of_introduction_nodes;
       this._number_of_intermediate_nodes = number_of_intermediate_nodes;
-      this._announce(number_of_introduction_nodes, number_of_intermediate_nodes);
+      this._announce();
     };
-    /**
-     * @param {number}
-     * @param {number}
-     */
-    y$._announce = function(number_of_introduction_nodes, number_of_intermediate_nodes){
-      var old_introduction_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
-      this._last_announcement = +new Date;
+    y$._announce = function(){
+      var old_introduction_nodes, number_of_introduction_nodes, number_of_intermediate_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
       old_introduction_nodes = [];
       this._announced_to.forEach(function(introduction_node){
         old_introduction_nodes.push(introduction_node);
       });
+      number_of_introduction_nodes = this._number_of_introduction_nodes - old_introduction_nodes.length;
+      if (!number_of_introduction_nodes) {
+        return;
+      }
+      number_of_intermediate_nodes = this._number_of_intermediate_nodes;
+      this._last_announcement = +new Date;
       introduction_nodes = this._pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes);
       if (!introduction_nodes) {
         this._last_announcement = 1;
@@ -712,7 +689,7 @@
       introductions_pending = number_of_introduction_nodes;
       introduction_nodes_confirmed = [];
       function announced(introduction_node){
-        var announcement_message, signature, i$, ref$, len$, introduction_node_string;
+        var announcement_message, i$, len$, introduction_node_string;
         if (introduction_node) {
           introduction_nodes_confirmed.push(introduction_node);
         }
@@ -725,11 +702,11 @@
           this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED);
           return;
         }
+        introduction_nodes_confirmed = introduction_nodes_confirmed.concat(old_introduction_nodes);
         announcement_message = this$._dht['generate_announcement_message'](this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private'], introduction_nodes_confirmed);
-        signature = this$._sign(announcement_message);
-        for (i$ = 0, len$ = (ref$ = introduction_nodes_confirmed).length; i$ < len$; ++i$) {
-          introduction_node = ref$[i$];
-          this$._send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, compose_announcement_data(this$._real_keypair['ed25519']['public'], announcement_message, signature));
+        for (i$ = 0, len$ = introduction_nodes_confirmed.length; i$ < len$; ++i$) {
+          introduction_node = introduction_nodes_confirmed[i$];
+          this$._send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message);
           introduction_node_string = introduction_node.join(',');
           this$._announced_to.set(introduction_node_string, introduction_node);
         }
