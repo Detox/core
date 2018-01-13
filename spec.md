@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.7
+Specification version: 0.0.8
 
 Author: Nazar Mokrynskyi
 
@@ -52,7 +52,7 @@ There are 4 commands supported on data channel level:
 | COMMAND_TAG     | 1             |
 | COMMAND_UNTAG   | 2             |
 
-* `COMMAND_DHT` - data are consumed by DHT
+* `COMMAND_DHT` - data are consumed by DHT, uses zlib compression (see "Data channel compression" section below)
 * `COMMAND_TAG` - is used to notify the other node that the other node is using this connection for something more than DHT so that connection SHOULD NOT be closed immediately if not used by DHT itself
 * `COMMAND_UNTAG` - is used to notify the other node that this connection is not use for anything other than DHT anymore and MAY be closed is not needed for DHT
 * Commands with numeric values `3..9` are reserved for future use.
@@ -71,6 +71,14 @@ Additional commands (from range `0..245`):
 * `COMMAND_FORWARD_INTRODUCTION` - is used by rendezvous node in order to ask introduction node to forward introduction to target node ("Discovery and connection to a friend" section below)
 * `COMMAND_GET_NODES_REQUEST` - is used to fetch up to 10 random nodes, queried node is aware of (not necessarily connected to, see "Selection of nodes for routing path creation" section below)
 * `COMMAND_GET_NODES_RESPONSE` - response for `COMMAND_GET_NODES_REQUEST` (see "Selection of nodes for routing path creation" section below)
+
+#### Data channel compression
+While most of data sent through data channel are encrypted and look random, data sent using `COMMAND_DHT` are in plaintext and generally quite homogeneous. They are also quite lengthy, which means that they don't fit into single data channel packet or even two of them.
+
+In order to improve data transfer efficiency, all of the data sent with `COMMAND_DHT` command are encrypted with zlib using dictionary.
+Dictionary is composed from last 5 pieces of data sent using `COMMAND_DHT` command concatenated together with most recent at the end. Compression in each direction is independent.
+
+This way common identifiers and commands are compressed very efficiently with low CPU load and much more often commands fit into single data channel packet, which means much lower latency.
 
 #### DHT
 DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is in turn based on BitTorrent DHT, make yourself familiar with BitTorrent DHT and WebTorrent DHT first as this document will not cover them.
