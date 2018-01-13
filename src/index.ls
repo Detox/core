@@ -42,10 +42,10 @@ const AWARE_OF_NODES_LIMIT			= 1000
 # New aware of nodes will be fetched and old refreshed each 30 seconds
 const GET_MORE_NODES_INTERVAL		= 30
 
-const CONNECTION_ERROR_OK								= 0
-const CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES		= 1
-const CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES	= 2
-const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 3
+const CONNECTION_OK										= 0
+const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
+const CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES		= 2
+const CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES	= 3
 const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 4
 const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 5
 
@@ -446,7 +446,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								if !introduction_nodes.length
 									send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 								else
-									send_response(CONNECTION_ERROR_OK, introduction_nodes)
+									send_response(CONNECTION_OK, introduction_nodes)
 							!~>
 								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 						)
@@ -713,7 +713,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						if !is_string_equal_to_array(target_id_string, target_id)
 							return
 						clearTimeout(find_introduction_nodes_timeout)
-						if code != CONNECTION_ERROR_OK
+						if code != CONNECTION_OK
 							@'fire'('connection_failed', target_id, code)
 							return
 						@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)

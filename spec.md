@@ -100,7 +100,7 @@ Anonymous router is based on [Ronion](https://github.com/nazar-pc/ronion) framew
 
 Following choices were made for this particular implementation of Ronion:
 * packet size is 509 bytes (512 of data channel packet - 3 for data channel packet header)
-* address in 32 bytes DHT public key (see key pairs section below)
+* address in 32 bytes DHT public key (see keypairs section below)
 * `Noise_NK_25519_ChaChaPoly_BLAKE2b` from [Noise Protocol Framework](https://noiseprotocol.org/) is used for encryption/decryption (payload on `CREATE_REQUEST`, `CREATE_RESPONSE` and `EXTEND_REQUEST` is Noise's handshake message)
 * [AEZ block cipher](http://web.cs.ucdavis.edu/%7Erogaway/aez/) is used for re-wrapping (keys for wrapping/unwrapping with AEZ are received by encrypting 32 zero bytes with empty additional data using send/receive Noise CipherState used for encryption/decryption, together with 16 bytes MAC it will give identical 48 bytes keys for wrapping and unwrapping on both sides; nonce is 12 zero bytes and before each wrapping/unwrapping it is incremented starting from the last byte and moving to the first one)
 * data MUST only be sent between initiator and responder, all other data sent by other nodes on routing path MUST be ignored
@@ -129,12 +129,20 @@ Here is the list of commands supported on Router level:
 * `COMMAND_DATA` - is used for data sending and forwarding (see "Sending data to a friend" section below)
 * `COMMAND_PING` - is used for ensuring connection is still working (see "Discovery and connection to a friend" section below)
 
+#### One-way encryption
+In some cases one-way encryption is used when there is a need to send encrypted piece of data, but there is no two-way communication yet (like during connection to a friend).
+
+In this case Noise's `Noise_N_25519_ChaChaPoly_BLAKE2b` is used and the output is as follows:
+* 48 bytes Noise handshake message
+* ciphertext, same length as plaintext
+* 16 bytes MAC
+
 ### Selection of nodes for routing path creation
 When routing path is created (see "Routing path creation" section below), we need a set of nodes through which to create this routing path.
 
 The first node in routing path MUST be always the random node to which direct connection is already established. The rest of the nodes MUST be those to which direct connections are not yet established.
 
-Node can send `COMMAND_GET_NODES_REQUEST` command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` command that will contain concatenated list of up to 10 unique random IDs of nodes queried node is aware of (node SHOULD return up to 7 directly connected nodes and the rest will be nodes it is aware of).
+Node can send `COMMAND_GET_NODES_REQUEST` command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` command that contains concatenated list of up to 10 unique random IDs of nodes queried node is aware of (node SHOULD return up to 7 directly connected nodes and the rest will be nodes it is aware of).
 When routing path is created, necessary number of nodes is selected from these known nodes.
 
 TODO: This is a very naive approach and must be improved in future iterations of the spec!
@@ -159,20 +167,57 @@ Once connections are established, node generates announcement message, which is 
 Announcement message is then presented as object `{k, seq, sig, v}` in bencoded form, where keys are:
 * `k` - long-term Ed25519 public key
 * `seq` - sequence number
-* `sig` - signature
+* `sig` - Ed25519 signature
 * `v` - IDs of introduction nodes
 
 Announcement message is not published to DHT directly, instead node sends `COMMAND_ANNOUNCE` routing command to introduction nodes through previously created routing paths with announcement message as payload.
 When node receives `COMMAND_ANNOUNCE` it becomes aware that it is now acting as introduction node for someone and MUST publish to announcement message to DHT directly, also each 30 minutes introduction node MUST re-send announcement message to DHT.
 
 ### Discovery and connection to a friend
-TODO
+Discovery and connection to a friend also happens anonymously using rendezvous node selected by the node that wants to connect and introduction node selected by a friend during announcement to the network.
+
+First of all, node creates routing path to rendezvous node.
+
+Once connection is established, `COMMAND_FIND_INTRODUCTION_NODES_REQUEST` routing command is sent to rendezvous node with data that contains long-term public key of a friend.
+Rendezvous node uses DHT to find an item using long-term public key as DHT key.
+
+Once search is done rendezvous node responds with `ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE` routing command which contains data as follows:
+* 1 byte status code (see below)
+* 0 or more Ed25519 public keys of introduction nodes for requested long-term public key
+
+Status codes:
+
+| Code name                   | Numeric value |
+|-----------------------------|---------------|
+| OK                          | 0             |
+| ERROR_NO_INTRODUCTION_NODES | 1             |
+
+* `OK` - introduction nodes were found successfully
+* `ERROR_NO_INTRODUCTION_NODES` - introduction nodes were not found
+
+Once introduction nodes are found, random introduction node is selected and introduction message is created as follows:
+* 64 bytes Ed25519 signature if introduction payload using node's long-term keypair
+* 240 bytes introduction payload
+
+Introduction payload is creates as follows:
+* 32 bytes - Ed25519 long-term public key of a friend
+* 32 bytes - Ed25519 public key of introduction node
+* 32 bytes - Ed25519 public key of rendezvous node
+* 32 bytes - rendezvous token (one-time randomly generated string)
+* 48 bytes - Noise handshake message for end-to-end encryption with a friend (the same `Noise_NK_25519_ChaChaPoly_BLAKE2b` is used as in routing, long-term public key is used as remote static key)
+* 32 bytes - application (to be interpreted by applications on both sides of conversation, if shorter than 32 bytes MUST be padded with zeroes)
+* 32 bytes -  secret (to be interpreted by remote node, SHOULD be negotiated beforehand)
+
+Once introduction message is created, it is one-way encrypted (see "One-way encryption" section above) with long-term public key of a friend.
+
+After this `COMMAND_INITIALIZE_CONNECTION` command is sent to rendezvous node...
+TODO: The rest of connection process description
 
 ### Sending data to a friend
 In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 472 bytes:
 * 512 of data channel packet
 * - 3 for data channel packet header
-* - 16 for block-level MAC (we encrypt each block with `Noise_N_25519_ChaChaPoly_BLAKE2b` from Noise Protocol Framework as it will be sent through rendezvous node, which MUST NOT be able to read contents)
+* - 16 for block-level MAC (we encrypt each block with one-way encryption, see "One-way encryption" section above, as it will be sent through rendezvous node, which MUST NOT be able to read contents)
 * - 2 for Ronion's segment ID
 * - 1 for Ronion's command
 * - 2 for Ronion's command data length
