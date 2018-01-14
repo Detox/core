@@ -77,9 +77,11 @@ function random_int (min, max)
 	uint32_number	= (new Uint32Array(bytes.buffer))[0]
 	Math.floor(uint32_number / 2**32 * (max - min + 1)) + min
 /**
- * @param {!Array} array Returned item will be removed from this array
+ * @template T
  *
- * @return {*}
+ * @param {!Array<T>} array Returned item will be removed from this array
+ *
+ * @return {T}
  */
 function pull_random_item_from_array (array)
 	length	= array.length
@@ -152,7 +154,7 @@ function compose_introduction_payload (target_id, rendezvous_node, rendezvous_to
 /**
  * @param {!Uint8Array} introduction_payload
  *
- * @return {!Array<Uint8Array>} [target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret]
+ * @return {!Array<!Uint8Array>} [target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret]
  */
 function parse_introduction_payload (introduction_payload)
 	target_id			= introduction_payload.subarray(0, ID_LENGTH)
@@ -179,7 +181,7 @@ function compose_initialize_connection_data (rendezvous_token, introduction_node
 /**
  * @param {!Uint8Array} message
  *
- * @return {!Array<Uint8Array>} [rendezvous_token, introduction_node, target_id, introduction_message]
+ * @return {!Array<!Uint8Array>} [rendezvous_token, introduction_node, target_id, introduction_message]
  */
 function parse_initialize_connection_data (message)
 	rendezvous_token		= message.subarray(0, ID_LENGTH)
@@ -202,7 +204,7 @@ function compose_confirm_connection_data (signature, rendezvous_token, handshake
 /**
  * @param {!Uint8Array} message
  *
- * @return {!Array<Uint8Array>} [signature, rendezvous_token, handshake_message]
+ * @return {!Array<!Uint8Array>} [signature, rendezvous_token, handshake_message]
  */
 function parse_confirm_connection_data (message)
 	signature			= message.subarray(0, SIGNATURE_LENGTH)
@@ -222,7 +224,7 @@ function compose_introduce_to_data (target_id, introduction_message)
 /**
  * @param {!Uint8Array} message
  *
- * @return {!Array<Uint8Array>} [target_id, introduction_message]
+ * @return {!Array<!Uint8Array>} [target_id, introduction_message]
  */
 function parse_introduce_to_data (message)
 	target_id				= message.subarray(0, ID_LENGTH)
@@ -234,13 +236,6 @@ function error_handler (error)
 		console.error(error)
 
 function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-eventer)
-	/**
-	 * Generate random seed that can be used as keypair seed
-	 *
-	 * @return {!Uint8Array} 32 bytes
-	 */
-	function generate_seed
-		detox-crypto['create_keypair']()['seed']
 	/**
 	 * @constructor
 	 *
@@ -521,7 +516,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 									if !number_of_intermediate_nodes
 										throw new Error('Direct connections are not yet supported')
 										# TODO: Support direct connections here?
-										return
 									nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, [rendezvous_node])
 									if !nodes
 										# TODO: Retry?
@@ -581,29 +575,27 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
-	Core
-		..'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
-		..'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
-		..'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
-		..'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
-		..'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
+	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
+	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
+	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
+	Core.'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
+	Core.'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
 
-		..'CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'	= CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE
-		..'CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'		= CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES
-		..'CONNECTION_PROGRESS_INTRODUCTION_SENT'				= CONNECTION_PROGRESS_INTRODUCTION_SENT
+	Core.'CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'	= CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE
+	Core.'CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'		= CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES
+	Core.'CONNECTION_PROGRESS_INTRODUCTION_SENT'			= CONNECTION_PROGRESS_INTRODUCTION_SENT
 
-		..'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED
-		..'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED
-		..'ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'	= ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
-	Core:: = Object.create(async-eventer::)
-	Core::
+	Core.'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED
+	Core.'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED
+	Core.'ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
+	Core:: =
 		/**
 		 * Start WebSocket server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
 		 *
 		 * @param {string}	ip
 		 * @param {number}	port
 		 */
-		..'start_bootstrap_node' = (ip, port) !->
+		'start_bootstrap_node' : (ip, port) !->
 			@_dht['start_bootstrap_node'](ip, port)
 			@_bootstrap_node	= true
 		/**
@@ -611,17 +603,17 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 *
 		 * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
 		 */
-		..'get_bootstrap_nodes' = ->
+		'get_bootstrap_nodes' : ->
 			@_dht['get_bootstrap_nodes']()
 		/**
 		 * @param {number} number_of_introduction_nodes
 		 * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
 		 */
-		..'announce' = (number_of_introduction_nodes, number_of_intermediate_nodes) !->
+		'announce' : (number_of_introduction_nodes, number_of_intermediate_nodes) !->
 			@_number_of_introduction_nodes	= number_of_introduction_nodes
 			@_number_of_intermediate_nodes	= number_of_intermediate_nodes
 			@_announce()
-		.._announce = !->
+		_announce : !->
 			old_introduction_nodes			= []
 			@_announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
@@ -637,6 +629,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				return
 			introductions_pending			= number_of_introduction_nodes
 			introduction_nodes_confirmed	= []
+			/**
+			 * @param {!Uint8Array=} introduction_node
+			 */
 			!~function announced (introduction_node)
 				if introduction_node
 					introduction_nodes_confirmed.push(introduction_node)
@@ -680,11 +675,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {!Uint8Array}	secret							Up to 32 bytes
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
 		 */
-		..'connect_to' = (target_id, application, secret, number_of_intermediate_nodes) !->
+		'connect_to' : (target_id, application, secret, number_of_intermediate_nodes) !->
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
-				return
 			target_id_string	= target_id.join(',')
 			if @_id_to_routing_path.has(target_id_string)
 				# Already connected, do nothing
@@ -781,14 +775,14 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				.catch (error) !~>
 					error_handler(error)
 					@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
-		..'get_max_data_size' = ->
+		'get_max_data_size' : ->
 			@_max_data_size
 		/**
 		 * @param {!Uint8Array}	target_id	Should be connected already
 		 * @param {number}		command		Command from range `0..255`
 		 * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
-		..'send_to' = (target_id, command, data) !->
+		'send_to' : (target_id, command, data) !->
 			target_id_string	= target_id.join(',')
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if !encryptor_instance || data.length > @_max_data_size
@@ -804,7 +798,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				data_block				= multiplexer['get_block']()
 				data_block_encrypted	= encryptor_instance['encrypt'](data_block)
 				@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
-		..'destroy' = !->
+		'destroy' : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
 			clearInterval(@_get_more_nodes_interval)
@@ -817,13 +811,14 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * @return {boolean}
 		 */
-		.._more_nodes_needed = ->
-			@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length
+		_more_nodes_needed : ->
+			!!(@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length)
 		/**
-		 * @param {boolean} early_exit Will return single node if present, used to check if stale nodes are present at all
+		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
+		 *
 		 * @return {!Array<string>}
 		 */
-		.._get_stale_aware_of_nodes = (early_exit = false) ->
+		_get_stale_aware_of_nodes : (early_exit = false) ->
 			stale_aware_of_nodes	= []
 			stale_older_than		= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 1000
 			for [node_id, date] in Array.from(@_aware_of_nodes.values())
@@ -835,27 +830,27 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * Request more nodes to be aware of from some of the nodes already connected to
 		 */
-		.._get_more_nodes = !->
+		_get_more_nodes : !->
 			nodes	= @_pick_random_connected_nodes(5)
 			if !nodes
 				return
 			for node_id in nodes
 				@_get_more_nodes_from(node_id)
 		/**
-		 * @param {!Uint8Array}
+		 * @param {!Uint8Array} node_id
 		 */
-		.._get_more_nodes_from = (node_id) !->
+		_get_more_nodes_from : (node_id) !->
 			@_get_nodes_requested.add(node_id.join(','))
 			@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0))
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
-		 * @param {number}				number_of_nodes
-		 * @param {Array<Uint8Array>}	exclude_nodes
+		 * @param {number}					number_of_nodes
+		 * @param {!Array<!Uint8Array>=}	exclude_nodes
 		 *
-		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
+		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
 		 */
-		.._pick_nodes_for_routing_path = (number_of_nodes, exclude_nodes = null) ->
+		_pick_nodes_for_routing_path : (number_of_nodes, exclude_nodes) ->
 			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)
 			if !connected_node
 				return null
@@ -866,12 +861,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * Get some random nodes from already connected nodes
 		 *
-		 * @param {number}				up_to_number_of_nodes
-		 * @param {!Array<Uint8Array>}	exclude_nodes
+		 * @param {number=}					up_to_number_of_nodes
+		 * @param {!Array<!Uint8Array>=}	exclude_nodes
 		 *
-		 * @return {Array<Uint8Array>} `null` if there is no nodes to return
+		 * @return {Array<!Uint8Array>} `null` if there is no nodes to return
 		 */
-		.._pick_random_connected_nodes = (up_to_number_of_nodes = 1, exclude_nodes = []) ->
+		_pick_random_connected_nodes : (up_to_number_of_nodes = 1, exclude_nodes = []) ->
 			if !@_connected_nodes.size
 				# Make random lookup in order to fill DHT with known nodes
 				@_dht['lookup'](randombytes(ID_LENGTH))
@@ -882,19 +877,19 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			connected_nodes	= connected_nodes.filter (node) ->
 				!(node in exclude_nodes)
 			if !connected_nodes.length
-				return
+				return null
 			for i from 0 til up_to_number_of_nodes
 				if connected_nodes.length
 					pull_random_item_from_array(connected_nodes)
 		/**
 		 * Get some random nodes from those that current node is aware of
 		 *
-		 * @param {number}				number_of_nodes
-		 * @param {Array<Uint8Array>}	exclude_nodes
+		 * @param {number}					number_of_nodes
+		 * @param {!Array<!Uint8Array>=}	exclude_nodes
 		 *
-		 * @return {Array<Uint8Array>} `null` if there was not enough nodes
+		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
 		 */
-		.._pick_random_aware_of_nodes = (number_of_nodes, exclude_nodes) ->
+		_pick_random_aware_of_nodes : (number_of_nodes, exclude_nodes) ->
 			if @_aware_of_nodes.size < number_of_nodes
 				return null
 			aware_of_nodes	= Array.from(@_aware_of_nodes.values())
@@ -910,7 +905,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
 		 */
-		.._register_routing_path = (target_id, node_id, route_id) !->
+		_register_routing_path : (target_id, node_id, route_id) !->
 			source_id			= compute_source_id(node_id, route_id)
 			target_id_string	= target_id.join(',')
 			if @_routing_path_to_id.has(source_id)
@@ -927,7 +922,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
 		 */
-		.._unregister_routing_path = (node_id, route_id) !->
+		_unregister_routing_path : (node_id, route_id) !->
 			source_id	= compute_source_id(node_id, route_id)
 			if !@_routing_paths.has(source_id)
 				return
@@ -959,7 +954,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {number}		command	0..245
 		 * @param {!Uint8Array}	data
 		 */
-		.._send_to_dht_node = (node_id, command, data) !->
+		_send_to_dht_node : (node_id, command, data) !->
 			node_id_string	= node_id.join(',')
 			if @_connected_nodes.has(node_id_string)
 				@_update_connection_timeout(node_id)
@@ -982,7 +977,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {number}		command		0..245
 		 * @param {!Uint8Array}	data
 		 */
-		.._send_to_routing_node = (target_id, command, data) !->
+		_send_to_routing_node : (target_id, command, data) !->
 			target_id_string	= target_id.join(',')
 			if !@_id_to_routing_path.has(target_id_string)
 				return
@@ -994,7 +989,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 *
 		 * @return {boolean} `true` if ping was sent (not necessary delivered)
 		 */
-		.._send_ping = (node_id, route_id) ->
+		_send_ping : (node_id, route_id) ->
 			source_id	= compute_source_id(node_id, route_id)
 			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
@@ -1003,7 +998,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
-		.._update_connection_timeout = (node_id) !->
+		_update_connection_timeout : (node_id) !->
 			node_id_string	= node_id.join(',')
 			if !@_connections_timeouts.has(node_id_string)
 				@_add_used_tag(node_id)
@@ -1011,7 +1006,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
-		.._add_used_tag = (node_id) !->
+		_add_used_tag : (node_id) !->
 			node_id_string	= node_id.join(',')
 			value			= 0
 			if @_used_tags.has(node_id_string)
@@ -1023,7 +1018,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
-		.._del_used_tag = (node_id) !->
+		_del_used_tag : (node_id) !->
 			node_id_string	= node_id.join(',')
 			if !@_used_tags.has(node_id_string)
 				return
@@ -1034,6 +1029,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				@_dht['del_used_tag'](node_id)
 			else
 				@_used_tags.set(node_id_string, value)
+	Object.assign(Core::, async-eventer::)
 	Object.defineProperty(Core::, 'constructor', {enumerable: false, value: Core})
 	{
 		'ready'			: (callback) !->
@@ -1044,7 +1040,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					callback()
 			detox-crypto['ready'](ready)
 			detox-transport['ready'](ready)
-		'generate_seed'	: generate_seed
+		/**
+		 * Generate random seed that can be used as keypair seed
+		 *
+		 * @return {!Uint8Array} 32 bytes
+		 */
+		'generate_seed'	: ->
+			detox-crypto['create_keypair']()['seed']
 		'Core'			: Core
 	}
 

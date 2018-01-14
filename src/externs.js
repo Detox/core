@@ -15,3 +15,9 @@ var require = function (module) {};
 var exports = {};
 var module = {};
 module.exports	= {};
+/**
+ * @param {number} size
+ *
+ * @return {!Uint8Array}
+ */
+crypto.randomBytes = function(size) {};
