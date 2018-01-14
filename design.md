@@ -1,6 +1,6 @@
 # Detox design
 
-Complements specification version: 0.0.12
+Complements specification version: 0.1.0
 
 Author: Nazar Mokrynskyi
 
@@ -75,3 +75,6 @@ Rendezvous node will connect to introduction node and will ask to forward introd
 * do nothing
 
 Routing paths lengths are selected depending on anonymity and performance requirements. Nodes MAY have no routing paths if they don't care about anonymity and might announce themselves as well as act as rendezvous nodes for themselves.
+
+### Acknowledgements
+Detox is heavily inspired by [Tor](https://www.torproject.org/) and [Tox](https://tox.chat/).

@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.12
+Specification version: 0.1.0
 
 Author: Nazar Mokrynskyi
 
@@ -266,6 +266,20 @@ In order to make sure data packets always fit into single data channel packet mu
 
 This way each encrypted block of data will be encrypted and will occupy exactly 1 data channel packet, so that even rendezvous node will not know what data of which size it forwards.
 
-TODO: the rest of data sending description
+Data are send to rendezvous node using `COMMAND_DATA` routing command by 2 sides of the conversation and rendezvous node transparently forwards data to the other side just like if 2 friends have direct routing path between them.
 
-TODO: The rest
+Each piece of data has command and payload. Command is 1 byte unsigned integer and payload is what needs to be sent. Command interpretation and payload format depends on application.
+
+In order to send data to a friend, node:
+* concatenates command byte and payload
+* multiplexes the result into chunks of 472 bytes each
+* encrypts each chunk with Noise's ChiperState established using Noise handshake messages exchanged during connection process (see "Discovery and connection to a friend" section above)
+* sends each encrypted chunk using `COMMAND_DATA` routing command to rendezvous node
+
+When `COMMAND_DATA` routing command is received, node:
+* decrypts contents with Noise's CipherState
+* feeds the result into demultiplexer
+* when demultiplexer returns data, then first byte is command and the rest is payload
+
+### Acknowledgements
+Detox is heavily inspired by [Tor](https://www.torproject.org/) and [Tox](https://tox.chat/).

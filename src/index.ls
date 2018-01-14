@@ -4,6 +4,9 @@
  * @copyright Copyright (c) 2017, Nazar Mokrynskyi
  * @license   MIT License, see license.txt
  */
+/*
+ * Implements version 0.1.0 of the specification
+ */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
 const DHT_COMMAND_GET_NODES_REQUEST		= 2
