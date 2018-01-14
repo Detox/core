@@ -3,7 +3,9 @@
 	"description"     : "Core library of Detox project that provides high-level APIs used when building end-user applications",
 	"keywords"        : [
 		"detox",
-		"anonymous"
+		"anonymous",
+		"distributed",
+		"p2p"
 	],
 	"version"         : "",
 	"homepage"        : "https://github.com/Detox/detox-core",
