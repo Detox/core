@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.11
+Specification version: 0.0.12
 
 Author: Nazar Mokrynskyi
 
@@ -247,7 +247,12 @@ If rendezvous token is known and signature is valid, rendezvous node will sent `
 Once `COMMAND_CONFIRM_CONNECTION` is received, connection to a friend is considered established and any `COMMAND_DATA` routing commands received on routing paths MUST be blindly forwarded by rendezvous node to target node and back.
 
 ### Friendship requests
-TODO
+Friendship is not specified as special entity or something, but there is a way to make it work.
+
+Node can create special `secret` (see "Discovery and connection to a friend" section above) that will be commonly used for friendship requests.
+This way when `COMMAND_INTRODUCTION` routing command is received with this `secret`, application might interpret it as friendship request instead of rejecting immediately.
+
+In case this `secret` happens to appear in hands of spammers, it can be changed and all requests with old one will be ignored. Moreover, application can have multiple such `secret`s for different purposes, so that it doesn't have to revoke all of them at once.
 
 ### Sending data to a friend
 In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 472 bytes:
