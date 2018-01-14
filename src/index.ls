@@ -1029,7 +1029,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				@_dht['del_used_tag'](node_id)
 			else
 				@_used_tags.set(node_id_string, value)
-	Object.assign(Core::, async-eventer::)
+	Core:: = Object.assign(Object.create(async-eventer::), Core::)
+
 	Object.defineProperty(Core::, 'constructor', {enumerable: false, value: Core})
 	{
 		'ready'			: (callback) !->
