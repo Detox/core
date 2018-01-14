@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.10
+Specification version: 0.0.11
 
 Author: Nazar Mokrynskyi
 
@@ -127,7 +127,7 @@ Here is the list of commands supported on Router level:
 * `COMMAND_CONFIRM_CONNECTION` - is used by target node to respond to introduction and establish connection through rendezvous node (see "Discovery and connection to a friend" section below)
 * `COMMAND_CONNECTED` - is used by rendezvous node to confirm that connection to target node is established (see "Discovery and connection to a friend" section below)
 * `COMMAND_DATA` - is used for data sending and forwarding (see "Sending data to a friend" section below)
-* `COMMAND_PING` - is used for ensuring connection is still working (see "Discovery and connection to a friend" section below)
+* `COMMAND_PING` - is used for ensuring connection is still working (see "Announcement to the network" section below)
 
 #### One-way encryption
 In some cases one-way encryption is used when there is a need to send encrypted piece of data, but there is no two-way communication yet (like during connection to a friend).
@@ -172,6 +172,8 @@ Announcement message is then presented as object `{k, seq, sig, v}` in bencoded 
 
 Announcement message is not published to DHT directly, instead node sends `COMMAND_ANNOUNCE` routing command to introduction nodes through previously created routing paths with announcement message as payload.
 When node receives `COMMAND_ANNOUNCE` it becomes aware that it is now acting as introduction node for someone and MUST publish to announcement message to DHT directly, also each 30 minutes introduction node MUST re-send announcement message to DHT.
+
+Node that announced itself SHOULD send `COMMAND_PING` routing command to introduction node at least once per 60 seconds to make sure connection is kept alive, otherwise routing path can be destroyed by introduction node and it will stop forwarding introductions (see "Discovery and connection to a friend" section below).
 
 ### Discovery and connection to a friend
 Discovery and connection to a friend also happens anonymously using rendezvous node selected by the node that wants to connect and introduction node selected by a friend during announcement to the network.
