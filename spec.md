@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.1.0
+Specification version: 0.1.1
 
 Author: Nazar Mokrynskyi
 
@@ -173,7 +173,9 @@ Announcement message is then presented as object `{k, seq, sig, v}` in bencoded 
 Announcement message is not published to DHT directly, instead node sends `COMMAND_ANNOUNCE` routing command to introduction nodes through previously created routing paths with announcement message as payload.
 When node receives `COMMAND_ANNOUNCE` it becomes aware that it is now acting as introduction node for someone and MUST publish to announcement message to DHT directly, also each 30 minutes introduction node MUST re-send announcement message to DHT.
 
-Node that announced itself SHOULD send `COMMAND_PING` routing command to introduction node at least once per 60 seconds to make sure connection is kept alive, otherwise routing path can be destroyed by introduction node and it will stop forwarding introductions (see "Discovery and connection to a friend" section below).
+Node that announced itself SHOULD send `COMMAND_PING` routing command with empty contents to introduction node at least once per 60 seconds to make sure connection is kept alive, otherwise routing path can be destroyed by introduction node and it will stop forwarding introductions (see "Discovery and connection to a friend" section below).
+
+When `COMMAND_PING` is received, node MUST send the same `COMMAND_PING` routing command with empty contents back.
 
 ### Discovery and connection to a friend
 Discovery and connection to a friend also happens anonymously using rendezvous node selected by the node that wants to connect and introduction node selected by a friend during announcement to the network.
@@ -257,12 +259,12 @@ In case this `secret` happens to appear in hands of spammers, it can be changed 
 ### Sending data to a friend
 In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 472 bytes:
 * 512 of data channel packet
-* - 3 for data channel packet header
-* - 16 for block-level MAC (we encrypt each block with one-way encryption, see "One-way encryption" section above, as it will be sent through rendezvous node, which MUST NOT be able to read contents)
-* - 2 for Ronion's segment ID
-* - 1 for Ronion's command
-* - 2 for Ronion's command data length
-* - 16 for Ronion's MAC
+* \- 3 for data channel packet header
+* \- 16 for block-level MAC (we encrypt each block with one-way encryption, see "One-way encryption" section above, as it will be sent through rendezvous node, which MUST NOT be able to read contents)
+* \- 2 for Ronion's segment ID
+* \- 1 for Ronion's command
+* \- 2 for Ronion's command data length
+* \- 16 for Ronion's MAC
 
 This way each encrypted block of data will be encrypted and will occupy exactly 1 data channel packet, so that even rendezvous node will not know what data of which size it forwards.
 
