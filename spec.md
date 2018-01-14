@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.9
+Specification version: 0.0.10
 
 Author: Nazar Mokrynskyi
 
@@ -142,7 +142,7 @@ When routing path is created (see "Routing path creation" section below), we nee
 
 The first node in routing path MUST be always the random node to which direct connection is already established. The rest of the nodes MUST be those to which direct connections are not yet established.
 
-Node can send `COMMAND_GET_NODES_REQUEST` command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` command that contains concatenated list of up to 10 unique random IDs of nodes queried node is aware of (node SHOULD return up to 7 directly connected nodes and the rest will be nodes it is aware of).
+Node can send `COMMAND_GET_NODES_REQUEST` transport command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` transport command that contains concatenated list of up to 10 unique random IDs of nodes queried node is aware of (node SHOULD return up to 7 directly connected nodes and the rest will be nodes it is aware of).
 When routing path is created, necessary number of nodes is selected from these known nodes.
 
 TODO: This is a very naive approach and must be improved in future iterations of the spec!
@@ -196,25 +196,56 @@ Status codes:
 * `ERROR_NO_INTRODUCTION_NODES` - introduction nodes were not found
 
 Once introduction nodes are found, random introduction node is selected and introduction message is created as follows:
-* 64 bytes Ed25519 signature of Ed25519 public key of introduction node (not part of introduction payload) concatenated with introduction payload using node's long-term keypair
-* 240 bytes introduction payload
+* 64 bytes - Ed25519 signature of Ed25519 public key of introduction node (not part of introduction payload) concatenated with introduction payload using node's long-term keypair
+* 240 bytes - introduction payload
 
 Introduction payload is creates as follows:
 * 32 bytes - Own long-term public key
 * 32 bytes - Ed25519 public key of rendezvous node
 * 32 bytes - rendezvous token (one-time randomly generated string)
-* 48 bytes - Noise handshake message for end-to-end encryption with a friend (the same `Noise_NK_25519_ChaChaPoly_BLAKE2b` is used as in routing, long-term public key is used as remote static key)
+* 48 bytes - Noise handshake message for end-to-end encryption with a friend (the same `Noise_NK_25519_ChaChaPoly_BLAKE2b` is used as in routing, long-term public key is used as remote public static key)
 * 64 bytes - application (to be interpreted by applications on both sides of conversation, if shorter than 64 bytes MUST be padded with zeroes)
-* 32 bytes -  secret (to be interpreted by remote node, SHOULD be negotiated beforehand)
+* 32 bytes - secret (to be interpreted by remote node, SHOULD be negotiated beforehand)
 
 Once introduction message is created, it is one-way encrypted (see "One-way encryption" section above) with long-term public key of a friend.
 
-After this `COMMAND_INITIALIZE_CONNECTION` command is sent to rendezvous node with contents as follows:
+After this `COMMAND_INITIALIZE_CONNECTION` routing command is sent to rendezvous node with contents as follows:
 * 32 bytes - rendezvous token, the same as in introduction payload
 * 32 bytes - introduction node, the same as in introduction payload
 * 32 bytes - target node to which to connect, the same as was requested in `COMMAND_FIND_INTRODUCTION_NODES_REQUEST`
 * 368 bytes - encrypted introduction message
-TODO: The rest of connection process description
+
+When node receives `COMMAND_INITIALIZE_CONNECTION` routing command it becomes aware that it is now acting as rendezvous node for someone.
+Now rendezvous node MUST connect to specified introduction node and send `COMMAND_FORWARD_INTRODUCTION` transport command with contents as follows:
+* 32 bytes - target node to which to connect
+* 368 bytes - encrypted introduction message
+
+When introduction node receives `COMMAND_FORWARD_INTRODUCTION` transport command it will send `COMMAND_INTRODUCTION` routing command to target node through routing path established before `COMMAND_ANNOUNCE` with encrypted introduction message as contents.
+
+When target node receives `COMMAND_INTRODUCTION` from one of introduction nodes it will:
+* decrypt introduction message
+* verify signature with introduction node ID command came from
+* check if application is known and supported
+* check if secret is valid taking into account ID of the node that wants to communicate
+
+If secret and application are fine and node wants to establish communication, it will creates new routing path to rendezvous node and will sent `COMMAND_CONFIRM_CONNECTION` routing command with contents as follows:
+* 64 bytes - Ed25519 signature of rendezvous token using node's long-term keypair
+* 32 bytes - rendezvous token
+* 48 bytes - Noise handshake message for end-to-end encryption with a friend (acts as responder, long-term public key is used as local private static key)
+
+Once rendezvous node receives `COMMAND_CONFIRM_CONNECTION` command, it will:
+* check if rendezvous token is known
+* verify that signature is valid using target node ID from `COMMAND_INITIALIZE_CONNECTION`
+
+If rendezvous token is known and signature is valid, rendezvous node will sent `COMMAND_CONFIRM_CONNECTION` routing command back to the node that sent `COMMAND_INITIALIZE_CONNECTION` with contents as follows:
+* 64 bytes - Ed25519 signature of rendezvous token using node's long-term keypair
+* 32 bytes - rendezvous token
+* 48 bytes - Noise handshake message for end-to-end encryption with a friend (acts as responder, long-term public key is used as local private static key)
+
+Once `COMMAND_CONFIRM_CONNECTION` is received, connection to a friend is considered established and any `COMMAND_DATA` routing commands received on routing paths MUST be blindly forwarded by rendezvous node to target node and back.
+
+### Friendship requests
+TODO
 
 ### Sending data to a friend
 In order to make sure data packets always fit into single data channel packet multiplexing/demultiplexing is used with max data length of 65535 bytes and packet size of 472 bytes:
