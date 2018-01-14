@@ -26,7 +26,7 @@ const HANDSHAKE_MESSAGE_LENGTH		= 48
 # ChaChaPoly+BLAKE2b
 const MAC_LENGTH					= 16
 # Length of the application name used during introduction
-const APPLICATION_LENGTH			= 128
+const APPLICATION_LENGTH			= 64
 # How long node should wait for rendezvous node to receive incoming connection from intended responder
 const CONNECTION_TIMEOUT			= 30
 # The same as in `@detox/transport`
@@ -131,7 +131,6 @@ function parse_find_introduction_nodes_response (data)
 	[code, target_id, nodes]
 /**
  * @param {!Uint8Array} target_id
- * @param {!Uint8Array} introduction_node
  * @param {!Uint8Array} rendezvous_node
  * @param {!Uint8Array} rendezvous_token
  * @param {!Uint8Array} handshake_message
@@ -140,29 +139,27 @@ function parse_find_introduction_nodes_response (data)
  *
  * @return {!Uint8Array}
  */
-function compose_introduction_payload (target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret)
-	new Uint8Array(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
+function compose_introduction_payload (target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret)
+	new Uint8Array(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
 		..set(target_id)
-		..set(introduction_node, ID_LENGTH)
-		..set(rendezvous_node, ID_LENGTH * 2)
-		..set(rendezvous_token, ID_LENGTH * 3)
-		..set(handshake_message, ID_LENGTH * 4)
-		..set(application, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
-		..set(secret, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
+		..set(rendezvous_node, ID_LENGTH)
+		..set(rendezvous_token, ID_LENGTH * 2)
+		..set(handshake_message, ID_LENGTH * 3)
+		..set(application, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH)
+		..set(secret, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
 /**
  * @param {!Uint8Array} introduction_payload
  *
- * @return {!Array<Uint8Array>} [target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret]
+ * @return {!Array<Uint8Array>} [target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret]
  */
 function parse_introduction_payload (introduction_payload)
 	target_id			= introduction_payload.subarray(0, ID_LENGTH)
-	introduction_node	= introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
-	rendezvous_node		= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
-	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 4)
-	handshake_message	= introduction_payload.subarray(ID_LENGTH * 4, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH)
-	application			= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
-	secret				= introduction_payload.subarray(ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, ID_LENGTH * 4 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
-	[target_id, introduction_node, rendezvous_node, rendezvous_token, handshake_message, application, secret]
+	rendezvous_node		= introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
+	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
+	handshake_message	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH)
+	application			= introduction_payload.subarray(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
+	secret				= introduction_payload.subarray(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
+	[target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret]
 /**
  * @param {!Uint8Array} rendezvous_token
  * @param {!Uint8Array} introduction_node
@@ -495,17 +492,16 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							introduction_payload			= introduction_message_decrypted.subarray(SIGNATURE_LENGTH)
 							[
 								target_id
-								introduction_node_received
 								rendezvous_node
 								rendezvous_token
 								handshake_message
 								application
 								secret
 							]								= parse_introduction_payload(introduction_payload)
-							if (
-								!is_string_equal_to_array(introduction_node_received.join(','), introduction_node) ||
-								!detox-crypto['verify'](signature, introduction_payload, target_id)
-							)
+							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
+								..set(introduction_node)
+								..set(introduction_payload, ID_LENGTH)
+							if !detox-crypto['verify'](signature, for_signature, target_id)
 								return
 							target_id_string	= target_id.join(',')
 							if @_id_to_routing_path.has(target_id_string)
@@ -678,7 +674,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						announced()
 		/**
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
-		 * @param {!Uint8Array}	application						Up to 128 bytes
+		 * @param {!Uint8Array}	application						Up to 64 bytes
 		 * @param {!Uint8Array}	secret							Up to 32 bytes
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
 		 */
@@ -728,15 +724,17 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							handshake_message				= encryptor_instance['get_handshake_message']()
 							introduction_payload			= compose_introduction_payload(
 								@_real_keypair['ed25519']['public']
-								introduction_node
 								rendezvous_node
 								rendezvous_token
 								handshake_message
 								application
 								secret
 							)
-							signature						= @_sign(introduction_payload)
-							introduction_message			= new Uint8Array(introduction_payload.length + signature.length)
+							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
+								..set(introduction_node)
+								..set(introduction_payload, ID_LENGTH)
+							signature						= @_sign(for_signature)
+							introduction_message			= new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH)
 								..set(signature)
 								..set(introduction_payload, SIGNATURE_LENGTH)
 							introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)

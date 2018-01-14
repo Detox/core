@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.0.8
+Specification version: 0.0.9
 
 Author: Nazar Mokrynskyi
 
@@ -121,7 +121,7 @@ Here is the list of commands supported on Router level:
 
 * `COMMAND_ANNOUNCE` - is used for announcement node to the network (see "Announcement to the network" section below)
 * `COMMAND_FIND_INTRODUCTION_NODES_REQUEST` - is used for requesting introduction nodes from rendezvous node (see "Discovery and connection to a friend" section below)
-* `COMMAND_FIND_INTRODUCTION_NODES_RESPONSE` - response for `ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST` (see "Discovery and connection to a friend" section below)
+* `COMMAND_FIND_INTRODUCTION_NODES_RESPONSE` - response for `COMMAND_FIND_INTRODUCTION_NODES_REQUEST` (see "Discovery and connection to a friend" section below)
 * `COMMAND_INITIALIZE_CONNECTION` - is used for instructing rendezvous node to initialize connection to target node through introduction node (see "Discovery and connection to a friend" section below)
 * `COMMAND_INTRODUCTION` - is used by introduction node to send introduction to target node (see "Discovery and connection to a friend" section below)
 * `COMMAND_CONFIRM_CONNECTION` - is used by target node to respond to introduction and establish connection through rendezvous node (see "Discovery and connection to a friend" section below)
@@ -152,7 +152,7 @@ Routing path creation is regular Router routing path with pair of multiplexers/d
 
 Nodes for routing path are selected as described in "Selection of nodes for routing path creation" section above.
 
-Multiplexers/demultiplexers are only used for sending and receiving data, other commands MUST fit into single packet with max size of 509 bytes, so that they take at most 1 data channel packet.
+Multiplexers/demultiplexers are only used for sending and receiving data, other commands MUST fit into single packet with max size of 509 bytes, so that they take at most 1 data channel packet (actual size of payload that fits into single packet is 488 bytes as Routing is encrypted and has its own overhead).
 
 ### Announcement to the network
 Announcement to the network is done anonymously through introduction nodes.
@@ -181,7 +181,7 @@ First of all, node creates routing path to rendezvous node.
 Once connection is established, `COMMAND_FIND_INTRODUCTION_NODES_REQUEST` routing command is sent to rendezvous node with data that contains long-term public key of a friend.
 Rendezvous node uses DHT to find an item using long-term public key as DHT key.
 
-Once search is done rendezvous node responds with `ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE` routing command which contains data as follows:
+Once search is done rendezvous node responds with `COMMAND_FIND_INTRODUCTION_NODES_RESPONSE` routing command which contains data as follows:
 * 1 byte status code (see below)
 * 0 or more Ed25519 public keys of introduction nodes for requested long-term public key
 
@@ -196,21 +196,24 @@ Status codes:
 * `ERROR_NO_INTRODUCTION_NODES` - introduction nodes were not found
 
 Once introduction nodes are found, random introduction node is selected and introduction message is created as follows:
-* 64 bytes Ed25519 signature if introduction payload using node's long-term keypair
-* 336 bytes introduction payload
+* 64 bytes Ed25519 signature of Ed25519 public key of introduction node (not part of introduction payload) concatenated with introduction payload using node's long-term keypair
+* 240 bytes introduction payload
 
 Introduction payload is creates as follows:
-* 32 bytes - Ed25519 long-term public key of a friend
-* 32 bytes - Ed25519 public key of introduction node
+* 32 bytes - Own long-term public key
 * 32 bytes - Ed25519 public key of rendezvous node
 * 32 bytes - rendezvous token (one-time randomly generated string)
 * 48 bytes - Noise handshake message for end-to-end encryption with a friend (the same `Noise_NK_25519_ChaChaPoly_BLAKE2b` is used as in routing, long-term public key is used as remote static key)
-* 128 bytes - application (to be interpreted by applications on both sides of conversation, if shorter than 128 bytes MUST be padded with zeroes)
+* 64 bytes - application (to be interpreted by applications on both sides of conversation, if shorter than 64 bytes MUST be padded with zeroes)
 * 32 bytes -  secret (to be interpreted by remote node, SHOULD be negotiated beforehand)
 
 Once introduction message is created, it is one-way encrypted (see "One-way encryption" section above) with long-term public key of a friend.
 
-After this `COMMAND_INITIALIZE_CONNECTION` command is sent to rendezvous node...
+After this `COMMAND_INITIALIZE_CONNECTION` command is sent to rendezvous node with contents as follows:
+* 32 bytes - rendezvous token, the same as in introduction payload
+* 32 bytes - introduction node, the same as in introduction payload
+* 32 bytes - target node to which to connect, the same as was requested in `COMMAND_FIND_INTRODUCTION_NODES_REQUEST`
+* 368 bytes - encrypted introduction message
 TODO: The rest of connection process description
 
 ### Sending data to a friend
