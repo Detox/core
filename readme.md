@@ -155,4 +155,10 @@ Payload is `target_id` (`Uint8Array`).
 Event is fired when `target_id` disconnected for whatever reason.
 
 ## License
-MIT, see license.txt
+Implementation: Free Public License 1.0.0 / Zero Clause BSD License
+
+https://opensource.org/licenses/FPL-1.0.0
+
+https://tldrlegal.com/license/bsd-0-clause-license
+
+Specification and design: public domain

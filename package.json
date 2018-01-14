@@ -9,23 +9,12 @@
 	],
 	"version"         : "",
 	"homepage"        : "https://github.com/Detox/detox-core",
-	"author"          : {
-		"name"  : "Nazar Mokrynskyi",
-		"email" : "nazar@mokrynskyi.com",
-		"url"   : "https://cleverstyle.org"
-	},
+	"author"          : "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
 	"repository"      : {
 		"type" : "git",
 		"url"  : "git://github.com/Detox/detox-core.git"
 	},
-	"licenses"        : [
-		{
-			"type" : "MIT",
-			"url"  : "https://github.com/Detox/detox-core/blob/master/license.txt"
-		}
-	],
-	"bugs"            : "https://github.com/Detox/detox-core/issues",
-	"docs"            : "https://github.com/Detox/detox-core",
+	"license"         : "0BSD",
 	"main"            : "src/index.js",
 	"files"           : [
 		"src"
@@ -39,8 +28,7 @@
 		"fixed-size-multiplexer" : "^0.1.1"
 	},
 	"devDependencies" : {
-		"google-closure-compiler-js" : "^20180101.0.0",
-		"gulp"                       : "^3.9.1",
-		"tape"                       : "^4.8.0"
+		"build-gc" : "^0.1.1",
+		"tape"     : "^4.8.0"
 	}
 }
