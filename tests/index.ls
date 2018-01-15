@@ -41,7 +41,6 @@ test('Core', (t) !->
 	node_1_secret			= Buffer.from('c2fd7c6349f0bb25ed28', 'hex')
 
 	nodes	= []
-	global.nodes = nodes
 
 	i = 0
 	!function start_node

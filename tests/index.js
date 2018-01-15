@@ -30,7 +30,6 @@
       node_1_real_public_key = detoxCrypto.create_keypair((x$ = new Uint8Array(32), x$.set([1, 1]), x$)).ed25519['public'];
       node_1_secret = Buffer.from('c2fd7c6349f0bb25ed28', 'hex');
       nodes = [];
-      global.nodes = nodes;
       i = 0;
       function start_node(){
         var x$, real_seed, y$, dht_seed, instance;
