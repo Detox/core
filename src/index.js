@@ -351,9 +351,6 @@
           this$._get_more_nodes();
         }
       }, GET_MORE_NODES_INTERVAL * 1000);
-      this._sign = function(data){
-        return detoxCrypto['sign'](data, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
-      };
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
         this$._connected_nodes.set(node_id.join(','), node_id);
         if (this$._more_nodes_needed()) {
@@ -570,7 +567,7 @@
                 response_handshake_message = encryptor_instance['get_handshake_message']();
                 this$._encryptor_instances.set(target_id_string, encryptor_instance);
                 this$._register_routing_path(target_id, first_node, route_id);
-                signature = this$._sign(rendezvous_token);
+                signature = detoxCrypto['sign'](rendezvous_token, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
                 this$._send_to_routing_node(target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(error){
                 error_handler(error);
@@ -785,7 +782,7 @@
               x$ = for_signature = new Uint8Array(ID_LENGTH + introduction_payload.length);
               x$.set(introduction_node);
               x$.set(introduction_payload, ID_LENGTH);
-              signature = this$._sign(for_signature);
+              signature = detoxCrypto['sign'](for_signature, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
               y$ = introduction_message = new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH);
               y$.set(signature);
               y$.set(introduction_payload, SIGNATURE_LENGTH);

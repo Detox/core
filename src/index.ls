@@ -310,12 +310,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				@_get_more_nodes()
 		), GET_MORE_NODES_INTERVAL * 1000
 
-		@_sign		= (data) ~>
-			detox-crypto['sign'](
-				data
-				@_real_keypair['ed25519']['public']
-				@_real_keypair['ed25519']['private']
-			)
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
 			@_dht_keypair['ed25519']['private']
@@ -529,7 +523,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 											response_handshake_message	= encryptor_instance['get_handshake_message']()
 											@_encryptor_instances.set(target_id_string, encryptor_instance)
 											@_register_routing_path(target_id, first_node, route_id)
-											signature	= @_sign(rendezvous_token)
+											signature	= detox-crypto['sign'](rendezvous_token, @_real_keypair['ed25519']['public'], @_real_keypair['ed25519']['private'])
 											@_send_to_routing_node(
 												target_id
 												ROUTING_COMMAND_CONFIRM_CONNECTION
@@ -729,7 +723,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
 								..set(introduction_node)
 								..set(introduction_payload, ID_LENGTH)
-							signature						= @_sign(for_signature)
+							signature						= detox-crypto['sign'](for_signature, @_real_keypair['ed25519']['public'], @_real_keypair['ed25519']['private'])
 							introduction_message			= new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH)
 								..set(signature)
 								..set(introduction_payload, SIGNATURE_LENGTH)
