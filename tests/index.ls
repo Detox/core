@@ -33,26 +33,25 @@ test('Core', (t) !->
 		host	: bootstrap_ip
 		port	: bootstrap_port
 
-	node_1_real_public_key	= detox-crypto.create_keypair(
-		(new Uint8Array(32)
-			..set([1, 1])
-		)
-	).ed25519.public
+	node_1_real_seed		= new Uint8Array(32)
+		..set([1, 1])
+	node_1_real_public_key	= detox-crypto.create_keypair(node_1_real_seed).ed25519.public
 	node_1_secret			= Buffer.from('c2fd7c6349f0bb25ed28', 'hex')
+	node_3_real_seed		= new Uint8Array(32)
+		..set([3, 1])
+	node_3_real_public_key	= detox-crypto.create_keypair(node_3_real_seed).ed25519.public
 
 	nodes	= []
 
 	i = 0
 	!function start_node
-		real_seed	= new Uint8Array(32)
-			..set([i, 1])
 		dht_seed	= new Uint8Array(32)
 			..set([i])
 		if i == 0
-			instance	= lib.Core(real_seed, dht_seed, [], [], 5, 10)
+			instance	= lib.Core(dht_seed, [], [], 5, 10)
 			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port)
 		else
-			instance	= lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 5)
+			instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5)
 		instance.once('ready', !->
 			t.pass('Node ' + i + ' is ready')
 
@@ -75,23 +74,22 @@ test('Core', (t) !->
 
 		t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
 
-		t.deepEqual(node_1.get_max_data_size(), 2 ** 16 - 1, 'Max data size returned correctly')
+		t.equal(node_1.get_max_data_size(), 2 ** 16 - 1, 'Max data size returned correctly')
 
 		node_1
 			.once('announced', !->
 				t.pass('Announced successfully')
 
-				target_id	= node_1._real
 				node_1.once('introduction', (data) !->
 					t.equal(data.application.subarray(0, application.length).join(','), application.join(','), 'Correct application on introduction')
 					t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction')
 					data.number_of_intermediate_nodes	= 1
 				)
-				node_3.once('connected', (target_id) !->
+				node_3.once('connected', (node_1_real_public_key, target_id) !->
 					if target_id.join(',') == node_1_real_public_key.join(',')
 						t.pass('Connected successfully')
 
-						node_1.once('data', (, received_command, received_data) !->
+						node_1.once('data', (, , received_command, received_data) !->
 							t.equal(received_command, command, 'Received command correctly')
 							t.equal(received_data.join(','), data.join(','), 'Received data correctly')
 
@@ -100,30 +98,30 @@ test('Core', (t) !->
 						)
 
 						console.log 'Sending data...'
-						node_3.send_to(node_1_real_public_key, command, data)
+						node_3.send_to(node_3_real_public_key, node_1_real_public_key, command, data)
 				)
-				node_3.once('connection_failed', (, reason) !->
+				node_3.once('connection_failed', (, , reason) !->
 					t.fail('Connection failed with code ' + reason)
 
 					destroy_nodes()
 				)
 
-				console.log 'Preparing for connection (5s)...'
+				console.log 'Preparing for connection (15s)...'
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
-					node_3.connect_to(node_1_real_public_key, application, node_1_secret, 2)
-				), 8000
+					node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 2)
+				), 15000
 			)
-			.once('announcement_failed', (reason) !->
+			.once('announcement_failed', (, reason) !->
 				t.fail('Announcement failed with code ' + reason)
 
 				destroy_nodes()
 			)
 
-		console.log 'Preparing for announcement (3s)...'
+		console.log 'Preparing for announcement (10s)...'
 		setTimeout (!->
 			console.log 'Announcing...'
-			node_1.announce(2, 1)
-		), 3000
+			node_1.announce(node_1_real_seed, 2, 1)
+		), 10000
 )

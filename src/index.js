@@ -265,7 +265,6 @@
     /**
      * @constructor
      *
-     * @param {!Uint8Array}		real_key_seed			Seed used to generate real long-term keypair
      * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
      * @param {!Array<!Object>}	bootstrap_nodes
      * @param {!Array<!Object>}	ice_servers
@@ -277,16 +276,16 @@
      *
      * @throws {Error}
      */
-    function Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments){
+    function Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments){
       var this$ = this;
       packets_per_second == null && (packets_per_second = 1);
       bucket_size == null && (bucket_size = 2);
       max_pending_segments == null && (max_pending_segments = 10);
       if (!(this instanceof Core)) {
-        return new Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments);
+        return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments);
       }
       asyncEventer.call(this);
-      this._real_keypair = detoxCrypto['create_keypair'](real_key_seed);
+      this._real_keypairs = new Map;
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._connected_nodes = new Map;
@@ -303,7 +302,6 @@
       this._announcements_from = new Map;
       this._forwarding_mapping = new Map;
       this._pending_pings = new Set;
-      this._last_announcement = 0;
       this._encryptor_instances = new Map;
       this._multiplexers = new Map;
       this._demultiplexers = new Map;
@@ -330,19 +328,28 @@
         });
       }, LAST_USED_TIMEOUT * 1000);
       this._keep_announce_routes_interval = setInterval(function(){
-        var reAnnounce_if_older_than;
-        this$._announced_to.forEach(function(introduction_node, introduction_node_string){
+        var i$, ref$, len$, ref1$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, real_public_key, real_public_key_string, reannounce_if_older_than;
+        for (i$ = 0, len$ = (ref$ = Array.from(this$._real_keypairs.values())).length; i$ < len$; ++i$) {
+          ref1$ = ref$[i$], real_keypair = ref1$[0], number_of_introduction_nodes = ref1$[1], number_of_intermediate_nodes = ref1$[2], announced_to = ref1$[3], last_announcement = ref1$[4];
+          real_public_key = real_keypair['ed25519']['public'];
+          real_public_key_string = real_public_key.join(',');
+          if (announced_to.size < number_of_introduction_nodes && last_announcement) {
+            reannounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
+            if (last_announcement < reannounce_if_older_than) {
+              this$._announce(real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes);
+            }
+          }
+          announced_to.forEach(fn$);
+        }
+        function fn$(introduction_node, introduction_node_string){
           var ref$, node_id, route_id, source_id;
-          ref$ = this$._id_to_routing_path.get(introduction_node_string), node_id = ref$[0], route_id = ref$[1];
+          if (this$._id_to_routing_path.has(real_public_key_string + introduction_node_string)) {
+            return;
+          }
+          ref$ = this$._id_to_routing_path.get(real_public_key_string + introduction_node_string), node_id = ref$[0], route_id = ref$[1];
           if (this$._send_ping(node_id, route_id)) {
             source_id = compute_source_id(node_id, route_id);
             this$._pending_pings.add(source_id);
-          }
-        });
-        if (this$._announced_to.size < this$._number_of_introduction_nodes && this$._last_announcement) {
-          reAnnounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
-          if (this$._last_announcement < reAnnounce_if_older_than) {
-            this$._announce();
           }
         }
       }, LAST_USED_TIMEOUT / 2 * 1000);
@@ -436,7 +443,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, introduction_node_string, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, introduction_node_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = compute_source_id(node_id, route_id);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -522,13 +529,18 @@
           if (!this$._routing_path_to_id.has(source_id)) {
             return;
           }
-          introduction_node = this$._routing_path_to_id.get(source_id);
+          ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], introduction_node = ref$[1];
+          real_public_key_string = real_public_key.join(',');
           introduction_node_string = introduction_node.join(',');
-          if (!this$._announced_to.has(introduction_node_string)) {
+          if (!this$._real_keypairs.has(real_public_key_string)) {
+            return;
+          }
+          ref$ = this$._real_keypairs.get(real_public_key_string), real_keypair = ref$[0], announced_to = ref$[3];
+          if (!announced_to.has(introduction_node_string)) {
             return;
           }
           try {
-            introduction_message_decrypted = detoxCrypto['one_way_decrypt'](this$._real_keypair['x25519']['private'], data);
+            introduction_message_decrypted = detoxCrypto['one_way_decrypt'](real_keypair['x25519']['private'], data);
             signature = introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH);
             introduction_payload = introduction_message_decrypted.subarray(SIGNATURE_LENGTH);
             ref$ = parse_introduction_payload(introduction_payload), target_id = ref$[0], rendezvous_node = ref$[1], rendezvous_token = ref$[2], handshake_message = ref$[3], application = ref$[4], secret = ref$[5];
@@ -539,10 +551,11 @@
               return;
             }
             target_id_string = target_id.join(',');
-            if (this$._id_to_routing_path.has(target_id_string)) {
+            if (this$._id_to_routing_path.has(real_public_key_string + target_id_string)) {
               return;
             }
             data = {
+              'real_public_key': real_public_key,
               'target_id': target_id,
               'secret': secret,
               'application': application,
@@ -562,13 +575,13 @@
               first_node = nodes[0];
               this$._router['construct_routing_path'](nodes).then(function(route_id){
                 var encryptor_instance, response_handshake_message, signature;
-                encryptor_instance = detoxCrypto['Encryptor'](false, this$._real_keypair['x25519']['private']);
+                encryptor_instance = detoxCrypto['Encryptor'](false, real_keypair['x25519']['private']);
                 encryptor_instance['put_handshake_message'](handshake_message);
                 response_handshake_message = encryptor_instance['get_handshake_message']();
-                this$._encryptor_instances.set(target_id_string, encryptor_instance);
-                this$._register_routing_path(target_id, first_node, route_id);
-                signature = detoxCrypto['sign'](rendezvous_token, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
-                this$._send_to_routing_node(target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
+                this$._encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance);
+                this$._register_routing_path(real_keypair['ed25519']['public'], target_id, first_node, route_id);
+                signature = detoxCrypto['sign'](rendezvous_token, real_keypair['ed25519']['public'], real_keypair['ed25519']['private']);
+                this$._send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(error){
                 error_handler(error);
               });
@@ -585,13 +598,14 @@
             ref$ = this$._forwarding_mapping.get(source_id), target_node_id = ref$[0], target_route_id = ref$[1];
             this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
           } else if (this$._routing_path_to_id.has(source_id)) {
-            target_id = this$._routing_path_to_id.get(source_id);
+            ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
+            real_public_key_string = real_public_key.join(',');
             target_id_string = target_id.join(',');
-            encryptor_instance = this$._encryptor_instances.get(target_id_string);
+            encryptor_instance = this$._encryptor_instances.get(real_public_key_string + target_id_string);
             if (!encryptor_instance) {
               return;
             }
-            demultiplexer = this$._demultiplexers.get(target_id_string);
+            demultiplexer = this$._demultiplexers.get(real_public_key_string + target_id_string);
             if (!demultiplexer) {
               return;
             }
@@ -600,14 +614,12 @@
             if (demultiplexer['have_more_data']()) {
               data_with_header = demultiplexer['get_data']();
               command = data_with_header[0];
-              this$['fire']('data', target_id, command, data_with_header.subarray(1));
+              this$['fire']('data', real_public_key, target_id, command, data_with_header.subarray(1));
             }
           }
           break;
         case ROUTING_COMMAND_PING:
           if (this$._routing_path_to_id.has(source_id)) {
-            target_id = this$._routing_path_to_id.get(source_id);
-            target_id_string = target_id.join(',');
             if (this$._pending_pings.has(source_id)) {
               this$._pending_pings['delete'](source_id);
               return;
@@ -649,30 +661,44 @@
         return this._dht['get_bootstrap_nodes']();
       }
       /**
-       * @param {number} number_of_introduction_nodes
-       * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
+       * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
+       * @param {number}		number_of_introduction_nodes
+       * @param {number}		number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
+       *
+       * @return {!Uint8Array} Real public key
        */,
-      'announce': function(number_of_introduction_nodes, number_of_intermediate_nodes){
-        this._number_of_introduction_nodes = number_of_introduction_nodes;
-        this._number_of_intermediate_nodes = number_of_intermediate_nodes;
-        this._announce();
-      },
-      _announce: function(){
-        var old_introduction_nodes, number_of_introduction_nodes, number_of_intermediate_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
+      'announce': function(real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes){
+        var real_keypair, real_public_key, real_public_key_string;
+        real_keypair = detoxCrypto['create_keypair'](real_key_seed);
+        real_public_key = real_keypair['ed25519']['public'];
+        real_public_key_string = real_public_key.join(',');
+        if (this._real_keypairs.has(real_public_key_string)) {
+          return;
+        }
+        this._real_keypairs.set(real_public_key_string, [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]);
+        this._announce(real_public_key_string);
+        return real_public_key;
+      }
+      /**
+       * @param {string} real_public_key_string
+       */,
+      _announce: function(real_public_key_string){
+        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, real_public_key, old_introduction_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
+        ref$ = this._real_keypairs.get(real_public_key_string), real_keypair = ref$[0], number_of_introduction_nodes = ref$[1], number_of_intermediate_nodes = ref$[2], announced_to = ref$[3];
+        real_public_key = real_keypair['ed25519']['public'];
         old_introduction_nodes = [];
-        this._announced_to.forEach(function(introduction_node){
+        announced_to.forEach(function(introduction_node){
           old_introduction_nodes.push(introduction_node);
         });
-        number_of_introduction_nodes = this._number_of_introduction_nodes - old_introduction_nodes.length;
+        number_of_introduction_nodes = number_of_introduction_nodes - old_introduction_nodes.length;
         if (!number_of_introduction_nodes) {
           return;
         }
-        number_of_intermediate_nodes = this._number_of_intermediate_nodes;
-        this._last_announcement = +new Date;
+        this._update_last_announcement(real_public_key_string, +new Date);
         introduction_nodes = this._pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes);
         if (!introduction_nodes) {
-          this._last_announcement = 1;
-          this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
+          this._update_last_announcement(real_public_key_string, 1);
+          this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
           return;
         }
         introductions_pending = number_of_introduction_nodes;
@@ -690,19 +716,19 @@
             return;
           }
           if (!introduction_nodes_confirmed.length) {
-            this$._last_announcement = 1;
-            this$['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED);
+            this$._update_last_announcement(real_public_key_string, 1);
+            this$['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED);
             return;
           }
           introduction_nodes_confirmed = introduction_nodes_confirmed.concat(old_introduction_nodes);
-          announcement_message = this$._dht['generate_announcement_message'](this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private'], introduction_nodes_confirmed);
+          announcement_message = this$._dht['generate_announcement_message'](real_keypair['ed25519']['public'], real_keypair['ed25519']['private'], introduction_nodes_confirmed);
           for (i$ = 0, len$ = introduction_nodes_confirmed.length; i$ < len$; ++i$) {
             introduction_node = introduction_nodes_confirmed[i$];
-            this$._send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message);
+            this$._send_to_routing_node(real_public_key, introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message);
             introduction_node_string = introduction_node.join(',');
-            this$._announced_to.set(introduction_node_string, introduction_node);
+            announced_to.set(introduction_node_string, introduction_node);
           }
-          this$['fire']('announced');
+          this$['fire']('announced', real_public_key);
         }
         for (i$ = 0, len$ = introduction_nodes.length; i$ < len$; ++i$) {
           (fn$.call(this, introduction_nodes[i$]));
@@ -711,13 +737,13 @@
           var nodes, first_node, this$ = this;
           nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
           if (!nodes) {
-            this['fire']('announcement_failed', ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
+            this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
             return;
           }
           nodes.push(introduction_node);
           first_node = nodes[0];
           this._router['construct_routing_path'](nodes).then(function(route_id){
-            this$._register_routing_path(introduction_node, first_node, route_id);
+            this$._register_routing_path(real_keypair['ed25519']['public'], introduction_node, first_node, route_id);
             announced(introduction_node);
           })['catch'](function(error){
             error_handler(error);
@@ -726,30 +752,43 @@
         }
       }
       /**
+       * @param {string} real_public_key_string
+       * @param {number} value
+       */,
+      _update_last_announcement: function(real_public_key_string, value){
+        this._real_keypairs.get(real_public_key_string)[4] = value;
+      }
+      /**
+       * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
        * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
        * @param {!Uint8Array}	application						Up to 64 bytes
        * @param {!Uint8Array}	secret							Up to 32 bytes
        * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
+       *
+       * @return {!Uint8Array} Real public key
        */,
-      'connect_to': function(target_id, application, secret, number_of_intermediate_nodes){
-        var target_id_string, nodes, first_node, rendezvous_node, this$ = this;
+      'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
+        var real_keypair, real_public_key, real_public_key_string, target_id_string, nodes, first_node, rendezvous_node, this$ = this;
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
+        real_keypair = detoxCrypto['create_keypair'](real_key_seed);
+        real_public_key = real_keypair['ed25519']['public'];
+        real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
-        if (this._id_to_routing_path.has(target_id_string)) {
+        if (this._id_to_routing_path.has(real_public_key_string + target_id_string)) {
           return;
         }
         nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
         if (!nodes) {
-          this['fire']('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
+          this['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return;
         }
         first_node = nodes[0];
         rendezvous_node = nodes[nodes.length - 1];
         this._router['construct_routing_path'](nodes).then(function(route_id){
           var first_node_string, route_id_string, find_introduction_nodes_timeout;
-          this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE);
+          this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE);
           first_node_string = first_node.join(',');
           route_id_string = route_id.join(',');
           function found_introduction_nodes(node_id, route_id, command, data){
@@ -763,14 +802,14 @@
             }
             clearTimeout(find_introduction_nodes_timeout);
             if (code !== CONNECTION_OK) {
-              this$['fire']('connection_failed', target_id, code);
+              this$['fire']('connection_failed', real_public_key, target_id, code);
               return;
             }
-            this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
+            this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
             function try_to_introduce(){
               var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, x$, for_signature, signature, y$, introduction_message, introduction_message_encrypted, path_confirmation_timeout;
               if (!introduction_nodes.length) {
-                this$['fire']('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
+                this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
                 return;
               }
               introduction_node = pull_random_item_from_array(introduction_nodes);
@@ -778,11 +817,11 @@
               x25519_public_key = detoxCrypto['convert_public_key'](target_id);
               encryptor_instance = detoxCrypto['Encryptor'](true, x25519_public_key);
               handshake_message = encryptor_instance['get_handshake_message']();
-              introduction_payload = compose_introduction_payload(this$._real_keypair['ed25519']['public'], rendezvous_node, rendezvous_token, handshake_message, application, secret);
+              introduction_payload = compose_introduction_payload(real_keypair['ed25519']['public'], rendezvous_node, rendezvous_token, handshake_message, application, secret);
               x$ = for_signature = new Uint8Array(ID_LENGTH + introduction_payload.length);
               x$.set(introduction_node);
               x$.set(introduction_payload, ID_LENGTH);
-              signature = detoxCrypto['sign'](for_signature, this$._real_keypair['ed25519']['public'], this$._real_keypair['ed25519']['private']);
+              signature = detoxCrypto['sign'](for_signature, real_keypair['ed25519']['public'], real_keypair['ed25519']['private']);
               y$ = introduction_message = new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH);
               y$.set(signature);
               y$.set(introduction_payload, SIGNATURE_LENGTH);
@@ -797,14 +836,14 @@
                   return;
                 }
                 encryptor_instance['put_handshake_message'](handshake_message_received);
-                this$._encryptor_instances.set(target_id_string, encryptor_instance);
+                this$._encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance);
                 clearTimeout(path_confirmation_timeout);
                 this$._router['off']('data', path_confirmation);
-                this$._register_routing_path(target_id, node_id, route_id);
+                this$._register_routing_path(real_keypair['ed25519']['public'], target_id, node_id, route_id);
               }
               this$._router['on']('data', path_confirmation);
               this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
-              this$['fire']('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
+              this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
               path_confirmation_timeout = setTimeout(function(){
                 this$._router['off']('data', path_confirmation);
                 encryptor_instance['destroy']();
@@ -817,29 +856,32 @@
           this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
           find_introduction_nodes_timeout = setTimeout(function(){
             this$._router['off']('data', found_introduction_nodes);
-            this$['fire']('connection_failed', target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
+            this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
           }, CONNECTION_TIMEOUT * 1000);
         })['catch'](function(error){
           error_handler(error);
-          this$['fire']('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
+          this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
         });
+        return real_public_key;
       },
       'get_max_data_size': function(){
         return this._max_data_size;
       }
       /**
-       * @param {!Uint8Array}	target_id	Should be connected already
-       * @param {number}		command		Command from range `0..255`
-       * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
+       * @param {!Uint8Array}	real_public_key	Own real long-term public key as returned by `announce()` and `connect_to()` methods
+       * @param {!Uint8Array}	target_id		Should be connected already
+       * @param {number}		command			Command from range `0..255`
+       * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
        */,
-      'send_to': function(target_id, command, data){
-        var target_id_string, encryptor_instance, multiplexer, x$, data_with_header, data_block, data_block_encrypted;
+      'send_to': function(real_public_key, target_id, command, data){
+        var real_public_key_string, target_id_string, encryptor_instance, multiplexer, x$, data_with_header, data_block, data_block_encrypted;
+        real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
-        encryptor_instance = this._encryptor_instances.get(target_id_string);
+        encryptor_instance = this._encryptor_instances.get(real_public_key_string + target_id_string);
         if (!encryptor_instance || data.length > this._max_data_size) {
           return;
         }
-        multiplexer = this._multiplexers.get(target_id_string);
+        multiplexer = this._multiplexers.get(real_public_key_string + target_id_string);
         if (!multiplexer) {
           return;
         }
@@ -850,7 +892,7 @@
         while (multiplexer['have_more_blocks']()) {
           data_block = multiplexer['get_block']();
           data_block_encrypted = encryptor_instance['encrypt'](data_block);
-          this._send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_block_encrypted);
+          this._send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_DATA, data_block_encrypted);
         }
       },
       'destroy': function(){
@@ -1003,36 +1045,37 @@
         return results$;
       }
       /**
-       * @param {!Uint8Array} target_id	Last node in routing path, responder
-       * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
-       * @param {!Uint8Array} route_id	ID of the route on `node_id`
+       * @param {!Uint8Array} real_public_key
+       * @param {!Uint8Array} target_id		Last node in routing path, responder
+       * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
+       * @param {!Uint8Array} route_id		ID of the route on `node_id`
        */,
-      _register_routing_path: function(target_id, node_id, route_id){
-        var source_id, target_id_string;
+      _register_routing_path: function(real_public_key, target_id, node_id, route_id){
+        var source_id, real_public_key_string, target_id_string;
         source_id = compute_source_id(node_id, route_id);
+        real_public_key_string = real_public_key.join(real_public_key);
         target_id_string = target_id.join(',');
         if (this._routing_path_to_id.has(source_id)) {
           return;
         }
-        this._id_to_routing_path.set(target_id_string, [node_id, route_id]);
-        this._routing_path_to_id.set(source_id, target_id);
-        this._multiplexers.set(target_id_string, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
-        this._demultiplexers.set(target_id_string, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
-        this['fire']('connected', target_id);
+        this._id_to_routing_path.set(real_public_key_string + target_id_string, [node_id, route_id]);
+        this._routing_path_to_id.set(source_id, [real_public_key, target_id]);
+        this._multiplexers.set(real_public_key_string + target_id_string, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
+        this._demultiplexers.set(real_public_key_string + target_id_string, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
+        this['fire']('connected', real_public_key, target_id);
       }
       /**
        * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
        * @param {!Uint8Array} route_id	ID of the route on `node_id`
        */,
       _unregister_routing_path: function(node_id, route_id){
-        var source_id, target_id, target_id_string, encryptor_instance, this$ = this;
+        var source_id, ref$, real_public_key, target_id, real_public_key_string, target_id_string, encryptor_instance, this$ = this;
         source_id = compute_source_id(node_id, route_id);
         if (!this._routing_paths.has(source_id)) {
           return;
         }
         this._routing_paths['delete'](source_id);
         this._router['destroy_routing_path'](node_id, route_id);
-        this._routing_path_to_id['delete'](source_id);
         this._pending_pings['delete'](source_id);
         this._announcements_from.forEach(function(arg$, target_id_string_local){
           var node_id, route_id, announce_interval, source_id_local;
@@ -1044,13 +1087,18 @@
           clearInterval(announce_interval);
           this$._announcements_from['delete'](target_id_string_local);
         });
-        target_id = this._routing_path_to_id.get(source_id);
-        if (!target_id) {
+        if (!this._routing_path_to_id.has(source_id)) {
           return;
         }
+        ref$ = this._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
+        real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
-        this._id_to_routing_path['delete'](target_id_string);
-        this._announced_to['delete'](target_id_string);
+        this._id_to_routing_path['delete'](real_public_key_string + target_id_string);
+        this._real_keypairs.forEach(function(arg$){
+          var announced_to;
+          announced_to = arg$[3];
+          announced_to['delete'](target_id_string);
+        });
         encryptor_instance = this._encryptor_instances.get(target_id_string);
         if (encryptor_instance) {
           encryptor_instance['destroy']();
@@ -1058,7 +1106,7 @@
         }
         this._multiplexers['delete'](target_id_string);
         this._demultiplexers['delete'](target_id_string);
-        this['fire']('disconnected', target_id);
+        this['fire']('disconnected', real_public_key, target_id);
       }
       /**
        * @param {!Uint8Array}	node_id
@@ -1089,17 +1137,19 @@
         this._dht['lookup'](node_id);
       }
       /**
+       * @param {!Uint8Array}	real_public_key
        * @param {!Uint8Array}	target_id
-       * @param {number}		command		0..245
+       * @param {number}		command			0..245
        * @param {!Uint8Array}	data
        */,
-      _send_to_routing_node: function(target_id, command, data){
-        var target_id_string, ref$, node_id, route_id;
+      _send_to_routing_node: function(real_public_key, target_id, command, data){
+        var real_public_key_string, target_id_string, ref$, node_id, route_id;
+        real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
-        if (!this._id_to_routing_path.has(target_id_string)) {
+        if (!this._id_to_routing_path.has(real_public_key_string + target_id_string)) {
           return;
         }
-        ref$ = this._id_to_routing_path.get(target_id_string), node_id = ref$[0], route_id = ref$[1];
+        ref$ = this._id_to_routing_path.get(real_public_key_string + target_id_string), node_id = ref$[0], route_id = ref$[1];
         this._router['send_data'](node_id, route_id, command, data);
       }
       /**

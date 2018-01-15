@@ -17,7 +17,7 @@
   application = Buffer.from('Detox test');
   lib.ready(function(){
     test('Core', function(t){
-      var generated_seed, bootstrap_node_info, node_1_real_public_key, x$, node_1_secret, nodes, i;
+      var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, i;
       t.plan(NUMBER_OF_NODES + 10);
       generated_seed = lib.generate_seed();
       t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array');
@@ -27,21 +27,24 @@
         host: bootstrap_ip,
         port: bootstrap_port
       };
-      node_1_real_public_key = detoxCrypto.create_keypair((x$ = new Uint8Array(32), x$.set([1, 1]), x$)).ed25519['public'];
+      x$ = node_1_real_seed = new Uint8Array(32);
+      x$.set([1, 1]);
+      node_1_real_public_key = detoxCrypto.create_keypair(node_1_real_seed).ed25519['public'];
       node_1_secret = Buffer.from('c2fd7c6349f0bb25ed28', 'hex');
+      y$ = node_3_real_seed = new Uint8Array(32);
+      y$.set([3, 1]);
+      node_3_real_public_key = detoxCrypto.create_keypair(node_3_real_seed).ed25519['public'];
       nodes = [];
       i = 0;
       function start_node(){
-        var x$, real_seed, y$, dht_seed, instance;
-        x$ = real_seed = new Uint8Array(32);
-        x$.set([i, 1]);
-        y$ = dht_seed = new Uint8Array(32);
-        y$.set([i]);
+        var x$, dht_seed, instance;
+        x$ = dht_seed = new Uint8Array(32);
+        x$.set([i]);
         if (i === 0) {
-          instance = lib.Core(real_seed, dht_seed, [], [], 5, 10);
+          instance = lib.Core(dht_seed, [], [], 5, 10);
           instance.start_bootstrap_node(bootstrap_ip, bootstrap_port);
         } else {
-          instance = lib.Core(real_seed, dht_seed, [bootstrap_node_info], [], 5);
+          instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5);
         }
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready');
@@ -67,47 +70,45 @@
         node_1 = nodes[1];
         node_3 = nodes[3];
         t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
-        t.deepEqual(node_1.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
+        t.equal(node_1.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
         node_1.once('announced', function(){
-          var target_id;
           t.pass('Announced successfully');
-          target_id = node_1._real;
           node_1.once('introduction', function(data){
             t.equal(data.application.subarray(0, application.length).join(','), application.join(','), 'Correct application on introduction');
             t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction');
             data.number_of_intermediate_nodes = 1;
           });
-          node_3.once('connected', function(target_id){
+          node_3.once('connected', function(node_1_real_public_key, target_id){
             if (target_id.join(',') === node_1_real_public_key.join(',')) {
               t.pass('Connected successfully');
-              node_1.once('data', function(arg$, received_command, received_data){
+              node_1.once('data', function(arg$, arg1$, received_command, received_data){
                 t.equal(received_command, command, 'Received command correctly');
                 t.equal(received_data.join(','), data.join(','), 'Received data correctly');
                 console.log('Destroying...');
                 destroy_nodes();
               });
               console.log('Sending data...');
-              node_3.send_to(node_1_real_public_key, command, data);
+              node_3.send_to(node_3_real_public_key, node_1_real_public_key, command, data);
             }
           });
-          node_3.once('connection_failed', function(arg$, reason){
+          node_3.once('connection_failed', function(arg$, arg1$, reason){
             t.fail('Connection failed with code ' + reason);
             destroy_nodes();
           });
-          console.log('Preparing for connection (5s)...');
+          console.log('Preparing for connection (15s)...');
           setTimeout(function(){
             console.log('Connecting...');
-            node_3.connect_to(node_1_real_public_key, application, node_1_secret, 2);
-          }, 8000);
-        }).once('announcement_failed', function(reason){
+            node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 2);
+          }, 15000);
+        }).once('announcement_failed', function(arg$, reason){
           t.fail('Announcement failed with code ' + reason);
           destroy_nodes();
         });
-        console.log('Preparing for announcement (3s)...');
+        console.log('Preparing for announcement (10s)...');
         setTimeout(function(){
           console.log('Announcing...');
-          node_1.announce(2, 1);
-        }, 3000);
+          node_1.announce(node_1_real_seed, 2, 1);
+        }, 10000);
       }
     });
   });

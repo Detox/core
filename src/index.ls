@@ -239,7 +239,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 	/**
 	 * @constructor
 	 *
-	 * @param {!Uint8Array}		real_key_seed			Seed used to generate real long-term keypair
 	 * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
 	 * @param {!Array<!Object>}	bootstrap_nodes
 	 * @param {!Array<!Object>}	ice_servers
@@ -251,12 +250,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 	 *
 	 * @throws {Error}
 	 */
-	!function Core (real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10)
+	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10)
 		if !(@ instanceof Core)
-			return new Core(real_key_seed, dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments)
+			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments)
 		async-eventer.call(@)
 
-		@_real_keypair	= detox-crypto['create_keypair'](real_key_seed)
+		@_real_keypairs	= new Map
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
@@ -275,7 +274,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
 		@_pending_pings			= new Set
-		@_last_announcement		= 0
 		@_encryptor_instances	= new Map
 		@_multiplexers			= new Map
 		@_demultiplexers		= new Map
@@ -294,16 +292,21 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					@_connections_timeouts.delete(node_id_string)
 		), LAST_USED_TIMEOUT * 1000
 		@_keep_announce_routes_interval	= setInterval (!~>
-			@_announced_to.forEach (introduction_node, introduction_node_string) !~>
-				[node_id, route_id]	= @_id_to_routing_path.get(introduction_node_string)
-				if @_send_ping(node_id, route_id)
-					source_id	= compute_source_id(node_id, route_id)
-					@_pending_pings.add(source_id)
-			if @_announced_to.size < @_number_of_introduction_nodes && @_last_announcement
-				# Give at least 3x time for announcement process to complete and to announce to some node
-				re-announce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
-				if @_last_announcement < re-announce_if_older_than
-					@_announce()
+			for [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement] in Array.from(@_real_keypairs.values())
+				real_public_key			= real_keypair['ed25519']['public']
+				real_public_key_string	= real_public_key.join(',')
+				if announced_to.size < number_of_introduction_nodes && last_announcement
+					# Give at least 3x time for announcement process to complete and to announce to some node
+					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
+					if last_announcement < reannounce_if_older_than
+						@_announce(real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes)
+				announced_to.forEach (introduction_node, introduction_node_string) !~>
+					if @_id_to_routing_path.has(real_public_key_string + introduction_node_string)
+						return
+					[node_id, route_id]	= @_id_to_routing_path.get(real_public_key_string + introduction_node_string)
+					if @_send_ping(node_id, route_id)
+						source_id	= compute_source_id(node_id, route_id)
+						@_pending_pings.add(source_id)
 		), LAST_USED_TIMEOUT / 2 * 1000
 		@_get_more_nodes_interval		= setInterval (!~>
 			if @_more_nodes_needed()
@@ -472,13 +475,16 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						if !@_routing_path_to_id.has(source_id)
 							# If routing path unknown - ignore
 							return
-						introduction_node			= @_routing_path_to_id.get(source_id)
-						introduction_node_string	= introduction_node.join(',')
-						if !@_announced_to.has(introduction_node_string)
-							# We do not expect introductions on this connection
+						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
+						real_public_key_string					= real_public_key.join(',')
+						introduction_node_string				= introduction_node.join(',')
+						if !@_real_keypairs.has(real_public_key_string)
+							return
+						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key_string)
+						if !announced_to.has(introduction_node_string)
 							return
 						try
-							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](@_real_keypair['x25519']['private'], data)
+							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](real_keypair['x25519']['private'], data)
 							signature						= introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH)
 							introduction_payload			= introduction_message_decrypted.subarray(SIGNATURE_LENGTH)
 							[
@@ -495,11 +501,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							if !detox-crypto['verify'](signature, for_signature, target_id)
 								return
 							target_id_string	= target_id.join(',')
-							if @_id_to_routing_path.has(target_id_string)
+							if @_id_to_routing_path.has(real_public_key_string + target_id_string)
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
 								return
 							data	=
+								'real_public_key'				: real_public_key
 								'target_id'						: target_id
 								'secret'						: secret
 								'application'					: application
@@ -518,13 +525,14 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 									first_node	= nodes[0]
 									@_router['construct_routing_path'](nodes)
 										.then (route_id) !~>
-											encryptor_instance	= detox-crypto['Encryptor'](false, @_real_keypair['x25519']['private'])
+											encryptor_instance	= detox-crypto['Encryptor'](false, real_keypair['x25519']['private'])
 											encryptor_instance['put_handshake_message'](handshake_message)
 											response_handshake_message	= encryptor_instance['get_handshake_message']()
-											@_encryptor_instances.set(target_id_string, encryptor_instance)
-											@_register_routing_path(target_id, first_node, route_id)
-											signature	= detox-crypto['sign'](rendezvous_token, @_real_keypair['ed25519']['public'], @_real_keypair['ed25519']['private'])
+											@_encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance)
+											@_register_routing_path(real_keypair['ed25519']['public'], target_id, first_node, route_id)
+											signature	= detox-crypto['sign'](rendezvous_token, real_keypair['ed25519']['public'], real_keypair['ed25519']['private'])
 											@_send_to_routing_node(
+												real_public_key
 												target_id
 												ROUTING_COMMAND_CONFIRM_CONNECTION
 												compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message)
@@ -541,12 +549,13 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
 							@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
 						else if @_routing_path_to_id.has(source_id)
-							target_id			= @_routing_path_to_id.get(source_id)
-							target_id_string	= target_id.join(',')
-							encryptor_instance	= @_encryptor_instances.get(target_id_string)
+							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
+							real_public_key_string			= real_public_key.join(',')
+							target_id_string				= target_id.join(',')
+							encryptor_instance				= @_encryptor_instances.get(real_public_key_string + target_id_string)
 							if !encryptor_instance
 								return
-							demultiplexer		= @_demultiplexers.get(target_id_string)
+							demultiplexer		= @_demultiplexers.get(real_public_key_string + target_id_string)
 							if !demultiplexer
 								return
 							data_decrypted		= encryptor_instance['decrypt'](data)
@@ -555,11 +564,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							if demultiplexer['have_more_data']()
 								data_with_header	= demultiplexer['get_data']()
 								command				= data_with_header[0]
-								@'fire'('data', target_id, command, data_with_header.subarray(1))
+								@'fire'('data', real_public_key, target_id, command, data_with_header.subarray(1))
 					case ROUTING_COMMAND_PING
 						if @_routing_path_to_id.has(source_id)
-							target_id			= @_routing_path_to_id.get(source_id)
-							target_id_string	= target_id.join(',')
 							if @_pending_pings.has(source_id)
 								# Don't ping back if we have sent ping ourselves
 								@_pending_pings.delete(source_id)
@@ -600,26 +607,47 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		'get_bootstrap_nodes' : ->
 			@_dht['get_bootstrap_nodes']()
 		/**
-		 * @param {number} number_of_introduction_nodes
-		 * @param {number} number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
+		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
+		 * @param {number}		number_of_introduction_nodes
+		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
+		 *
+		 * @return {!Uint8Array} Real public key
 		 */
-		'announce' : (number_of_introduction_nodes, number_of_intermediate_nodes) !->
-			@_number_of_introduction_nodes	= number_of_introduction_nodes
-			@_number_of_intermediate_nodes	= number_of_intermediate_nodes
-			@_announce()
-		_announce : !->
+		'announce' : (real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes) ->
+			real_keypair			= detox-crypto['create_keypair'](real_key_seed)
+			real_public_key			= real_keypair['ed25519']['public']
+			real_public_key_string	= real_public_key.join(',')
+			# Ignore repeated announcement
+			if @_real_keypairs.has(real_public_key_string)
+				return
+			@_real_keypairs.set(
+				real_public_key_string
+				[real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]
+			)
+			@_announce(real_public_key_string)
+			real_public_key
+		/**
+		 * @param {string} real_public_key_string
+		 */
+		_announce : (real_public_key_string) !->
+			[
+				real_keypair
+				number_of_introduction_nodes
+				number_of_intermediate_nodes
+				announced_to
+			]								= @_real_keypairs.get(real_public_key_string)
+			real_public_key					= real_keypair['ed25519']['public']
 			old_introduction_nodes			= []
-			@_announced_to.forEach (introduction_node) !->
+			announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
-			number_of_introduction_nodes	= @_number_of_introduction_nodes - old_introduction_nodes.length
+			number_of_introduction_nodes	= number_of_introduction_nodes - old_introduction_nodes.length
 			if !number_of_introduction_nodes
 				return
-			number_of_intermediate_nodes	= @_number_of_intermediate_nodes
-			@_last_announcement				= +(new Date)
+			@_update_last_announcement(real_public_key_string, +(new Date))
 			introduction_nodes				= @_pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes)
 			if !introduction_nodes
-				@_last_announcement	= 1
-				@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
+				@_update_last_announcement(real_public_key_string, 1)
+				@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
 				return
 			introductions_pending			= number_of_introduction_nodes
 			introduction_nodes_confirmed	= []
@@ -633,59 +661,71 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				if introductions_pending
 					return
 				if !introduction_nodes_confirmed.length
-					@_last_announcement	= 1
-					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED)
+					@_update_last_announcement(real_public_key_string, 1)
+					@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED)
 					return
 				# Add old introduction nodes to the list
 				introduction_nodes_confirmed	:= introduction_nodes_confirmed.concat(old_introduction_nodes)
 				announcement_message			= @_dht['generate_announcement_message'](
-					@_real_keypair['ed25519']['public']
-					@_real_keypair['ed25519']['private']
+					real_keypair['ed25519']['public']
+					real_keypair['ed25519']['private']
 					introduction_nodes_confirmed
 				)
 				for introduction_node in introduction_nodes_confirmed
-					@_send_to_routing_node(introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message)
+					@_send_to_routing_node(real_public_key, introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message)
 					introduction_node_string	= introduction_node.join(',')
-					@_announced_to.set(introduction_node_string, introduction_node)
+					announced_to.set(introduction_node_string, introduction_node)
 				# TODO: Check using independent routing path that announcement indeed happened
-				@'fire'('announced')
+				@'fire'('announced', real_public_key)
 			for let introduction_node in introduction_nodes
 				nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
 				if !nodes
-					@'fire'('announcement_failed', ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
+					@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 					return
 				nodes.push(introduction_node)
 				first_node	= nodes[0]
 				@_router['construct_routing_path'](nodes)
 					.then (route_id) !~>
-						@_register_routing_path(introduction_node, first_node, route_id)
+						@_register_routing_path(real_keypair['ed25519']['public'], introduction_node, first_node, route_id)
 						announced(introduction_node)
 					.catch (error) !~>
 						error_handler(error)
 						announced()
 		/**
+		 * @param {string} real_public_key_string
+		 * @param {number} value
+		 */
+		_update_last_announcement : (real_public_key_string, value) !->
+			@_real_keypairs.get(real_public_key_string)[4]	= value
+		/**
+		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
 		 * @param {!Uint8Array}	application						Up to 64 bytes
 		 * @param {!Uint8Array}	secret							Up to 32 bytes
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
+		 *
+		 * @return {!Uint8Array} Real public key
 		 */
-		'connect_to' : (target_id, application, secret, number_of_intermediate_nodes) !->
+		'connect_to' : (real_key_seed, target_id, application, secret, number_of_intermediate_nodes) ->
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
-			target_id_string	= target_id.join(',')
-			if @_id_to_routing_path.has(target_id_string)
+			real_keypair			= detox-crypto['create_keypair'](real_key_seed)
+			real_public_key			= real_keypair['ed25519']['public']
+			real_public_key_string	= real_public_key.join(',')
+			target_id_string		= target_id.join(',')
+			if @_id_to_routing_path.has(real_public_key_string + target_id_string)
 				# Already connected, do nothing
 				return
 			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
 			if !nodes
-				@'fire'('connection_failed', target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
+				@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return
 			first_node		= nodes[0]
 			rendezvous_node	= nodes[nodes.length - 1]
 			@_router['construct_routing_path'](nodes)
 				.then (route_id) !~>
-					@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
+					@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
 					first_node_string	= first_node.join(',')
 					route_id_string		= route_id.join(',')
 					!~function found_introduction_nodes (node_id, route_id, command, data)
@@ -700,12 +740,12 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							return
 						clearTimeout(find_introduction_nodes_timeout)
 						if code != CONNECTION_OK
-							@'fire'('connection_failed', target_id, code)
+							@'fire'('connection_failed', real_public_key, target_id, code)
 							return
-						@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
+						@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
 						!~function try_to_introduce
 							if !introduction_nodes.length
-								@'fire'('connection_failed', target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
+								@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 								return
 							introduction_node				= pull_random_item_from_array(introduction_nodes)
 							rendezvous_token				= randombytes(ID_LENGTH)
@@ -713,7 +753,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
 							handshake_message				= encryptor_instance['get_handshake_message']()
 							introduction_payload			= compose_introduction_payload(
-								@_real_keypair['ed25519']['public']
+								real_keypair['ed25519']['public']
 								rendezvous_node
 								rendezvous_token
 								handshake_message
@@ -723,7 +763,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
 								..set(introduction_node)
 								..set(introduction_payload, ID_LENGTH)
-							signature						= detox-crypto['sign'](for_signature, @_real_keypair['ed25519']['public'], @_real_keypair['ed25519']['private'])
+							signature						= detox-crypto['sign'](for_signature, real_keypair['ed25519']['public'], real_keypair['ed25519']['private'])
 							introduction_message			= new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH)
 								..set(signature)
 								..set(introduction_payload, SIGNATURE_LENGTH)
@@ -742,10 +782,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								)
 									return
 								encryptor_instance['put_handshake_message'](handshake_message_received)
-								@_encryptor_instances.set(target_id_string, encryptor_instance)
+								@_encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance)
 								clearTimeout(path_confirmation_timeout)
 								@_router['off']('data', path_confirmation)
-								@_register_routing_path(target_id, node_id, route_id)
+								@_register_routing_path(real_keypair['ed25519']['public'], target_id, node_id, route_id)
 							@_router['on']('data', path_confirmation)
 							@_router['send_data'](
 								first_node
@@ -753,7 +793,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								ROUTING_COMMAND_INITIALIZE_CONNECTION
 								compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted)
 							)
-							@'fire'('connection_progress', target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
+							@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
 							path_confirmation_timeout	= setTimeout (!~>
 								@_router['off']('data', path_confirmation)
 								encryptor_instance['destroy']()
@@ -764,24 +804,27 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					@_router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
 					find_introduction_nodes_timeout	= setTimeout (!~>
 						@_router['off']('data', found_introduction_nodes)
-						@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
+						@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
 					), CONNECTION_TIMEOUT * 1000
 				.catch (error) !~>
 					error_handler(error)
-					@'fire'('connection_failed', target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
+					@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
+			real_public_key
 		'get_max_data_size' : ->
 			@_max_data_size
 		/**
-		 * @param {!Uint8Array}	target_id	Should be connected already
-		 * @param {number}		command		Command from range `0..255`
-		 * @param {!Uint8Array}	data		Up to 65 KiB (limit defined in `@detox/transport`)
+		 * @param {!Uint8Array}	real_public_key	Own real long-term public key as returned by `announce()` and `connect_to()` methods
+		 * @param {!Uint8Array}	target_id		Should be connected already
+		 * @param {number}		command			Command from range `0..255`
+		 * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
-		'send_to' : (target_id, command, data) !->
-			target_id_string	= target_id.join(',')
-			encryptor_instance	= @_encryptor_instances.get(target_id_string)
+		'send_to' : (real_public_key, target_id, command, data) !->
+			real_public_key_string	= real_public_key.join(',')
+			target_id_string		= target_id.join(',')
+			encryptor_instance		= @_encryptor_instances.get(real_public_key_string + target_id_string)
 			if !encryptor_instance || data.length > @_max_data_size
 				return
-			multiplexer			= @_multiplexers.get(target_id_string)
+			multiplexer			= @_multiplexers.get(real_public_key_string + target_id_string)
 			if !multiplexer
 				return
 			data_with_header	= new Uint8Array(data.length + 1)
@@ -791,7 +834,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			while multiplexer['have_more_blocks']()
 				data_block				= multiplexer['get_block']()
 				data_block_encrypted	= encryptor_instance['encrypt'](data_block)
-				@_send_to_routing_node(target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
+				@_send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
 		'destroy' : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
@@ -895,23 +938,25 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)[0]
 		/**
-		 * @param {!Uint8Array} target_id	Last node in routing path, responder
-		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
-		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
+		 * @param {!Uint8Array} real_public_key
+		 * @param {!Uint8Array} target_id		Last node in routing path, responder
+		 * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
+		 * @param {!Uint8Array} route_id		ID of the route on `node_id`
 		 */
-		_register_routing_path : (target_id, node_id, route_id) !->
-			source_id			= compute_source_id(node_id, route_id)
-			target_id_string	= target_id.join(',')
+		_register_routing_path : (real_public_key, target_id, node_id, route_id) !->
+			source_id				= compute_source_id(node_id, route_id)
+			real_public_key_string	= real_public_key.join(real_public_key)
+			target_id_string		= target_id.join(',')
 			if @_routing_path_to_id.has(source_id)
 				# Something went wrong, ignore
 				return
-			@_id_to_routing_path.set(target_id_string, [node_id, route_id])
-			@_routing_path_to_id.set(source_id, target_id)
+			@_id_to_routing_path.set(real_public_key_string + target_id_string, [node_id, route_id])
+			@_routing_path_to_id.set(source_id, [real_public_key, target_id])
 			# Make sure each chunk after encryption will fit perfectly into DHT packet
 			# Multiplexer/demultiplexer pair is not needed for introduction node, but for simplicity we'll create it anyway
-			@_multiplexers.set(target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
-			@_demultiplexers.set(target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
-			@'fire'('connected', target_id)
+			@_multiplexers.set(real_public_key_string + target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
+			@_demultiplexers.set(real_public_key_string + target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
+			@'fire'('connected', real_public_key, target_id)
 		/**
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
@@ -922,7 +967,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				return
 			@_routing_paths.delete(source_id)
 			@_router['destroy_routing_path'](node_id, route_id)
-			@_routing_path_to_id.delete(source_id)
 			@_pending_pings.delete(source_id)
 			@_announcements_from.forEach ([, node_id, route_id, announce_interval], target_id_string_local) !~>
 				source_id_local	= compute_source_id(node_id, route_id)
@@ -930,19 +974,21 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					return
 				clearInterval(announce_interval)
 				@_announcements_from.delete(target_id_string_local)
-			target_id	= @_routing_path_to_id.get(source_id)
-			if !target_id
+			if !@_routing_path_to_id.has(source_id)
 				return
-			target_id_string	= target_id.join(',')
-			@_id_to_routing_path.delete(target_id_string)
-			@_announced_to.delete(target_id_string)
+			[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
+			real_public_key_string			= real_public_key.join(',')
+			target_id_string				= target_id.join(',')
+			@_id_to_routing_path.delete(real_public_key_string + target_id_string)
+			@_real_keypairs.forEach ([, , , announced_to]) !->
+				announced_to.delete(target_id_string)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if encryptor_instance
 				encryptor_instance['destroy']()
 				@_encryptor_instances.delete(target_id_string)
 			@_multiplexers.delete(target_id_string)
 			@_demultiplexers.delete(target_id_string)
-			@'fire'('disconnected', target_id)
+			@'fire'('disconnected', real_public_key, target_id)
 		/**
 		 * @param {!Uint8Array}	node_id
 		 * @param {number}		command	0..245
@@ -967,15 +1013,17 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			), ROUTING_PATH_SEGMENT_TIMEOUT * 1000
 			@_dht['lookup'](node_id)
 		/**
+		 * @param {!Uint8Array}	real_public_key
 		 * @param {!Uint8Array}	target_id
-		 * @param {number}		command		0..245
+		 * @param {number}		command			0..245
 		 * @param {!Uint8Array}	data
 		 */
-		_send_to_routing_node : (target_id, command, data) !->
-			target_id_string	= target_id.join(',')
-			if !@_id_to_routing_path.has(target_id_string)
+		_send_to_routing_node : (real_public_key, target_id, command, data) !->
+			real_public_key_string	= real_public_key.join(',')
+			target_id_string		= target_id.join(',')
+			if !@_id_to_routing_path.has(real_public_key_string + target_id_string)
 				return
-			[node_id, route_id] = @_id_to_routing_path.get(target_id_string)
+			[node_id, route_id] = @_id_to_routing_path.get(real_public_key_string + target_id_string)
 			@_router['send_data'](node_id, route_id, command, data)
 		/**
 		 * @param {!Uint8Array} node_id
