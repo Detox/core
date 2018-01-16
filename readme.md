@@ -73,7 +73,7 @@ Start bootstrap server (WebSocket) listening on specified IP and port.
 ### detox_core.Core.get_bootstrap_nodes() : Object
 Returns array of collected bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor.
 
-### detox_core.Core.announce(real_key_seed : Uint8Array, number_of_introduction_nodes : number, number_of_intermediate_nodes : number) : Uint8Array
+### detox_core.Core.announce(real_key_seed : Uint8Array, number_of_introduction_nodes : number, number_of_intermediate_nodes : number) : Uint8Array|null
 Announce itself to the DHT network (without this it is still possible to interact with network and connect to friends, but friends will not be able to discover this node).
 
 Listen for events to identify when/if announcement succeeded.
@@ -82,9 +82,9 @@ Listen for events to identify when/if announcement succeeded.
 * `number_of_introduction_nodes` - non-zero number of nodes that will act as introduction nodes
 * `number_of_intermediate_nodes` - non-zero number of intermediate nodes between this node and introduction node (not including it) used during routing path construction for anonymity
 
-Returns real public key.
+Returns real public key or `null` in case of failure.
 
-### detox_core.Core.connect_to(real_key_seed : Uint8Array, target_id : Uint8Array, application : Uint8Array, secret : Uint8Array, number_of_intermediate_nodes : number)
+### detox_core.Core.connect_to(real_key_seed : Uint8Array, target_id : Uint8Array, application : Uint8Array, secret : Uint8Array, number_of_intermediate_nodes : number) : Uint8Array|null
 Connecting to a friend with `target_id` and `secret`.
 
 Listen for events to identify when/if connection succeeded. NOTE: there is no way to know if a friend refused to answer or simply not available.
@@ -95,7 +95,7 @@ Listen for events to identify when/if connection succeeded. NOTE: there is no wa
 * `secret` - secret that will be sent to a friend, up to 32 bytes, typically used for friend requests and identification as kind of a password
 * `number_of_intermediate_nodes` - non-zero number of intermediate nodes between this node and rendezvous node (including it) used during routing path construction for anonymity
 
-Returns real public key.
+Returns real public key or `null` in case of failure.
 
 ### detox_core.Core.get_max_data_size() : number
 Returns how much data can be sent at once.
