@@ -676,7 +676,7 @@
        * @param {number}		number_of_introduction_nodes
        * @param {number}		number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
        *
-       * @return {!Uint8Array} Real public key
+       * @return {Uint8Array} Real public key or `null` in case of failure
        */,
       'announce': function(real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes){
         var real_keypair, real_public_key, real_public_key_string;
@@ -684,7 +684,7 @@
         real_public_key = real_keypair['ed25519']['public'];
         real_public_key_string = real_public_key.join(',');
         if (this._real_keypairs.has(real_public_key_string)) {
-          return;
+          return null;
         }
         this._real_keypairs.set(real_public_key_string, [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]);
         this._announce(real_public_key_string);
@@ -776,7 +776,7 @@
        * @param {!Uint8Array}	secret							Up to 32 bytes
        * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
        *
-       * @return {!Uint8Array} Real public key
+       * @return {Uint8Array} Real public key or `null` in case of failure
        */,
       'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
         var real_keypair, real_public_key, real_public_key_string, target_id_string, nodes, first_node, rendezvous_node, this$ = this;
@@ -788,12 +788,12 @@
         real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
         if (this._id_to_routing_path.has(real_public_key_string + target_id_string)) {
-          return;
+          return null;
         }
         nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
         if (!nodes) {
           this['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
-          return;
+          return null;
         }
         first_node = nodes[0];
         rendezvous_node = nodes[nodes.length - 1];

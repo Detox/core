@@ -622,7 +622,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {number}		number_of_introduction_nodes
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until introduction node (not including it)
 		 *
-		 * @return {!Uint8Array} Real public key
+		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'announce' : (real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes) ->
 			real_keypair			= detox-crypto['create_keypair'](real_key_seed)
@@ -630,7 +630,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			real_public_key_string	= real_public_key.join(',')
 			# Ignore repeated announcement
 			if @_real_keypairs.has(real_public_key_string)
-				return
+				return null
 			@_real_keypairs.set(
 				real_public_key_string
 				[real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]
@@ -715,7 +715,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 * @param {!Uint8Array}	secret							Up to 32 bytes
 		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
 		 *
-		 * @return {!Uint8Array} Real public key
+		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'connect_to' : (real_key_seed, target_id, application, secret, number_of_intermediate_nodes) ->
 			if !number_of_intermediate_nodes
@@ -727,11 +727,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			target_id_string		= target_id.join(',')
 			if @_id_to_routing_path.has(real_public_key_string + target_id_string)
 				# Already connected, do nothing
-				return
+				return null
 			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
 			if !nodes
 				@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
-				return
+				return null
 			first_node		= nodes[0]
 			rendezvous_node	= nodes[nodes.length - 1]
 			@_router['construct_routing_path'](nodes)
