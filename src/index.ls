@@ -59,6 +59,17 @@ const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED	= 0
 const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
 const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
+/**
+ * Changed order of arguments and delay in seconds for convenience
+ */
+function timeoutSet (delay, func)
+	setTimeout(func, delay * 1000)
+/**
+ * Changed order of arguments and delay in seconds for convenience
+ */
+function intervalSet (delay, func)
+	setInterval(func, delay * 1000)
+
 if typeof crypto != 'undefined'
 	randombytes	= (size) ->
 		array = new Uint8Array(size)
@@ -278,7 +289,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		@_multiplexers			= new Map
 		@_demultiplexers		= new Map
 
-		@_cleanup_interval				= setInterval (!~>
+		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
 			@_routes_timeouts.forEach (last_updated, source_id) !~>
 				if last_updated < unused_older_than
@@ -290,8 +301,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				if last_updated < unused_older_than
 					@_del_used_tag(node_id)
 					@_connections_timeouts.delete(node_id_string)
-		), LAST_USED_TIMEOUT * 1000
-		@_keep_announce_routes_interval	= setInterval (!~>
+		)
+		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT, !~>
 			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement]) !~>
 				real_public_key			= real_keypair['ed25519']['public']
 				real_public_key_string	= real_public_key.join(',')
@@ -307,11 +318,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					if @_send_ping(node_id, route_id)
 						source_id	= compute_source_id(node_id, route_id)
 						@_pending_pings.add(source_id)
-		), LAST_USED_TIMEOUT / 2 * 1000
-		@_get_more_nodes_interval		= setInterval (!~>
+		)
+		@_get_more_nodes_interval		= intervalSet(GET_MORE_NODES_INTERVAL, !~>
 			if @_more_nodes_needed()
 				@_get_more_nodes()
-		), GET_MORE_NODES_INTERVAL * 1000
+		)
 
 		@_dht		= detox-transport['DHT'](
 			@_dht_keypair['ed25519']['public']
@@ -411,11 +422,11 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						# If re-announcement, make sure to stop old interval
 						if @_announcements_from.has(public_key_string)
 							clearInterval(@_announcements_from.get(public_key_string)[3])
-						announce_interval	= setInterval (!~>
+						announce_interval	= intervalSet(ANNOUNCE_INTERVAL, !~>
 							if !@_routing_paths.has(source_id)
 								return
 							@_dht['publish_announcement_message'](data)
-						), ANNOUNCE_INTERVAL * 1000
+						)
 						@_announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval])
 						@_dht['publish_announcement_message'](data)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
@@ -449,9 +460,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						if @_pending_connection.has(rendezvous_token_string)
 							# Ignore subsequent usages of the same rendezvous token
 							return
-						connection_timeout														= setTimeout (!~>
+						connection_timeout														= timeoutSet(CONNECTION_TIMEOUT, !~>
 							@_pending_connection.delete(rendezvous_token_string)
-						), CONNECTION_TIMEOUT * 1000
+						)
 						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout])
 						@_send_to_dht_node(
 							introduction_node
@@ -794,18 +805,18 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted)
 							)
 							@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
-							path_confirmation_timeout	= setTimeout (!~>
+							path_confirmation_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 								@_router['off']('data', path_confirmation)
 								encryptor_instance['destroy']()
 								try_to_introduce()
-							), CONNECTION_TIMEOUT * 1000
+							)
 						try_to_introduce()
 					@_router['on']('data', found_introduction_nodes)
 					@_router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
-					find_introduction_nodes_timeout	= setTimeout (!~>
+					find_introduction_nodes_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 						@_router['off']('data', found_introduction_nodes)
 						@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
-					), CONNECTION_TIMEOUT * 1000
+					)
 				.catch (error) !~>
 					error_handler(error)
 					@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
@@ -1009,9 +1020,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				@_update_connection_timeout(node_id)
 				@_dht['send_data'](node_id, command, data)
 			@_dht['on']('node_connected', connected)
-			connected_timeout	= setTimeout (!~>
+			connected_timeout	= timeoutSet(ROUTING_PATH_SEGMENT_TIMEOUT, !~>
 				@_dht['off']('node_connected', connected)
-			), ROUTING_PATH_SEGMENT_TIMEOUT * 1000
+			)
 			@_dht['lookup'](node_id)
 		/**
 		 * @param {!Uint8Array}	real_public_key

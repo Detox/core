@@ -46,6 +46,18 @@
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED = 0;
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
   ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
+  /**
+   * Changed order of arguments and delay in seconds for convenience
+   */
+  function timeoutSet(delay, func){
+    return setTimeout(func, delay * 1000);
+  }
+  /**
+   * Changed order of arguments and delay in seconds for convenience
+   */
+  function intervalSet(delay, func){
+    return setInterval(func, delay * 1000);
+  }
   if (typeof crypto !== 'undefined') {
     randombytes = function(size){
       var array;
@@ -305,7 +317,7 @@
       this._encryptor_instances = new Map;
       this._multiplexers = new Map;
       this._demultiplexers = new Map;
-      this._cleanup_interval = setInterval(function(){
+      this._cleanup_interval = intervalSet(LAST_USED_TIMEOUT, function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
         this$._routes_timeouts.forEach(function(last_updated, source_id){
@@ -326,8 +338,8 @@
             this$._connections_timeouts['delete'](node_id_string);
           }
         });
-      }, LAST_USED_TIMEOUT * 1000);
-      this._keep_announce_routes_interval = setInterval(function(){
+      });
+      this._keep_announce_routes_interval = intervalSet(LAST_USED_TIMEOUT, function(){
         this$._real_keypairs.forEach(function(arg$){
           var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, real_public_key, real_public_key_string, reannounce_if_older_than;
           real_keypair = arg$[0], number_of_introduction_nodes = arg$[1], number_of_intermediate_nodes = arg$[2], announced_to = arg$[3], last_announcement = arg$[4];
@@ -351,12 +363,12 @@
             }
           });
         });
-      }, LAST_USED_TIMEOUT / 2 * 1000);
-      this._get_more_nodes_interval = setInterval(function(){
+      });
+      this._get_more_nodes_interval = intervalSet(GET_MORE_NODES_INTERVAL, function(){
         if (this$._more_nodes_needed()) {
           this$._get_more_nodes();
         }
-      }, GET_MORE_NODES_INTERVAL * 1000);
+      });
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
         this$._connected_nodes.set(node_id.join(','), node_id);
         if (this$._more_nodes_needed()) {
@@ -457,12 +469,12 @@
           if (this$._announcements_from.has(public_key_string)) {
             clearInterval(this$._announcements_from.get(public_key_string)[3]);
           }
-          announce_interval = setInterval(function(){
+          announce_interval = intervalSet(ANNOUNCE_INTERVAL, function(){
             if (!this$._routing_paths.has(source_id)) {
               return;
             }
             this$._dht['publish_announcement_message'](data);
-          }, ANNOUNCE_INTERVAL * 1000);
+          });
           this$._announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval]);
           this$._dht['publish_announcement_message'](data);
           break;
@@ -502,9 +514,9 @@
           if (this$._pending_connection.has(rendezvous_token_string)) {
             return;
           }
-          connection_timeout = setTimeout(function(){
+          connection_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
             this$._pending_connection['delete'](rendezvous_token_string);
-          }, CONNECTION_TIMEOUT * 1000);
+          });
           this$._pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout]);
           this$._send_to_dht_node(introduction_node, DHT_COMMAND_FORWARD_INTRODUCTION, compose_introduce_to_data(target_id, introduction_message));
           break;
@@ -843,20 +855,20 @@
               this$._router['on']('data', path_confirmation);
               this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
               this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
-              path_confirmation_timeout = setTimeout(function(){
+              path_confirmation_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
                 this$._router['off']('data', path_confirmation);
                 encryptor_instance['destroy']();
                 try_to_introduce();
-              }, CONNECTION_TIMEOUT * 1000);
+              });
             }
             try_to_introduce();
           }
           this$._router['on']('data', found_introduction_nodes);
           this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
-          find_introduction_nodes_timeout = setTimeout(function(){
+          find_introduction_nodes_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
             this$._router['off']('data', found_introduction_nodes);
             this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
-          }, CONNECTION_TIMEOUT * 1000);
+          });
         })['catch'](function(error){
           error_handler(error);
           this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
@@ -1131,9 +1143,9 @@
           this$._dht['send_data'](node_id, command, data);
         }
         this._dht['on']('node_connected', connected);
-        connected_timeout = setTimeout(function(){
+        connected_timeout = timeoutSet(ROUTING_PATH_SEGMENT_TIMEOUT, function(){
           this$._dht['off']('node_connected', connected);
-        }, ROUTING_PATH_SEGMENT_TIMEOUT * 1000);
+        });
         this._dht['lookup'](node_id);
       }
       /**
