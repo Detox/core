@@ -85,7 +85,7 @@ test('Core', (t) !->
 					t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction')
 					data.number_of_intermediate_nodes	= 1
 				)
-				node_3.once('connected', (node_1_real_public_key, target_id) !->
+				node_3.once('connected', (, target_id) !->
 					if target_id.join(',') == node_1_real_public_key.join(',')
 						t.pass('Connected successfully')
 
