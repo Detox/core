@@ -9,7 +9,7 @@
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 12;
+  NUMBER_OF_NODES = 20;
   bootstrap_ip = '127.0.0.1';
   bootstrap_port = 16882;
   command = 38;

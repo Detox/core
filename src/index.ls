@@ -292,16 +292,16 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					@_connections_timeouts.delete(node_id_string)
 		), LAST_USED_TIMEOUT * 1000
 		@_keep_announce_routes_interval	= setInterval (!~>
-			for [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement] in Array.from(@_real_keypairs.values())
+			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement]) !~>
 				real_public_key			= real_keypair['ed25519']['public']
 				real_public_key_string	= real_public_key.join(',')
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node
 					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
 					if last_announcement < reannounce_if_older_than
-						@_announce(real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes)
+						@_announce(real_public_key_string)
 				announced_to.forEach (introduction_node, introduction_node_string) !~>
-					if @_id_to_routing_path.has(real_public_key_string + introduction_node_string)
+					if !@_id_to_routing_path.has(real_public_key_string + introduction_node_string)
 						return
 					[node_id, route_id]	= @_id_to_routing_path.get(real_public_key_string + introduction_node_string)
 					if @_send_ping(node_id, route_id)
@@ -667,7 +667,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				# Add old introduction nodes to the list
 				introduction_nodes_confirmed	:= introduction_nodes_confirmed.concat(old_introduction_nodes)
 				announcement_message			= @_dht['generate_announcement_message'](
-					real_keypair['ed25519']['public']
+					real_public_key
 					real_keypair['ed25519']['private']
 					introduction_nodes_confirmed
 				)
@@ -686,7 +686,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				first_node	= nodes[0]
 				@_router['construct_routing_path'](nodes)
 					.then (route_id) !~>
-						@_register_routing_path(real_keypair['ed25519']['public'], introduction_node, first_node, route_id)
+						@_register_routing_path(real_public_key, introduction_node, first_node, route_id)
 						announced(introduction_node)
 					.catch (error) !~>
 						error_handler(error)
@@ -753,7 +753,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
 							handshake_message				= encryptor_instance['get_handshake_message']()
 							introduction_payload			= compose_introduction_payload(
-								real_keypair['ed25519']['public']
+								real_public_key
 								rendezvous_node
 								rendezvous_token
 								handshake_message
@@ -763,7 +763,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
 								..set(introduction_node)
 								..set(introduction_payload, ID_LENGTH)
-							signature						= detox-crypto['sign'](for_signature, real_keypair['ed25519']['public'], real_keypair['ed25519']['private'])
+							signature						= detox-crypto['sign'](for_signature, real_public_key, real_keypair['ed25519']['private'])
 							introduction_message			= new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH)
 								..set(signature)
 								..set(introduction_payload, SIGNATURE_LENGTH)
@@ -785,7 +785,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								@_encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance)
 								clearTimeout(path_confirmation_timeout)
 								@_router['off']('data', path_confirmation)
-								@_register_routing_path(real_keypair['ed25519']['public'], target_id, node_id, route_id)
+								@_register_routing_path(real_public_key, target_id, node_id, route_id)
 							@_router['on']('data', path_confirmation)
 							@_router['send_data'](
 								first_node
@@ -945,7 +945,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		 */
 		_register_routing_path : (real_public_key, target_id, node_id, route_id) !->
 			source_id				= compute_source_id(node_id, route_id)
-			real_public_key_string	= real_public_key.join(real_public_key)
+			real_public_key_string	= real_public_key.join(',')
 			target_id_string		= target_id.join(',')
 			if @_routing_path_to_id.has(source_id)
 				# Something went wrong, ignore
@@ -979,6 +979,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
 			real_public_key_string			= real_public_key.join(',')
 			target_id_string				= target_id.join(',')
+			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(real_public_key_string + target_id_string)
 			@_real_keypairs.forEach ([, , , announced_to]) !->
 				announced_to.delete(target_id_string)
