@@ -313,8 +313,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					if last_announcement < reannounce_if_older_than
 						@_announce(real_public_key_string)
 				announced_to.forEach (introduction_node, introduction_node_string) !~>
-					if !@_id_to_routing_path.has(real_public_key_string + introduction_node_string)
-						return
 					[node_id, route_id]	= @_id_to_routing_path.get(real_public_key_string + introduction_node_string)
 					if @_send_ping(node_id, route_id)
 						source_id	= compute_source_id(node_id, route_id)

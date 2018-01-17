@@ -354,9 +354,6 @@
           }
           announced_to.forEach(function(introduction_node, introduction_node_string){
             var ref$, node_id, route_id, source_id;
-            if (!this$._id_to_routing_path.has(real_public_key_string + introduction_node_string)) {
-              return;
-            }
             ref$ = this$._id_to_routing_path.get(real_public_key_string + introduction_node_string), node_id = ref$[0], route_id = ref$[1];
             if (this$._send_ping(node_id, route_id)) {
               source_id = compute_source_id(node_id, route_id);
