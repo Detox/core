@@ -288,6 +288,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		@_encryptor_instances	= new Map
 		@_multiplexers			= new Map
 		@_demultiplexers		= new Map
+		@_pending_sending		= new Map
 
 		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
@@ -842,10 +843,20 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				..set([command])
 				..set(data, 1)
 			multiplexer['feed'](data_with_header)
-			while multiplexer['have_more_blocks']()
-				data_block				= multiplexer['get_block']()
-				data_block_encrypted	= encryptor_instance['encrypt'](data_block)
-				@_send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
+			if @_pending_sending.has(real_public_key_string + target_id_string)
+				# Timer is already in progress
+				return
+			# It might sometimes happen that we send command with small piece of data and the rest of the block is wasted. Sending data after 0 timeout
+			# allows for a few synchronous `send_to` calls to share the same block if possible in order to use space more efficiently
+			@_pending_sending.set(
+				real_public_key_string + target_id_string
+				setTimeout !~>
+					@_pending_sending.delete(real_public_key_string + target_id_string)
+					while multiplexer['have_more_blocks']()
+						data_block				= multiplexer['get_block']()
+						data_block_encrypted	= encryptor_instance['encrypt'](data_block)
+						@_send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
+			)
 		'destroy' : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
@@ -992,6 +1003,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			target_id_string				= target_id.join(',')
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(real_public_key_string + target_id_string)
+			if @_pending_sending.has(real_public_key_string + target_id_string)
+				clearTimeout(@_pending_sending.get(real_public_key_string + target_id_string))
+				@_pending_sending.delete(real_public_key_string + target_id_string)
 			@_real_keypairs.forEach ([, , , announced_to]) !->
 				announced_to.delete(target_id_string)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
