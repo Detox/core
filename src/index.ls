@@ -304,9 +304,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 					@_connections_timeouts.delete(node_id_string)
 		)
 		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT, !~>
-			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement]) !~>
-				real_public_key			= real_keypair['ed25519']['public']
-				real_public_key_string	= real_public_key.join(',')
+			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key_string) !~>
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node
 					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
@@ -683,8 +681,6 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				)
 				for introduction_node in introduction_nodes_confirmed
 					@_send_to_routing_node(real_public_key, introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message)
-					introduction_node_string	= introduction_node.join(',')
-					announced_to.set(introduction_node_string, introduction_node)
 				# TODO: Check using independent routing path that announcement indeed happened
 				@'fire'('announced', real_public_key)
 			for let introduction_node in introduction_nodes
@@ -697,6 +693,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				@_router['construct_routing_path'](nodes)
 					.then (route_id) !~>
 						@_register_routing_path(real_public_key, introduction_node, first_node, route_id)
+						introduction_node_string	= introduction_node.join(',')
+						announced_to.set(introduction_node_string, introduction_node)
 						announced(introduction_node)
 					.catch (error) !~>
 						error_handler(error)
@@ -1004,8 +1002,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if @_pending_sending.has(real_public_key_string + target_id_string)
 				clearTimeout(@_pending_sending.get(real_public_key_string + target_id_string))
 				@_pending_sending.delete(real_public_key_string + target_id_string)
-			@_real_keypairs.forEach ([, , , announced_to]) !->
-				announced_to.delete(target_id_string)
+			announced_to	= @_real_keypairs.get(real_public_key_string)[3]
+			announced_to.delete(target_id_string)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if encryptor_instance
 				encryptor_instance['destroy']()
