@@ -1005,8 +1005,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			if @_pending_sending.has(real_public_key_string + target_id_string)
 				clearTimeout(@_pending_sending.get(real_public_key_string + target_id_string))
 				@_pending_sending.delete(real_public_key_string + target_id_string)
-			announced_to	= @_real_keypairs.get(real_public_key_string)[3]
-			announced_to.delete(target_id_string)
+			if @_real_keypairs.has(real_public_key_string)
+				announced_to	= @_real_keypairs.get(real_public_key_string)[3]
+				announced_to.delete(target_id_string)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if encryptor_instance
 				encryptor_instance['destroy']()

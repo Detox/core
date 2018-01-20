@@ -1118,8 +1118,10 @@
           clearTimeout(this._pending_sending.get(real_public_key_string + target_id_string));
           this._pending_sending['delete'](real_public_key_string + target_id_string);
         }
-        announced_to = this._real_keypairs.get(real_public_key_string)[3];
-        announced_to['delete'](target_id_string);
+        if (this._real_keypairs.has(real_public_key_string)) {
+          announced_to = this._real_keypairs.get(real_public_key_string)[3];
+          announced_to['delete'](target_id_string);
+        }
         encryptor_instance = this._encryptor_instances.get(target_id_string);
         if (encryptor_instance) {
           encryptor_instance['destroy']();
