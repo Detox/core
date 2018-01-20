@@ -912,6 +912,9 @@
       },
       'destroy': function(){
         var this$ = this;
+        if (this._destroyed) {
+          return;
+        }
         clearInterval(this._cleanup_interval);
         clearInterval(this._keep_announce_routes_interval);
         clearInterval(this._get_more_nodes_interval);
@@ -927,6 +930,7 @@
         });
         this._dht['destroy']();
         this._router['destroy']();
+        this._destroyed = true;
       }
       /**
        * @return {boolean}

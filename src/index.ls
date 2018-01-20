@@ -854,6 +854,8 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 						@_send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_DATA, data_block_encrypted)
 			)
 		'destroy' : !->
+			if @_destroyed
+				return
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
 			clearInterval(@_get_more_nodes_interval)
@@ -863,6 +865,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 				clearTimeout(connection_timeout)
 			@_dht['destroy']()
 			@_router['destroy']()
+			@_destroyed	= true
 		/**
 		 * @return {boolean}
 		 */
