@@ -43,7 +43,6 @@ Should be scalable already (WARNING: not proven yet, large-scale testing is need
 
 ## Major open issues
 Major open issues in the order from more important to less important (the order is not strict):
-* Document overall system design and write specification for implementers
 * Improve performance (looks like [node-webrtc](https://github.com/js-platform/node-webrtc) is holding us on backend, but more testing is needed, also zlib compression with dictionary would be nice for DHT traffic)
 * Nodes selection for anonymous routing (will likely require DHT re-implementation)
 * Make AEZ implementation secure (timings attacks in particular)
