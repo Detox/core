@@ -7,7 +7,7 @@
 		"distributed",
 		"p2p"
 	],
-	"version"         : "0.2.1",
+	"version"         : "0.2.2",
 	"homepage"        : "https://github.com/Detox/detox-core",
 	"author"          : "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
 	"repository"      : {
@@ -24,7 +24,7 @@
 	},
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.4.0",
-		"@detox/transport"       : "^0.15.0",
+		"@detox/transport"       : "^0.15.2",
 		"fixed-size-multiplexer" : "^0.1.1"
 	},
 	"devDependencies" : {
