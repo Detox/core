@@ -53,7 +53,7 @@ test('Core', (t) !->
 		else
 			instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5)
 		instance.once('ready', !->
-			t.pass('Node ' + i + ' is ready')
+			t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES)
 
 			++i
 			if i < NUMBER_OF_NODES
@@ -65,8 +65,10 @@ test('Core', (t) !->
 	start_node()
 
 	!function destroy_nodes
+		console.log 'Destroying nodes...'
 		for node in nodes
 			node.destroy()
+		console.log 'Destroyed'
 
 	!function ready_callback
 		node_1	= nodes[1]

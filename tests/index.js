@@ -47,7 +47,7 @@
           instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5);
         }
         instance.once('ready', function(){
-          t.pass('Node ' + i + ' is ready');
+          t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
           ++i;
           if (i < NUMBER_OF_NODES) {
             start_node();
@@ -60,10 +60,12 @@
       start_node();
       function destroy_nodes(){
         var i$, ref$, len$, node;
+        console.log('Destroying nodes...');
         for (i$ = 0, len$ = (ref$ = nodes).length; i$ < len$; ++i$) {
           node = ref$[i$];
           node.destroy();
         }
+        console.log('Destroyed');
       }
       function ready_callback(){
         var node_1, node_3;
