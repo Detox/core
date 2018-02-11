@@ -7,7 +7,7 @@ detox-crypto	= require('@detox/crypto')
 lib				= require('..')
 test			= require('tape')
 
-const NUMBER_OF_NODES = 20
+const NUMBER_OF_NODES = 10
 
 bootstrap_ip	= '127.0.0.1'
 bootstrap_port	= 16882
@@ -43,8 +43,8 @@ test('Core', (t) !->
 
 	nodes	= []
 
-	i = 0
-	!function start_node
+	wait_for	= NUMBER_OF_NODES
+	for let i from 0 til NUMBER_OF_NODES
 		dht_seed	= new Uint8Array(32)
 			..set([i])
 		if i == 0
@@ -55,14 +55,11 @@ test('Core', (t) !->
 		instance.once('ready', !->
 			t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES)
 
-			++i
-			if i < NUMBER_OF_NODES
-				start_node()
-			else
+			--wait_for
+			if !wait_for
 				ready_callback()
 		)
 		nodes.push(instance)
-	start_node()
 
 	!function destroy_nodes
 		console.log 'Destroying nodes...'

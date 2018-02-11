@@ -9,7 +9,7 @@
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 20;
+  NUMBER_OF_NODES = 10;
   bootstrap_ip = '127.0.0.1';
   bootstrap_port = 16882;
   command = 38;
@@ -17,7 +17,7 @@
   application = Buffer.from('Detox test');
   lib.ready(function(){
     test('Core', function(t){
-      var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, i;
+      var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, wait_for, i$, to$;
       t.plan(NUMBER_OF_NODES + 10);
       generated_seed = lib.generate_seed();
       t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array');
@@ -35,29 +35,10 @@
       y$.set([3, 1]);
       node_3_real_public_key = detoxCrypto.create_keypair(node_3_real_seed).ed25519['public'];
       nodes = [];
-      i = 0;
-      function start_node(){
-        var x$, dht_seed, instance;
-        x$ = dht_seed = new Uint8Array(32);
-        x$.set([i]);
-        if (i === 0) {
-          instance = lib.Core(dht_seed, [], [], 5, 10);
-          instance.start_bootstrap_node(bootstrap_ip, bootstrap_port);
-        } else {
-          instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5);
-        }
-        instance.once('ready', function(){
-          t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
-          ++i;
-          if (i < NUMBER_OF_NODES) {
-            start_node();
-          } else {
-            ready_callback();
-          }
-        });
-        nodes.push(instance);
+      wait_for = NUMBER_OF_NODES;
+      for (i$ = 0, to$ = NUMBER_OF_NODES; i$ < to$; ++i$) {
+        (fn$.call(this, i$));
       }
-      start_node();
       function destroy_nodes(){
         var i$, ref$, len$, node;
         console.log('Destroying nodes...');
@@ -111,6 +92,25 @@
           console.log('Announcing...');
           node_1.announce(node_1_real_seed, 2, 1);
         }, 10000);
+      }
+      function fn$(i){
+        var x$, dht_seed, instance;
+        x$ = dht_seed = new Uint8Array(32);
+        x$.set([i]);
+        if (i === 0) {
+          instance = lib.Core(dht_seed, [], [], 5, 10);
+          instance.start_bootstrap_node(bootstrap_ip, bootstrap_port);
+        } else {
+          instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5);
+        }
+        instance.once('ready', function(){
+          t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
+          --wait_for;
+          if (!wait_for) {
+            ready_callback();
+          }
+        });
+        nodes.push(instance);
       }
     });
   });
