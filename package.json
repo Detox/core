@@ -25,6 +25,7 @@
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.4.0",
 		"@detox/transport"       : "^0.15.2",
+		"async-eventer"          : "^1.1.4",
 		"fixed-size-multiplexer" : "^0.1.1"
 	},
 	"devDependencies" : {

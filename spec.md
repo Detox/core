@@ -203,7 +203,7 @@ Once introduction nodes are found, random introduction node is selected and intr
 * 64 bytes - Ed25519 signature of Ed25519 public key of introduction node (not part of introduction payload) concatenated with introduction payload using node's long-term keypair
 * 240 bytes - introduction payload
 
-Introduction payload is creates as follows:
+Introduction payload is created as follows:
 * 32 bytes - Own long-term public key
 * 32 bytes - Ed25519 public key of rendezvous node
 * 32 bytes - rendezvous token (one-time randomly generated string)
