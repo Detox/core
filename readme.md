@@ -131,7 +131,7 @@ Event is fired when a `target_id` friend is asking for introduction for `real_pu
 If node decides to accept introduction and establish connection, it sets `number_of_intermediate_nodes` property to the number of intermediate nodes between this node and rendezvous node of a friend (not including it) used during routing path construction for anonymity.
 
 ### Event: data
-Payload consists of four arguments: `real_public_key` (`Uint8Array`), `id` (`Uint8Array`), `command` (`number`) and `data` (`Uint8Array`).
+Payload consists of four arguments: `real_public_key` (`Uint8Array`), `target_id` (`Uint8Array`), `command` (`number`) and `data` (`Uint8Array`).
 Event is fired when a friend have sent data using `send_to()` method.
 
 ### Event: announcement_failed
