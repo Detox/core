@@ -719,7 +719,7 @@
           this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE);
           function found_introduction_nodes(new_node_id, new_route_id, command, data){
             var ref$, code, introduction_target_id, introduction_nodes;
-            if (!are_arrays_equal(first_node, new_node_id) || !are_arrays_equal(route_id, new_route_id) || command !== ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE) {
+            if (!(are_arrays_equal(first_node, new_node_id) && are_arrays_equal(route_id, new_route_id) && command === ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE)) {
               return;
             }
             ref$ = parse_find_introduction_nodes_response(data), code = ref$[0], introduction_target_id = ref$[1], introduction_nodes = ref$[2];
@@ -754,18 +754,18 @@
               introduction_message_encrypted = detoxCrypto['one_way_encrypt'](x25519_public_key, introduction_message);
               function path_confirmation(new_node_id, new_route_id, command, data){
                 var ref$, signature, rendezvous_token_received, handshake_message_received;
-                if (!are_arrays_equal(first_node, new_node_id) || !are_arrays_equal(route_id, new_route_id) || command !== ROUTING_COMMAND_CONNECTED) {
+                if (!(are_arrays_equal(first_node, new_node_id) && are_arrays_equal(route_id, new_route_id) && command === ROUTING_COMMAND_CONNECTED)) {
                   return;
                 }
                 ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token_received = ref$[1], handshake_message_received = ref$[2];
-                if (!are_arrays_equal(rendezvous_token_received, rendezvous_token) || !detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
+                if (!(are_arrays_equal(rendezvous_token_received, rendezvous_token) && detoxCrypto['verify'](signature, rendezvous_token, target_id))) {
                   return;
                 }
                 encryptor_instance['put_handshake_message'](handshake_message_received);
                 this$._encryptor_instances.set(full_target_id, encryptor_instance);
                 clearTimeout(path_confirmation_timeout);
                 this$._router['off']('data', path_confirmation);
-                this$._register_routing_path(real_public_key, target_id, node_id, route_id);
+                this$._register_routing_path(real_public_key, target_id, first_node, route_id);
               }
               this$._router['on']('data', path_confirmation);
               this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
@@ -976,7 +976,7 @@
         }
         for (i$ = 0; i$ < number_of_nodes; ++i$) {
           i = i$;
-          results$.push(pull_random_item_from_array(aware_of_nodes)[0]);
+          results$.push(pull_random_item_from_array(aware_of_nodes));
         }
         return results$;
       }

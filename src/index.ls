@@ -671,10 +671,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				.then (route_id) !~>
 					@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
 					!~function found_introduction_nodes (new_node_id, new_route_id, command, data)
-						if (
-							!are_arrays_equal(first_node, new_node_id) ||
-							!are_arrays_equal(route_id, new_route_id) ||
-							command != ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE
+						if !(
+							are_arrays_equal(first_node, new_node_id) &&
+							are_arrays_equal(route_id, new_route_id) &&
+							command == ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE
 						)
 							return
 						[code, introduction_target_id, introduction_nodes]	= parse_find_introduction_nodes_response(data)
@@ -711,23 +711,23 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								..set(introduction_payload, SIGNATURE_LENGTH)
 							introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
 							!~function path_confirmation (new_node_id, new_route_id, command, data)
-								if (
-									!are_arrays_equal(first_node, new_node_id) ||
-									!are_arrays_equal(route_id, new_route_id) ||
-									command != ROUTING_COMMAND_CONNECTED
+								if !(
+									are_arrays_equal(first_node, new_node_id) &&
+									are_arrays_equal(route_id, new_route_id) &&
+									command == ROUTING_COMMAND_CONNECTED
 								)
 									return
 								[signature, rendezvous_token_received, handshake_message_received]	= parse_confirm_connection_data(data)
-								if (
-									!are_arrays_equal(rendezvous_token_received, rendezvous_token) ||
-									!detox-crypto['verify'](signature, rendezvous_token, target_id)
+								if !(
+									are_arrays_equal(rendezvous_token_received, rendezvous_token) &&
+									detox-crypto['verify'](signature, rendezvous_token, target_id)
 								)
 									return
 								encryptor_instance['put_handshake_message'](handshake_message_received)
 								@_encryptor_instances.set(full_target_id, encryptor_instance)
 								clearTimeout(path_confirmation_timeout)
 								@_router['off']('data', path_confirmation)
-								@_register_routing_path(real_public_key, target_id, node_id, route_id)
+								@_register_routing_path(real_public_key, target_id, first_node, route_id)
 							@_router['on']('data', path_confirmation)
 							@_router['send_data'](
 								first_node
@@ -891,7 +891,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if aware_of_nodes.length < number_of_nodes
 				return null
 			for i from 0 til number_of_nodes
-				pull_random_item_from_array(aware_of_nodes)[0]
+				pull_random_item_from_array(aware_of_nodes)
 		/**
 		 * @param {!Uint8Array} real_public_key
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
