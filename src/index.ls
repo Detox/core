@@ -237,8 +237,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_connections_timeouts	= new Map
 		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
-		@_announced_to			= new Map
-		@_announcements_from	= new Map
+		@_announcements_from	= ArrayMap()
 		@_forwarding_mapping	= new Map
 		@_pending_pings			= ArraySet()
 		@_encryptor_instances	= new Map
@@ -304,10 +303,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if @_bootstrap_node
 							return
 						[target_id, introduction_message]	= parse_introduce_to_data(data)
-						target_id_string					= target_id.join(',')
-						if !@_announcements_from.has(target_id_string)
+						if !@_announcements_from.has(target_id)
 							return
-						[, target_node_id, target_route_id]	= @_announcements_from.get(target_id_string)
+						[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 					case DHT_COMMAND_GET_NODES_REQUEST
 						# TODO: This is a naive implementation, can be attacked relatively easily
@@ -371,14 +369,14 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							return
 						public_key_string	= public_key.join(',')
 						# If re-announcement, make sure to stop old interval
-						if @_announcements_from.has(public_key_string)
-							clearInterval(@_announcements_from.get(public_key_string)[3])
+						if @_announcements_from.has(public_key)
+							clearInterval(@_announcements_from.get(public_key)[2])
 						announce_interval	= intervalSet(ANNOUNCE_INTERVAL, !~>
 							if !@_routing_paths.has(source_id)
 								return
 							@_dht['publish_announcement_message'](data)
 						)
-						@_announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval])
+						@_announcements_from.set(public_key, [node_id, route_id, announce_interval])
 						@_dht['publish_announcement_message'](data)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
 						if @_bootstrap_node
@@ -942,12 +940,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			@_router['destroy_routing_path'](node_id, route_id)
 			# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
 			@_pending_pings.delete(source_id)
-			@_announcements_from.forEach ([, node_id, route_id, announce_interval], target_id_string_local) !~>
+			@_announcements_from.forEach ([node_id, route_id, announce_interval], target_id) !~>
 				source_id_local	= compute_source_id(node_id, route_id)
 				if source_id != source_id_local
 					return
 				clearInterval(announce_interval)
-				@_announcements_from.delete(target_id_string_local)
+				@_announcements_from.delete(target_id)
 			if !@_routing_path_to_id.has(source_id)
 				return
 			[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)

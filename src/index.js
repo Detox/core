@@ -256,8 +256,7 @@
       this._connections_timeouts = new Map;
       this._routes_timeouts = new Map;
       this._pending_connection = new Map;
-      this._announced_to = new Map;
-      this._announcements_from = new Map;
+      this._announcements_from = ArrayMap();
       this._forwarding_mapping = new Map;
       this._pending_pings = ArraySet();
       this._encryptor_instances = new Map;
@@ -321,7 +320,7 @@
         this$._connected_nodes['delete'](node_id);
         this$._get_nodes_requested['delete'](node_id);
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
+        var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, i$, len$, i, node, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -331,11 +330,10 @@
             return;
           }
           ref$ = parse_introduce_to_data(data), target_id = ref$[0], introduction_message = ref$[1];
-          target_id_string = target_id.join(',');
-          if (!this$._announcements_from.has(target_id_string)) {
+          if (!this$._announcements_from.has(target_id)) {
             return;
           }
-          ref$ = this$._announcements_from.get(target_id_string), target_node_id = ref$[1], target_route_id = ref$[2];
+          ref$ = this$._announcements_from.get(target_id), target_node_id = ref$[0], target_route_id = ref$[1];
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
           break;
         case DHT_COMMAND_GET_NODES_REQUEST:
@@ -405,8 +403,8 @@
             return;
           }
           public_key_string = public_key.join(',');
-          if (this$._announcements_from.has(public_key_string)) {
-            clearInterval(this$._announcements_from.get(public_key_string)[3]);
+          if (this$._announcements_from.has(public_key)) {
+            clearInterval(this$._announcements_from.get(public_key)[2]);
           }
           announce_interval = intervalSet(ANNOUNCE_INTERVAL, function(){
             if (!this$._routing_paths.has(source_id)) {
@@ -414,7 +412,7 @@
             }
             this$._dht['publish_announcement_message'](data);
           });
-          this$._announcements_from.set(public_key_string, [public_key, node_id, route_id, announce_interval]);
+          this$._announcements_from.set(public_key, [node_id, route_id, announce_interval]);
           this$._dht['publish_announcement_message'](data);
           break;
         case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
@@ -1035,15 +1033,15 @@
         this._routing_paths['delete'](source_id);
         this._router['destroy_routing_path'](node_id, route_id);
         this._pending_pings['delete'](source_id);
-        this._announcements_from.forEach(function(arg$, target_id_string_local){
+        this._announcements_from.forEach(function(arg$, target_id){
           var node_id, route_id, announce_interval, source_id_local;
-          node_id = arg$[1], route_id = arg$[2], announce_interval = arg$[3];
+          node_id = arg$[0], route_id = arg$[1], announce_interval = arg$[2];
           source_id_local = compute_source_id(node_id, route_id);
           if (source_id !== source_id_local) {
             return;
           }
           clearInterval(announce_interval);
-          this$._announcements_from['delete'](target_id_string_local);
+          this$._announcements_from['delete'](target_id);
         });
         if (!this._routing_path_to_id.has(source_id)) {
           return;
