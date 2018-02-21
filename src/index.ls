@@ -241,8 +241,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_forwarding_mapping	= ArrayMap()
 		@_pending_pings			= ArraySet()
 		@_encryptor_instances	= new Map
-		@_multiplexers			= new Map
-		@_demultiplexers		= new Map
+		@_multiplexers			= ArrayMap()
+		@_demultiplexers		= ArrayMap()
 		@_pending_sending		= new Map
 
 		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
@@ -513,10 +513,11 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
 							real_public_key_string			= real_public_key.join(',')
 							target_id_string				= target_id.join(',')
+							full_target_id					= concat_arrays([real_public_key, target_id])
 							encryptor_instance				= @_encryptor_instances.get(real_public_key_string + target_id_string)
 							if !encryptor_instance
 								return
-							demultiplexer		= @_demultiplexers.get(real_public_key_string + target_id_string)
+							demultiplexer		= @_demultiplexers.get(full_target_id)
 							if !demultiplexer
 								return
 							data_decrypted		= encryptor_instance['decrypt'](data)
@@ -778,10 +779,11 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		'send_to' : (real_public_key, target_id, command, data) !->
 			real_public_key_string	= real_public_key.join(',')
 			target_id_string		= target_id.join(',')
+			full_target_id			= concat_arrays([real_public_key, target_id])
 			encryptor_instance		= @_encryptor_instances.get(real_public_key_string + target_id_string)
 			if !encryptor_instance || data.length > @_max_data_size
 				return
-			multiplexer			= @_multiplexers.get(real_public_key_string + target_id_string)
+			multiplexer			= @_multiplexers.get(full_target_id)
 			if !multiplexer
 				return
 			data_with_header	= new Uint8Array(data.length + 1)
@@ -926,8 +928,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			@_routing_path_to_id.set(source_id, [real_public_key, target_id])
 			# Make sure each chunk after encryption will fit perfectly into DHT packet
 			# Multiplexer/demultiplexer pair is not needed for introduction node, but for simplicity we'll create it anyway
-			@_multiplexers.set(real_public_key_string + target_id_string, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
-			@_demultiplexers.set(real_public_key_string + target_id_string, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
+			@_multiplexers.set(full_target_id, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
+			@_demultiplexers.set(full_target_id, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
 			@'fire'('connected', real_public_key, target_id)
 		/**
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
@@ -964,8 +966,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if encryptor_instance
 				encryptor_instance['destroy']()
 				@_encryptor_instances.delete(target_id_string)
-			@_multiplexers.delete(target_id_string)
-			@_demultiplexers.delete(target_id_string)
+			@_multiplexers.delete(full_target_id)
+			@_demultiplexers.delete(full_target_id)
 			@'fire'('disconnected', real_public_key, target_id)
 		/**
 		 * @param {!Uint8Array}	node_id

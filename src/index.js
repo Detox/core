@@ -260,8 +260,8 @@
       this._forwarding_mapping = ArrayMap();
       this._pending_pings = ArraySet();
       this._encryptor_instances = new Map;
-      this._multiplexers = new Map;
-      this._demultiplexers = new Map;
+      this._multiplexers = ArrayMap();
+      this._demultiplexers = ArrayMap();
       this._pending_sending = new Map;
       this._cleanup_interval = intervalSet(LAST_USED_TIMEOUT, function(){
         var unused_older_than;
@@ -547,11 +547,12 @@
             ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
             real_public_key_string = real_public_key.join(',');
             target_id_string = target_id.join(',');
+            full_target_id = concat_arrays([real_public_key, target_id]);
             encryptor_instance = this$._encryptor_instances.get(real_public_key_string + target_id_string);
             if (!encryptor_instance) {
               return;
             }
-            demultiplexer = this$._demultiplexers.get(real_public_key_string + target_id_string);
+            demultiplexer = this$._demultiplexers.get(full_target_id);
             if (!demultiplexer) {
               return;
             }
@@ -816,14 +817,15 @@
        * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
        */,
       'send_to': function(real_public_key, target_id, command, data){
-        var real_public_key_string, target_id_string, encryptor_instance, multiplexer, x$, data_with_header, this$ = this;
+        var real_public_key_string, target_id_string, full_target_id, encryptor_instance, multiplexer, x$, data_with_header, this$ = this;
         real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
+        full_target_id = concat_arrays([real_public_key, target_id]);
         encryptor_instance = this._encryptor_instances.get(real_public_key_string + target_id_string);
         if (!encryptor_instance || data.length > this._max_data_size) {
           return;
         }
-        multiplexer = this._multiplexers.get(real_public_key_string + target_id_string);
+        multiplexer = this._multiplexers.get(full_target_id);
         if (!multiplexer) {
           return;
         }
@@ -1014,8 +1016,8 @@
         full_target_id = concat_arrays([real_public_key, target_id]);
         this._id_to_routing_path.set(full_target_id, [node_id, route_id]);
         this._routing_path_to_id.set(source_id, [real_public_key, target_id]);
-        this._multiplexers.set(real_public_key_string + target_id_string, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
-        this._demultiplexers.set(real_public_key_string + target_id_string, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
+        this._multiplexers.set(full_target_id, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
+        this._demultiplexers.set(full_target_id, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
         this['fire']('connected', real_public_key, target_id);
       }
       /**
@@ -1063,8 +1065,8 @@
           encryptor_instance['destroy']();
           this._encryptor_instances['delete'](target_id_string);
         }
-        this._multiplexers['delete'](target_id_string);
-        this._demultiplexers['delete'](target_id_string);
+        this._multiplexers['delete'](full_target_id);
+        this._demultiplexers['delete'](full_target_id);
         this['fire']('disconnected', real_public_key, target_id);
       }
       /**
