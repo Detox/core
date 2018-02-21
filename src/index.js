@@ -47,15 +47,6 @@
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
   ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
   /**
-   * @param {!Uint8Array}	address
-   * @param {!Uint8Array}	route_id
-   *
-   * @return {string}
-   */
-  function compute_source_id(address, route_id){
-    return address.join(',') + route_id.join(',');
-  }
-  /**
    * @param {number}				code
    * @param {!Uint8Array}			target_id
    * @param {!Array<!Uint8Array>}	nodes
@@ -767,7 +758,7 @@
                   return;
                 }
                 ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token_received = ref$[1], handshake_message_received = ref$[2];
-                if (rendezvous_token_received.join(',') !== rendezvous_token.join(',') || !detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
+                if (!are_arrays_equal(rendezvous_token_received, rendezvous_token) || !detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
                   return;
                 }
                 encryptor_instance['put_handshake_message'](handshake_message_received);

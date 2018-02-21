@@ -60,14 +60,6 @@ const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
 const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
 /**
- * @param {!Uint8Array}	address
- * @param {!Uint8Array}	route_id
- *
- * @return {string}
- */
-function compute_source_id (address, route_id)
-	address.join(',') + route_id.join(',')
-/**
  * @param {number}				code
  * @param {!Uint8Array}			target_id
  * @param {!Array<!Uint8Array>}	nodes
@@ -727,7 +719,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 									return
 								[signature, rendezvous_token_received, handshake_message_received]	= parse_confirm_connection_data(data)
 								if (
-									rendezvous_token_received.join(',') != rendezvous_token.join(',') ||
+									!are_arrays_equal(rendezvous_token_received, rendezvous_token) ||
 									!detox-crypto['verify'](signature, rendezvous_token, target_id)
 								)
 									return
