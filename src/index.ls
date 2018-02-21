@@ -231,7 +231,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_get_nodes_requested	= ArraySet()
 		@_routing_paths			= ArrayMap()
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
-		@_id_to_routing_path	= new Map
+		@_id_to_routing_path	= ArrayMap()
 		@_routing_path_to_id	= ArrayMap()
 		@_used_tags				= ArrayMap()
 		@_connections_timeouts	= ArrayMap()
@@ -267,7 +267,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					if last_announcement < reannounce_if_older_than
 						@_announce(real_public_key)
 				announced_to.forEach (introduction_node, introduction_node_string) !~>
-					[node_id, route_id]	= @_id_to_routing_path.get(real_public_key_string + introduction_node_string)
+					full_introduction_node_id	= concat_arrays([real_public_key, introduction_node])
+					[node_id, route_id]			= @_id_to_routing_path.get(full_introduction_node_id)
 					if @_send_ping(node_id, route_id)
 						source_id	= concat_arrays([node_id, route_id])
 						@_pending_pings.add(source_id)
@@ -461,7 +462,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							if !detox-crypto['verify'](signature, for_signature, target_id)
 								return
 							target_id_string	= target_id.join(',')
-							if @_id_to_routing_path.has(real_public_key_string + target_id_string)
+							full_target_id		= concat_arrays([real_public_key, target_id])
+							if @_id_to_routing_path.has(full_target_id)
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
 								return
@@ -672,7 +674,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			real_public_key			= real_keypair['ed25519']['public']
 			real_public_key_string	= real_public_key.join(',')
 			target_id_string		= target_id.join(',')
-			if @_id_to_routing_path.has(real_public_key_string + target_id_string)
+			full_target_id			= concat_arrays([real_public_key, target_id])
+			if @_id_to_routing_path.has(full_target_id)
 				# Already connected, do nothing
 				return null
 			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
@@ -920,7 +923,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if @_routing_path_to_id.has(source_id)
 				# Something went wrong, ignore
 				return
-			@_id_to_routing_path.set(real_public_key_string + target_id_string, [node_id, route_id])
+			full_target_id	= concat_arrays([real_public_key, target_id])
+			@_id_to_routing_path.set(full_target_id, [node_id, route_id])
 			@_routing_path_to_id.set(source_id, [real_public_key, target_id])
 			# Make sure each chunk after encryption will fit perfectly into DHT packet
 			# Multiplexer/demultiplexer pair is not needed for introduction node, but for simplicity we'll create it anyway
@@ -949,8 +953,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
 			real_public_key_string			= real_public_key.join(',')
 			target_id_string				= target_id.join(',')
+			full_target_id					= concat_arrays([real_public_key, target_id])
 			@_routing_path_to_id.delete(source_id)
-			@_id_to_routing_path.delete(real_public_key_string + target_id_string)
+			@_id_to_routing_path.delete(full_target_id)
 			if @_pending_sending.has(real_public_key_string + target_id_string)
 				clearTimeout(@_pending_sending.get(real_public_key_string + target_id_string))
 				@_pending_sending.delete(real_public_key_string + target_id_string)
@@ -993,11 +998,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array}	data
 		 */
 		_send_to_routing_node : (real_public_key, target_id, command, data) !->
-			real_public_key_string	= real_public_key.join(',')
-			target_id_string		= target_id.join(',')
-			if !@_id_to_routing_path.has(real_public_key_string + target_id_string)
+			full_target_id	= concat_arrays([real_public_key, target_id])
+			if !@_id_to_routing_path.has(full_target_id)
 				return
-			[node_id, route_id] = @_id_to_routing_path.get(real_public_key_string + target_id_string)
+			[node_id, route_id] = @_id_to_routing_path.get(full_target_id)
 			@_router['send_data'](node_id, route_id, command, data)
 		/**
 		 * @param {!Uint8Array} node_id
