@@ -232,7 +232,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_routing_paths			= ArrayMap()
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path	= new Map
-		@_routing_path_to_id	= new Map
+		@_routing_path_to_id	= ArrayMap()
 		@_used_tags				= ArrayMap()
 		@_connections_timeouts	= ArrayMap()
 		@_routes_timeouts		= ArrayMap()
@@ -432,10 +432,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
 						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
 					case ROUTING_COMMAND_INTRODUCTION
-						if !@_routing_path_to_id.has(source_id)
+						if !@_routing_path_to_id.has(source_id) #TODO `source_id` should be an array here, but it is still a string
 							# If routing path unknown - ignore
 							return
-						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
+						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id) #TODO `source_id` should be an array here, but it is still a string
 						real_public_key_string					= real_public_key.join(',')
 						introduction_node_string				= introduction_node.join(',')
 						if !@_real_keypairs.has(real_public_key)
@@ -508,8 +508,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if @_forwarding_mapping.has(source_id)
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
 							@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
-						else if @_routing_path_to_id.has(source_id)
-							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
+						else if @_routing_path_to_id.has(source_id) #TODO `source_id` should be an array here, but it is still a string
+							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id) #TODO `source_id` should be an array here, but it is still a string
 							real_public_key_string			= real_public_key.join(',')
 							target_id_string				= target_id.join(',')
 							encryptor_instance				= @_encryptor_instances.get(real_public_key_string + target_id_string)
@@ -526,7 +526,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								command				= data_with_header[0]
 								@'fire'('data', real_public_key, target_id, command, data_with_header.subarray(1))
 					case ROUTING_COMMAND_PING
-						if @_routing_path_to_id.has(source_id)
+						if @_routing_path_to_id.has(source_id) #TODO `source_id` should be an array here, but it is still a string
 							# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
 							if @_pending_pings.has(source_id)
 								# Don't ping back if we have sent ping ourselves
@@ -915,7 +915,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array} route_id		ID of the route on `node_id`
 		 */
 		_register_routing_path : (real_public_key, target_id, node_id, route_id) !->
-			source_id				= compute_source_id(node_id, route_id)
+			source_id				= concat_arrays([node_id, route_id])
 			real_public_key_string	= real_public_key.join(',')
 			target_id_string		= target_id.join(',')
 			if @_routing_path_to_id.has(source_id)
@@ -933,16 +933,15 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
 		 */
 		_unregister_routing_path : (node_id, route_id) !->
-			source_id	= compute_source_id(node_id, route_id)
-			if !@_routing_paths.has(source_id) #TODO `source_id` should be an array here, but it is still a string
+			source_id	= concat_arrays([node_id, route_id])
+			if !@_routing_paths.has(source_id)
 				return
-			@_routing_paths.delete(source_id) #TODO `source_id` should be an array here, but it is still a string
+			@_routing_paths.delete(source_id)
 			@_router['destroy_routing_path'](node_id, route_id)
-			# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
 			@_pending_pings.delete(source_id)
 			@_announcements_from.forEach ([node_id, route_id, announce_interval], target_id) !~>
-				source_id_local	= compute_source_id(node_id, route_id)
-				if source_id != source_id_local
+				source_id_local	= concat_arrays([node_id, route_id])
+				if !are_arrays_equal(source_id, source_id_local)
 					return
 				clearInterval(announce_interval)
 				@_announcements_from.delete(target_id)

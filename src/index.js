@@ -251,7 +251,7 @@
       this._get_nodes_requested = ArraySet();
       this._routing_paths = ArrayMap();
       this._id_to_routing_path = new Map;
-      this._routing_path_to_id = new Map;
+      this._routing_path_to_id = ArrayMap();
       this._used_tags = ArrayMap();
       this._connections_timeouts = ArrayMap();
       this._routes_timeouts = ArrayMap();
@@ -1006,7 +1006,7 @@
        */,
       _register_routing_path: function(real_public_key, target_id, node_id, route_id){
         var source_id, real_public_key_string, target_id_string;
-        source_id = compute_source_id(node_id, route_id);
+        source_id = concat_arrays([node_id, route_id]);
         real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
         if (this._routing_path_to_id.has(source_id)) {
@@ -1024,7 +1024,7 @@
        */,
       _unregister_routing_path: function(node_id, route_id){
         var source_id, ref$, real_public_key, target_id, real_public_key_string, target_id_string, announced_to, encryptor_instance, this$ = this;
-        source_id = compute_source_id(node_id, route_id);
+        source_id = concat_arrays([node_id, route_id]);
         if (!this._routing_paths.has(source_id)) {
           return;
         }
@@ -1034,8 +1034,8 @@
         this._announcements_from.forEach(function(arg$, target_id){
           var node_id, route_id, announce_interval, source_id_local;
           node_id = arg$[0], route_id = arg$[1], announce_interval = arg$[2];
-          source_id_local = compute_source_id(node_id, route_id);
-          if (source_id !== source_id_local) {
+          source_id_local = concat_arrays([node_id, route_id]);
+          if (!are_arrays_equal(source_id, source_id_local)) {
             return;
           }
           clearInterval(announce_interval);
