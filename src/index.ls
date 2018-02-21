@@ -233,7 +233,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path	= new Map
 		@_routing_path_to_id	= new Map
-		@_used_tags				= new Map
+		@_used_tags				= ArrayMap()
 		@_connections_timeouts	= new Map
 		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
@@ -1028,28 +1028,24 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array} node_id
 		 */
 		_add_used_tag : (node_id) !->
-			node_id_string	= node_id.join(',')
-			value			= 0
-			if @_used_tags.has(node_id_string)
-				value = @_used_tags.get(node_id_string)
+			value = @_used_tags.get(node_id) || 0
 			++value
-			@_used_tags.set(node_id_string, value)
+			@_used_tags.set(node_id, value)
 			if value == 1
 				@_dht['add_used_tag'](node_id)
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
 		_del_used_tag : (node_id) !->
-			node_id_string	= node_id.join(',')
-			if !@_used_tags.has(node_id_string)
+			value = @_used_tags.get(node_id)
+			if !value
 				return
-			value = @_used_tags.get(node_id_string)
 			--value
 			if !value
-				@_used_tags.delete(node_id_string)
+				@_used_tags.delete(node_id)
 				@_dht['del_used_tag'](node_id)
 			else
-				@_used_tags.set(node_id_string, value)
+				@_used_tags.set(node_id, value)
 	Core:: = Object.assign(Object.create(async-eventer::), Core::)
 
 	Object.defineProperty(Core::, 'constructor', {enumerable: false, value: Core})

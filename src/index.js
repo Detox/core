@@ -252,7 +252,7 @@
       this._routing_paths = new Map;
       this._id_to_routing_path = new Map;
       this._routing_path_to_id = new Map;
-      this._used_tags = new Map;
+      this._used_tags = ArrayMap();
       this._connections_timeouts = new Map;
       this._routes_timeouts = new Map;
       this._pending_connection = new Map;
@@ -1144,14 +1144,10 @@
        * @param {!Uint8Array} node_id
        */,
       _add_used_tag: function(node_id){
-        var node_id_string, value;
-        node_id_string = node_id.join(',');
-        value = 0;
-        if (this._used_tags.has(node_id_string)) {
-          value = this._used_tags.get(node_id_string);
-        }
+        var value;
+        value = this._used_tags.get(node_id) || 0;
         ++value;
-        this._used_tags.set(node_id_string, value);
+        this._used_tags.set(node_id, value);
         if (value === 1) {
           this._dht['add_used_tag'](node_id);
         }
@@ -1160,18 +1156,17 @@
        * @param {!Uint8Array} node_id
        */,
       _del_used_tag: function(node_id){
-        var node_id_string, value;
-        node_id_string = node_id.join(',');
-        if (!this._used_tags.has(node_id_string)) {
+        var value;
+        value = this._used_tags.get(node_id);
+        if (!value) {
           return;
         }
-        value = this._used_tags.get(node_id_string);
         --value;
         if (!value) {
-          this._used_tags['delete'](node_id_string);
+          this._used_tags['delete'](node_id);
           this._dht['del_used_tag'](node_id);
         } else {
-          this._used_tags.set(node_id_string, value);
+          this._used_tags.set(node_id, value);
         }
       }
     };
