@@ -240,7 +240,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_announcements_from	= ArrayMap()
 		@_forwarding_mapping	= ArrayMap()
 		@_pending_pings			= ArraySet()
-		@_encryptor_instances	= new Map
+		@_encryptor_instances	= ArrayMap()
 		@_multiplexers			= ArrayMap()
 		@_demultiplexers		= ArrayMap()
 		@_pending_sending		= new Map
@@ -260,7 +260,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		)
 		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT, !~>
 			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
-				real_public_key_string	= real_public_key.join(',')
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node
 					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
@@ -368,7 +367,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						public_key	= @_dht['verify_announcement_message'](data)
 						if !public_key
 							return
-						public_key_string	= public_key.join(',')
 						# If re-announcement, make sure to stop old interval
 						if @_announcements_from.has(public_key)
 							clearInterval(@_announcements_from.get(public_key)[2])
@@ -437,7 +435,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							# If routing path unknown - ignore
 							return
 						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
-						real_public_key_string					= real_public_key.join(',')
 						if !@_real_keypairs.has(real_public_key)
 							return
 						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key)
@@ -460,8 +457,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								..set(introduction_payload, ID_LENGTH)
 							if !detox-crypto['verify'](signature, for_signature, target_id)
 								return
-							target_id_string	= target_id.join(',')
-							full_target_id		= concat_arrays([real_public_key, target_id])
+							full_target_id	= concat_arrays([real_public_key, target_id])
 							if @_id_to_routing_path.has(full_target_id)
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
@@ -489,7 +485,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 											encryptor_instance	= detox-crypto['Encryptor'](false, real_keypair['x25519']['private'])
 											encryptor_instance['put_handshake_message'](handshake_message)
 											response_handshake_message	= encryptor_instance['get_handshake_message']()
-											@_encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance)
+											@_encryptor_instances.set(full_target_id, encryptor_instance)
 											@_register_routing_path(real_keypair['ed25519']['public'], target_id, first_node, route_id)
 											signature	= detox-crypto['sign'](rendezvous_token, real_keypair['ed25519']['public'], real_keypair['ed25519']['private'])
 											@_send_to_routing_node(
@@ -511,10 +507,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
 						else if @_routing_path_to_id.has(source_id)
 							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
-							real_public_key_string			= real_public_key.join(',')
-							target_id_string				= target_id.join(',')
 							full_target_id					= concat_arrays([real_public_key, target_id])
-							encryptor_instance				= @_encryptor_instances.get(real_public_key_string + target_id_string)
+							encryptor_instance				= @_encryptor_instances.get(full_target_id)
 							if !encryptor_instance
 								return
 							demultiplexer		= @_demultiplexers.get(full_target_id)
@@ -669,11 +663,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
-			real_keypair			= detox-crypto['create_keypair'](real_key_seed)
-			real_public_key			= real_keypair['ed25519']['public']
-			real_public_key_string	= real_public_key.join(',')
-			target_id_string		= target_id.join(',')
-			full_target_id			= concat_arrays([real_public_key, target_id])
+			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
+			real_public_key	= real_keypair['ed25519']['public']
+			full_target_id	= concat_arrays([real_public_key, target_id])
 			if @_id_to_routing_path.has(full_target_id)
 				# Already connected, do nothing
 				return null
@@ -740,7 +732,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								)
 									return
 								encryptor_instance['put_handshake_message'](handshake_message_received)
-								@_encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance)
+								@_encryptor_instances.set(full_target_id, encryptor_instance)
 								clearTimeout(path_confirmation_timeout)
 								@_router['off']('data', path_confirmation)
 								@_register_routing_path(real_public_key, target_id, node_id, route_id)
@@ -780,7 +772,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			real_public_key_string	= real_public_key.join(',')
 			target_id_string		= target_id.join(',')
 			full_target_id			= concat_arrays([real_public_key, target_id])
-			encryptor_instance		= @_encryptor_instances.get(real_public_key_string + target_id_string)
+			encryptor_instance		= @_encryptor_instances.get(full_target_id)
 			if !encryptor_instance || data.length > @_max_data_size
 				return
 			multiplexer			= @_multiplexers.get(full_target_id)
@@ -917,9 +909,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array} route_id		ID of the route on `node_id`
 		 */
 		_register_routing_path : (real_public_key, target_id, node_id, route_id) !->
-			source_id				= concat_arrays([node_id, route_id])
-			real_public_key_string	= real_public_key.join(',')
-			target_id_string		= target_id.join(',')
+			source_id	= concat_arrays([node_id, route_id])
 			if @_routing_path_to_id.has(source_id)
 				# Something went wrong, ignore
 				return
@@ -962,10 +952,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if @_real_keypairs.has(real_public_key)
 				announced_to	= @_real_keypairs.get(real_public_key)[3]
 				announced_to.delete(target_id)
-			encryptor_instance	= @_encryptor_instances.get(target_id_string)
+			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if encryptor_instance
 				encryptor_instance['destroy']()
-				@_encryptor_instances.delete(target_id_string)
+				@_encryptor_instances.delete(full_target_id)
 			@_multiplexers.delete(full_target_id)
 			@_demultiplexers.delete(full_target_id)
 			@'fire'('disconnected', real_public_key, target_id)

@@ -259,7 +259,7 @@
       this._announcements_from = ArrayMap();
       this._forwarding_mapping = ArrayMap();
       this._pending_pings = ArraySet();
-      this._encryptor_instances = new Map;
+      this._encryptor_instances = ArrayMap();
       this._multiplexers = ArrayMap();
       this._demultiplexers = ArrayMap();
       this._pending_sending = new Map;
@@ -285,9 +285,8 @@
       });
       this._keep_announce_routes_interval = intervalSet(LAST_USED_TIMEOUT, function(){
         this$._real_keypairs.forEach(function(arg$, real_public_key){
-          var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, real_public_key_string, reannounce_if_older_than;
+          var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, reannounce_if_older_than;
           real_keypair = arg$[0], number_of_introduction_nodes = arg$[1], number_of_intermediate_nodes = arg$[2], announced_to = arg$[3], last_announcement = arg$[4];
-          real_public_key_string = real_public_key.join(',');
           if (announced_to.size < number_of_introduction_nodes && last_announcement) {
             reannounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
             if (last_announcement < reannounce_if_older_than) {
@@ -390,7 +389,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, full_target_id, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, full_target_id, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -401,7 +400,6 @@
           if (!public_key) {
             return;
           }
-          public_key_string = public_key.join(',');
           if (this$._announcements_from.has(public_key)) {
             clearInterval(this$._announcements_from.get(public_key)[2]);
           }
@@ -476,7 +474,6 @@
             return;
           }
           ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], introduction_node = ref$[1];
-          real_public_key_string = real_public_key.join(',');
           if (!this$._real_keypairs.has(real_public_key)) {
             return;
           }
@@ -495,7 +492,6 @@
             if (!detoxCrypto['verify'](signature, for_signature, target_id)) {
               return;
             }
-            target_id_string = target_id.join(',');
             full_target_id = concat_arrays([real_public_key, target_id]);
             if (this$._id_to_routing_path.has(full_target_id)) {
               return;
@@ -524,7 +520,7 @@
                 encryptor_instance = detoxCrypto['Encryptor'](false, real_keypair['x25519']['private']);
                 encryptor_instance['put_handshake_message'](handshake_message);
                 response_handshake_message = encryptor_instance['get_handshake_message']();
-                this$._encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance);
+                this$._encryptor_instances.set(full_target_id, encryptor_instance);
                 this$._register_routing_path(real_keypair['ed25519']['public'], target_id, first_node, route_id);
                 signature = detoxCrypto['sign'](rendezvous_token, real_keypair['ed25519']['public'], real_keypair['ed25519']['private']);
                 this$._send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
@@ -545,10 +541,8 @@
             this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
           } else if (this$._routing_path_to_id.has(source_id)) {
             ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
-            real_public_key_string = real_public_key.join(',');
-            target_id_string = target_id.join(',');
             full_target_id = concat_arrays([real_public_key, target_id]);
-            encryptor_instance = this$._encryptor_instances.get(real_public_key_string + target_id_string);
+            encryptor_instance = this$._encryptor_instances.get(full_target_id);
             if (!encryptor_instance) {
               return;
             }
@@ -712,14 +706,12 @@
        * @return {Uint8Array} Real public key or `null` in case of failure
        */,
       'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
-        var real_keypair, real_public_key, real_public_key_string, target_id_string, full_target_id, nodes, first_node, rendezvous_node, this$ = this;
+        var real_keypair, real_public_key, full_target_id, nodes, first_node, rendezvous_node, this$ = this;
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
         real_keypair = detoxCrypto['create_keypair'](real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
-        real_public_key_string = real_public_key.join(',');
-        target_id_string = target_id.join(',');
         full_target_id = concat_arrays([real_public_key, target_id]);
         if (this._id_to_routing_path.has(full_target_id)) {
           return null;
@@ -779,7 +771,7 @@
                   return;
                 }
                 encryptor_instance['put_handshake_message'](handshake_message_received);
-                this$._encryptor_instances.set(real_public_key_string + target_id_string, encryptor_instance);
+                this$._encryptor_instances.set(full_target_id, encryptor_instance);
                 clearTimeout(path_confirmation_timeout);
                 this$._router['off']('data', path_confirmation);
                 this$._register_routing_path(real_public_key, target_id, node_id, route_id);
@@ -821,7 +813,7 @@
         real_public_key_string = real_public_key.join(',');
         target_id_string = target_id.join(',');
         full_target_id = concat_arrays([real_public_key, target_id]);
-        encryptor_instance = this._encryptor_instances.get(real_public_key_string + target_id_string);
+        encryptor_instance = this._encryptor_instances.get(full_target_id);
         if (!encryptor_instance || data.length > this._max_data_size) {
           return;
         }
@@ -1006,10 +998,8 @@
        * @param {!Uint8Array} route_id		ID of the route on `node_id`
        */,
       _register_routing_path: function(real_public_key, target_id, node_id, route_id){
-        var source_id, real_public_key_string, target_id_string, full_target_id;
+        var source_id, full_target_id;
         source_id = concat_arrays([node_id, route_id]);
-        real_public_key_string = real_public_key.join(',');
-        target_id_string = target_id.join(',');
         if (this._routing_path_to_id.has(source_id)) {
           return;
         }
@@ -1060,10 +1050,10 @@
           announced_to = this._real_keypairs.get(real_public_key)[3];
           announced_to['delete'](target_id);
         }
-        encryptor_instance = this._encryptor_instances.get(target_id_string);
+        encryptor_instance = this._encryptor_instances.get(full_target_id);
         if (encryptor_instance) {
           encryptor_instance['destroy']();
-          this._encryptor_instances['delete'](target_id_string);
+          this._encryptor_instances['delete'](full_target_id);
         }
         this._multiplexers['delete'](full_target_id);
         this._demultiplexers['delete'](full_target_id);
