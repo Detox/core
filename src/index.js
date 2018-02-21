@@ -209,11 +209,12 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
+    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
     are_arrays_equal = detoxUtils['are_arrays_equal'];
+    concat_arrays = detoxUtils['concat_arrays'];
     timeoutSet = detoxUtils['timeoutSet'];
     intervalSet = detoxUtils['intervalSet'];
     error_handler = detoxUtils['error_handler'];
@@ -247,7 +248,7 @@
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._connected_nodes = ArraySet();
       this._aware_of_nodes = ArrayMap();
-      this._get_nodes_requested = new Set;
+      this._get_nodes_requested = ArraySet();
       this._routing_paths = new Map;
       this._id_to_routing_path = new Map;
       this._routing_path_to_id = new Map;
@@ -258,7 +259,7 @@
       this._announced_to = new Map;
       this._announcements_from = new Map;
       this._forwarding_mapping = new Map;
-      this._pending_pings = new Set;
+      this._pending_pings = ArraySet();
       this._encryptor_instances = new Map;
       this._multiplexers = new Map;
       this._demultiplexers = new Map;
@@ -299,7 +300,7 @@
             var ref$, node_id, route_id, source_id;
             ref$ = this$._id_to_routing_path.get(real_public_key_string + introduction_node_string), node_id = ref$[0], route_id = ref$[1];
             if (this$._send_ping(node_id, route_id)) {
-              source_id = compute_source_id(node_id, route_id);
+              source_id = concat_arrays([node_id, route_id]);
               this$._pending_pings.add(source_id);
             }
           });
@@ -316,12 +317,10 @@
           this$._get_more_nodes_from(node_id);
         }
       })['on']('node_disconnected', function(node_id){
-        var node_id_string;
-        node_id_string = node_id.join(',');
         this$._connected_nodes['delete'](node_id);
-        this$._get_nodes_requested['delete'](node_id_string);
+        this$._get_nodes_requested['delete'](node_id);
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, node_id_string, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
+        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -350,11 +349,10 @@
           this$._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data);
           break;
         case DHT_COMMAND_GET_NODES_RESPONSE:
-          node_id_string = node_id.join(',');
-          if (!this$._get_nodes_requested.has(node_id_string)) {
+          if (!this$._get_nodes_requested.has(node_id)) {
             return;
           }
-          this$._get_nodes_requested['delete'](node_id_string);
+          this$._get_nodes_requested['delete'](node_id);
           if (!data.length || data.length % ID_LENGTH !== 0) {
             return;
           }
@@ -919,7 +917,7 @@
        * @param {!Uint8Array} node_id
        */,
       _get_more_nodes_from: function(node_id){
-        this._get_nodes_requested.add(node_id.join(','));
+        this._get_nodes_requested.add(node_id);
         this._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0));
       }
       /**
@@ -1124,7 +1122,7 @@
        */,
       _send_ping: function(node_id, route_id){
         var source_id;
-        source_id = compute_source_id(node_id, route_id);
+        source_id = concat_arrays([node_id, route_id]);
         if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
           return false;
         }

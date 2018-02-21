@@ -197,6 +197,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
 	are_arrays_equal			= detox-utils['are_arrays_equal']
+	concat_arrays				= detox-utils['concat_arrays']
 	timeoutSet					= detox-utils['timeoutSet']
 	intervalSet					= detox-utils['intervalSet']
 	error_handler				= detox-utils['error_handler']
@@ -227,7 +228,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 
 		@_connected_nodes		= ArraySet()
 		@_aware_of_nodes		= ArrayMap()
-		@_get_nodes_requested	= new Set
+		@_get_nodes_requested	= ArraySet()
 		@_routing_paths			= new Map
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path	= new Map
@@ -239,7 +240,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_announced_to			= new Map
 		@_announcements_from	= new Map
 		@_forwarding_mapping	= new Map
-		@_pending_pings			= new Set
+		@_pending_pings			= ArraySet()
 		@_encryptor_instances	= new Map
 		@_multiplexers			= new Map
 		@_demultiplexers		= new Map
@@ -268,7 +269,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				announced_to.forEach (introduction_node, introduction_node_string) !~>
 					[node_id, route_id]	= @_id_to_routing_path.get(real_public_key_string + introduction_node_string)
 					if @_send_ping(node_id, route_id)
-						source_id	= compute_source_id(node_id, route_id)
+						source_id	= concat_arrays([node_id, route_id])
 						@_pending_pings.add(source_id)
 		)
 		@_get_more_nodes_interval		= intervalSet(GET_MORE_NODES_INTERVAL, !~>
@@ -290,9 +291,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					@_get_more_nodes_from(node_id)
 			)
 			.'on'('node_disconnected', (node_id) !~>
-				node_id_string	= node_id.join(',')
 				@_connected_nodes.delete(node_id)
-				@_get_nodes_requested.delete(node_id_string)
+				@_get_nodes_requested.delete(node_id)
 			)
 			.'on'('data', (node_id, command, data) !~>
 				switch command
@@ -317,10 +317,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							data.set(node, i * ID_LENGTH)
 						@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data)
 					case DHT_COMMAND_GET_NODES_RESPONSE
-						node_id_string	= node_id.join(',')
-						if !@_get_nodes_requested.has(node_id_string)
+						if !@_get_nodes_requested.has(node_id)
 							return
-						@_get_nodes_requested.delete(node_id_string)
+						@_get_nodes_requested.delete(node_id)
 						if !data.length || data.length % ID_LENGTH != 0
 							return
 						number_of_nodes			= data.length / ID_LENGTH
@@ -529,6 +528,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								@'fire'('data', real_public_key, target_id, command, data_with_header.subarray(1))
 					case ROUTING_COMMAND_PING
 						if @_routing_path_to_id.has(source_id)
+							# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
 							if @_pending_pings.has(source_id)
 								# Don't ping back if we have sent ping ourselves
 								@_pending_pings.delete(source_id)
@@ -851,7 +851,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array} node_id
 		 */
 		_get_more_nodes_from : (node_id) !->
-			@_get_nodes_requested.add(node_id.join(','))
+			@_get_nodes_requested.add(node_id)
 			@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0))
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -941,6 +941,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				return
 			@_routing_paths.delete(source_id)
 			@_router['destroy_routing_path'](node_id, route_id)
+			# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
 			@_pending_pings.delete(source_id)
 			@_announcements_from.forEach ([, node_id, route_id, announce_interval], target_id_string_local) !~>
 				source_id_local	= compute_source_id(node_id, route_id)
@@ -1010,8 +1011,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {boolean} `true` if ping was sent (not necessary delivered)
 		 */
 		_send_ping : (node_id, route_id) ->
-			source_id	= compute_source_id(node_id, route_id)
-			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
+			source_id	= concat_arrays([node_id, route_id])
+			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id) # TODO: `source_id` already an array, but `@_routing_paths` expects a string
 				return false
 			@_router['send_data'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0))
 			true
