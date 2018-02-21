@@ -255,7 +255,7 @@
       this._used_tags = ArrayMap();
       this._connections_timeouts = ArrayMap();
       this._routes_timeouts = ArrayMap();
-      this._pending_connection = new Map;
+      this._pending_connection = ArrayMap();
       this._announcements_from = ArrayMap();
       this._forwarding_mapping = ArrayMap();
       this._pending_pings = ArraySet();
@@ -389,7 +389,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, introduction_node_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, introduction_node_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -445,26 +445,25 @@
             return;
           }
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
-          rendezvous_token_string = rendezvous_token.join(',');
-          if (this$._pending_connection.has(rendezvous_token_string)) {
+          if (this$._pending_connection.has(rendezvous_token)) {
             return;
           }
           connection_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
-            this$._pending_connection['delete'](rendezvous_token_string);
+            this$._pending_connection['delete'](rendezvous_token);
           });
-          this$._pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout]);
+          this$._pending_connection.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout]);
           this$._send_to_dht_node(introduction_node, DHT_COMMAND_FORWARD_INTRODUCTION, compose_introduce_to_data(target_id, introduction_message));
           break;
         case ROUTING_COMMAND_CONFIRM_CONNECTION:
           ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token = ref$[1], handshake_message = ref$[2];
-          rendezvous_token_string = rendezvous_token.join(',');
-          if (!this$._pending_connection.has(rendezvous_token_string)) {
+          if (!this$._pending_connection.has(rendezvous_token)) {
             return;
           }
-          ref$ = this$._pending_connection.get(rendezvous_token_string), target_node_id = ref$[0], target_route_id = ref$[1], target_id = ref$[2], connection_timeout = ref$[3];
+          ref$ = this$._pending_connection.get(rendezvous_token), target_node_id = ref$[0], target_route_id = ref$[1], target_id = ref$[2], connection_timeout = ref$[3];
           if (!detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
             return;
           }
+          this$._pending_connection['delete'](rendezvous_token);
           clearTimeout(connection_timeout);
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
           target_source_id = concat_arrays([target_node_id, target_route_id]);

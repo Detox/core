@@ -236,7 +236,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_used_tags				= ArrayMap()
 		@_connections_timeouts	= ArrayMap()
 		@_routes_timeouts		= ArrayMap()
-		@_pending_connection	= new Map
+		@_pending_connection	= ArrayMap()
 		@_announcements_from	= ArrayMap()
 		@_forwarding_mapping	= ArrayMap()
 		@_pending_pings			= ArraySet()
@@ -405,14 +405,13 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if @_bootstrap_node
 							return
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
-						rendezvous_token_string													= rendezvous_token.join(',')
-						if @_pending_connection.has(rendezvous_token_string)
+						if @_pending_connection.has(rendezvous_token)
 							# Ignore subsequent usages of the same rendezvous token
 							return
 						connection_timeout														= timeoutSet(CONNECTION_TIMEOUT, !~>
-							@_pending_connection.delete(rendezvous_token_string)
+							@_pending_connection.delete(rendezvous_token)
 						)
-						@_pending_connection.set(rendezvous_token_string, [node_id, route_id, target_id, connection_timeout])
+						@_pending_connection.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout])
 						@_send_to_dht_node(
 							introduction_node
 							DHT_COMMAND_FORWARD_INTRODUCTION
@@ -420,12 +419,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						)
 					case ROUTING_COMMAND_CONFIRM_CONNECTION
 						[signature, rendezvous_token, handshake_message]	= parse_confirm_connection_data(data)
-						rendezvous_token_string								= rendezvous_token.join(',')
-						if !@_pending_connection.has(rendezvous_token_string)
+						if !@_pending_connection.has(rendezvous_token)
 							return
-						[target_node_id, target_route_id, target_id, connection_timeout]	= @_pending_connection.get(rendezvous_token_string)
+						[target_node_id, target_route_id, target_id, connection_timeout]	= @_pending_connection.get(rendezvous_token)
 						if !detox-crypto['verify'](signature, rendezvous_token, target_id)
 							return
+						@_pending_connection.delete(rendezvous_token)
 						clearTimeout(connection_timeout)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
 						target_source_id	= concat_arrays([target_node_id, target_route_id])
