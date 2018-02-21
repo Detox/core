@@ -243,7 +243,7 @@
         return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments);
       }
       asyncEventer.call(this);
-      this._real_keypairs = new Map;
+      this._real_keypairs = ArrayMap();
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._connected_nodes = ArraySet();
@@ -287,13 +287,14 @@
         });
       });
       this._keep_announce_routes_interval = intervalSet(LAST_USED_TIMEOUT, function(){
-        this$._real_keypairs.forEach(function(arg$, real_public_key_string){
-          var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, reannounce_if_older_than;
+        this$._real_keypairs.forEach(function(arg$, real_public_key){
+          var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, real_public_key_string, reannounce_if_older_than;
           real_keypair = arg$[0], number_of_introduction_nodes = arg$[1], number_of_intermediate_nodes = arg$[2], announced_to = arg$[3], last_announcement = arg$[4];
+          real_public_key_string = real_public_key.join(',');
           if (announced_to.size < number_of_introduction_nodes && last_announcement) {
             reannounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
             if (last_announcement < reannounce_if_older_than) {
-              this$._announce(real_public_key_string);
+              this$._announce(real_public_key);
             }
           }
           announced_to.forEach(function(introduction_node, introduction_node_string){
@@ -481,10 +482,10 @@
           ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], introduction_node = ref$[1];
           real_public_key_string = real_public_key.join(',');
           introduction_node_string = introduction_node.join(',');
-          if (!this$._real_keypairs.has(real_public_key_string)) {
+          if (!this$._real_keypairs.has(real_public_key)) {
             return;
           }
-          ref$ = this$._real_keypairs.get(real_public_key_string), real_keypair = ref$[0], announced_to = ref$[3];
+          ref$ = this$._real_keypairs.get(real_public_key), real_keypair = ref$[0], announced_to = ref$[3];
           if (!announced_to.has(introduction_node_string)) {
             return;
           }
@@ -617,24 +618,22 @@
        * @return {Uint8Array} Real public key or `null` in case of failure
        */,
       'announce': function(real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes){
-        var real_keypair, real_public_key, real_public_key_string;
+        var real_keypair, real_public_key;
         real_keypair = detoxCrypto['create_keypair'](real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
-        real_public_key_string = real_public_key.join(',');
-        if (this._real_keypairs.has(real_public_key_string)) {
+        if (this._real_keypairs.has(real_public_key)) {
           return null;
         }
-        this._real_keypairs.set(real_public_key_string, [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]);
-        this._announce(real_public_key_string);
+        this._real_keypairs.set(real_public_key, [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]);
+        this._announce(real_public_key);
         return real_public_key;
       }
       /**
-       * @param {string} real_public_key_string
+       * @param {!Uint8Array} real_public_key
        */,
-      _announce: function(real_public_key_string){
-        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, real_public_key, old_introduction_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
-        ref$ = this._real_keypairs.get(real_public_key_string), real_keypair = ref$[0], number_of_introduction_nodes = ref$[1], number_of_intermediate_nodes = ref$[2], announced_to = ref$[3];
-        real_public_key = real_keypair['ed25519']['public'];
+      _announce: function(real_public_key){
+        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, old_introduction_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
+        ref$ = this._real_keypairs.get(real_public_key), real_keypair = ref$[0], number_of_introduction_nodes = ref$[1], number_of_intermediate_nodes = ref$[2], announced_to = ref$[3];
         old_introduction_nodes = [];
         announced_to.forEach(function(introduction_node){
           old_introduction_nodes.push(introduction_node);
@@ -643,10 +642,10 @@
         if (!number_of_introduction_nodes) {
           return;
         }
-        this._update_last_announcement(real_public_key_string, +new Date);
+        this._update_last_announcement(real_public_key, +new Date);
         introduction_nodes = this._pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes);
         if (!introduction_nodes) {
-          this._update_last_announcement(real_public_key_string, 1);
+          this._update_last_announcement(real_public_key, 1);
           this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
           return;
         }
@@ -665,7 +664,7 @@
             return;
           }
           if (!introduction_nodes_confirmed.length) {
-            this$._update_last_announcement(real_public_key_string, 1);
+            this$._update_last_announcement(real_public_key, 1);
             this$['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED);
             return;
           }
@@ -702,11 +701,11 @@
         }
       }
       /**
-       * @param {string} real_public_key_string
-       * @param {number} value
+       * @param {!Uint8Array}	real_public_key
+       * @param {number}		value
        */,
-      _update_last_announcement: function(real_public_key_string, value){
-        this._real_keypairs.get(real_public_key_string)[4] = value;
+      _update_last_announcement: function(real_public_key, value){
+        this._real_keypairs.get(real_public_key)[4] = value;
       }
       /**
        * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
@@ -1058,8 +1057,8 @@
           clearTimeout(this._pending_sending.get(real_public_key_string + target_id_string));
           this._pending_sending['delete'](real_public_key_string + target_id_string);
         }
-        if (this._real_keypairs.has(real_public_key_string)) {
-          announced_to = this._real_keypairs.get(real_public_key_string)[3];
+        if (this._real_keypairs.has(real_public_key)) {
+          announced_to = this._real_keypairs.get(real_public_key)[3];
           announced_to['delete'](target_id_string);
         }
         encryptor_instance = this._encryptor_instances.get(target_id_string);

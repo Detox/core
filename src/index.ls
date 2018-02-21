@@ -222,7 +222,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments)
 		async-eventer.call(@)
 
-		@_real_keypairs	= new Map
+		@_real_keypairs	= ArrayMap()
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
@@ -260,12 +260,13 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					@_connections_timeouts.delete(node_id_string)
 		)
 		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT, !~>
-			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key_string) !~>
+			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
+				real_public_key_string	= real_public_key.join(',')
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node
 					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
 					if last_announcement < reannounce_if_older_than
-						@_announce(real_public_key_string)
+						@_announce(real_public_key)
 				announced_to.forEach (introduction_node, introduction_node_string) !~>
 					[node_id, route_id]	= @_id_to_routing_path.get(real_public_key_string + introduction_node_string)
 					if @_send_ping(node_id, route_id)
@@ -439,9 +440,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
 						real_public_key_string					= real_public_key.join(',')
 						introduction_node_string				= introduction_node.join(',')
-						if !@_real_keypairs.has(real_public_key_string)
+						if !@_real_keypairs.has(real_public_key)
 							return
-						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key_string)
+						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key)
 						if !announced_to.has(introduction_node_string)
 							return
 						try
@@ -576,39 +577,37 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'announce' : (real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes) ->
-			real_keypair			= detox-crypto['create_keypair'](real_key_seed)
-			real_public_key			= real_keypair['ed25519']['public']
-			real_public_key_string	= real_public_key.join(',')
+			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
+			real_public_key	= real_keypair['ed25519']['public']
 			# Ignore repeated announcement
-			if @_real_keypairs.has(real_public_key_string)
+			if @_real_keypairs.has(real_public_key)
 				return null
 			@_real_keypairs.set(
-				real_public_key_string
+				real_public_key
 				[real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]
 			)
-			@_announce(real_public_key_string)
+			@_announce(real_public_key)
 			real_public_key
 		/**
-		 * @param {string} real_public_key_string
+		 * @param {!Uint8Array} real_public_key
 		 */
-		_announce : (real_public_key_string) !->
+		_announce : (real_public_key) !->
 			[
 				real_keypair
 				number_of_introduction_nodes
 				number_of_intermediate_nodes
 				announced_to
-			]								= @_real_keypairs.get(real_public_key_string)
-			real_public_key					= real_keypair['ed25519']['public']
+			]								= @_real_keypairs.get(real_public_key)
 			old_introduction_nodes			= []
 			announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
 			number_of_introduction_nodes	= number_of_introduction_nodes - old_introduction_nodes.length
 			if !number_of_introduction_nodes
 				return
-			@_update_last_announcement(real_public_key_string, +(new Date))
+			@_update_last_announcement(real_public_key, +(new Date))
 			introduction_nodes				= @_pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes)
 			if !introduction_nodes
-				@_update_last_announcement(real_public_key_string, 1)
+				@_update_last_announcement(real_public_key, 1)
 				@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
 				return
 			introductions_pending			= number_of_introduction_nodes
@@ -623,7 +622,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				if introductions_pending
 					return
 				if !introduction_nodes_confirmed.length
-					@_update_last_announcement(real_public_key_string, 1)
+					@_update_last_announcement(real_public_key, 1)
 					@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED)
 					return
 				# Add old introduction nodes to the list
@@ -654,11 +653,11 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						error_handler(error)
 						announced()
 		/**
-		 * @param {string} real_public_key_string
-		 * @param {number} value
+		 * @param {!Uint8Array}	real_public_key
+		 * @param {number}		value
 		 */
-		_update_last_announcement : (real_public_key_string, value) !->
-			@_real_keypairs.get(real_public_key_string)[4]	= value
+		_update_last_announcement : (real_public_key, value) !->
+			@_real_keypairs.get(real_public_key)[4]	= value
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
@@ -959,8 +958,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if @_pending_sending.has(real_public_key_string + target_id_string)
 				clearTimeout(@_pending_sending.get(real_public_key_string + target_id_string))
 				@_pending_sending.delete(real_public_key_string + target_id_string)
-			if @_real_keypairs.has(real_public_key_string)
-				announced_to	= @_real_keypairs.get(real_public_key_string)[3]
+			if @_real_keypairs.has(real_public_key)
+				announced_to	= @_real_keypairs.get(real_public_key)[3]
 				announced_to.delete(target_id_string)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if encryptor_instance
