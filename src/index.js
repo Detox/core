@@ -253,7 +253,7 @@
       this._id_to_routing_path = new Map;
       this._routing_path_to_id = new Map;
       this._used_tags = ArrayMap();
-      this._connections_timeouts = new Map;
+      this._connections_timeouts = ArrayMap();
       this._routes_timeouts = new Map;
       this._pending_connection = new Map;
       this._announcements_from = ArrayMap();
@@ -276,12 +276,10 @@
             this$._routes_timeouts['delete'](source_id);
           }
         });
-        this$._connections_timeouts.forEach(function(arg$, node_id_string){
-          var last_updated, node_id;
-          last_updated = arg$[0], node_id = arg$[1];
+        this$._connections_timeouts.forEach(function(last_updated, node_id){
           if (last_updated < unused_older_than) {
             this$._del_used_tag(node_id);
-            this$._connections_timeouts['delete'](node_id_string);
+            this$._connections_timeouts['delete'](node_id);
           }
         });
       });
@@ -1130,12 +1128,10 @@
        * @param {!Uint8Array} node_id
        */,
       _update_connection_timeout: function(node_id){
-        var node_id_string;
-        node_id_string = node_id.join(',');
-        if (!this._connections_timeouts.has(node_id_string)) {
+        if (!this._connections_timeouts.has(node_id)) {
           this._add_used_tag(node_id);
         }
-        this._connections_timeouts.set(node_id_string, [+new Date, node_id]);
+        this._connections_timeouts.set(node_id, +new Date);
       }
       /**
        * @param {!Uint8Array} node_id

@@ -234,7 +234,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_id_to_routing_path	= new Map
 		@_routing_path_to_id	= new Map
 		@_used_tags				= ArrayMap()
-		@_connections_timeouts	= new Map
+		@_connections_timeouts	= ArrayMap()
 		@_routes_timeouts		= new Map
 		@_pending_connection	= new Map
 		@_announcements_from	= ArrayMap()
@@ -253,10 +253,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						[node_id, route_id]	= @_routing_paths.get(source_id)
 						@_unregister_routing_path(node_id, route_id)
 					@_routes_timeouts.delete(source_id)
-			@_connections_timeouts.forEach ([last_updated, node_id], node_id_string) !~>
+			@_connections_timeouts.forEach (last_updated, node_id) !~>
 				if last_updated < unused_older_than
 					@_del_used_tag(node_id)
-					@_connections_timeouts.delete(node_id_string)
+					@_connections_timeouts.delete(node_id)
 		)
 		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT, !~>
 			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
@@ -1017,10 +1017,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array} node_id
 		 */
 		_update_connection_timeout : (node_id) !->
-			node_id_string	= node_id.join(',')
-			if !@_connections_timeouts.has(node_id_string)
+			if !@_connections_timeouts.has(node_id)
 				@_add_used_tag(node_id)
-			@_connections_timeouts.set(node_id_string, [+(new Date), node_id])
+			@_connections_timeouts.set(node_id, +(new Date))
 		/**
 		 * @param {!Uint8Array} node_id
 		 */
