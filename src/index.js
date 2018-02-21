@@ -254,7 +254,7 @@
       this._routing_path_to_id = new Map;
       this._used_tags = ArrayMap();
       this._connections_timeouts = ArrayMap();
-      this._routes_timeouts = new Map;
+      this._routes_timeouts = ArrayMap();
       this._pending_connection = new Map;
       this._announcements_from = ArrayMap();
       this._forwarding_mapping = new Map;
@@ -380,7 +380,7 @@
       });
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
         var source_id;
-        source_id = compute_source_id(node_id, route_id);
+        source_id = concat_arrays([node_id, route_id]);
         if (!this$._routing_paths.has(source_id)) {
           this$._routing_paths.set(source_id, [node_id, route_id]);
         }

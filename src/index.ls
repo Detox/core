@@ -235,7 +235,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_routing_path_to_id	= new Map
 		@_used_tags				= ArrayMap()
 		@_connections_timeouts	= ArrayMap()
-		@_routes_timeouts		= new Map
+		@_routes_timeouts		= ArrayMap()
 		@_pending_connection	= new Map
 		@_announcements_from	= ArrayMap()
 		@_forwarding_mapping	= new Map
@@ -249,9 +249,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
 			@_routes_timeouts.forEach (last_updated, source_id) !~>
 				if last_updated < unused_older_than
-					if @_routing_paths.has(source_id)
-						[node_id, route_id]	= @_routing_paths.get(source_id)
-						@_unregister_routing_path(node_id, route_id)
+					if @_routing_paths.has(source_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
+						[node_id, route_id]	= @_routing_paths.get(source_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
+						@_unregister_routing_path(node_id, route_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
 					@_routes_timeouts.delete(source_id)
 			@_connections_timeouts.forEach (last_updated, node_id) !~>
 				if last_updated < unused_older_than
@@ -349,9 +349,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 			.'on'('activity', (node_id, route_id) !~>
-				source_id	= compute_source_id(node_id, route_id)
-				if !@_routing_paths.has(source_id)
-					@_routing_paths.set(source_id, [node_id, route_id])
+				source_id	= concat_arrays([node_id, route_id])
+				if !@_routing_paths.has(source_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
+					@_routing_paths.set(source_id, [node_id, route_id]) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
 				@_update_connection_timeout(node_id)
 				@_routes_timeouts.set(source_id, +(new Date))
 			)
