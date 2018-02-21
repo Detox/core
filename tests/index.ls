@@ -104,12 +104,12 @@ test('Core', (t) !->
 					destroy_nodes()
 				)
 
-				console.log 'Preparing for connection (15s)...'
+				console.log 'Preparing for connection (5s)...'
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
 					node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 2)
-				), 15000
+				), 5000
 			)
 			.once('announcement_failed', (, reason) !->
 				t.fail('Announcement failed with code ' + reason)
@@ -117,9 +117,9 @@ test('Core', (t) !->
 				destroy_nodes()
 			)
 
-		console.log 'Preparing for announcement (10s)...'
+		console.log 'Preparing for announcement (2s)...'
 		setTimeout (!->
 			console.log 'Announcing...'
 			node_1.announce(node_1_real_seed, 2, 1)
-		), 10000
+		), 2000
 )
