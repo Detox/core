@@ -229,7 +229,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_connected_nodes		= ArraySet()
 		@_aware_of_nodes		= ArrayMap()
 		@_get_nodes_requested	= ArraySet()
-		@_routing_paths			= new Map
+		@_routing_paths			= ArrayMap()
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path	= new Map
 		@_routing_path_to_id	= new Map
@@ -249,9 +249,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
 			@_routes_timeouts.forEach (last_updated, source_id) !~>
 				if last_updated < unused_older_than
-					if @_routing_paths.has(source_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
-						[node_id, route_id]	= @_routing_paths.get(source_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
-						@_unregister_routing_path(node_id, route_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
+					if @_routing_paths.has(source_id)
+						[node_id, route_id]	= @_routing_paths.get(source_id)
+						@_unregister_routing_path(node_id, route_id)
 					@_routes_timeouts.delete(source_id)
 			@_connections_timeouts.forEach (last_updated, node_id) !~>
 				if last_updated < unused_older_than
@@ -350,8 +350,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= concat_arrays([node_id, route_id])
-				if !@_routing_paths.has(source_id) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
-					@_routing_paths.set(source_id, [node_id, route_id]) # TODO: `source_id` is an array here already, but `@_routing_paths` still expects a string
+				if !@_routing_paths.has(source_id)
+					@_routing_paths.set(source_id, [node_id, route_id])
 				@_update_connection_timeout(node_id)
 				@_routes_timeouts.set(source_id, +(new Date))
 			)
@@ -372,7 +372,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if @_announcements_from.has(public_key)
 							clearInterval(@_announcements_from.get(public_key)[2])
 						announce_interval	= intervalSet(ANNOUNCE_INTERVAL, !~>
-							if !@_routing_paths.has(source_id)
+							if !@_routing_paths.has(source_id) #TODO `source_id` should be an array here, but it is still a string
 								return
 							@_dht['publish_announcement_message'](data)
 						)
@@ -934,9 +934,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 */
 		_unregister_routing_path : (node_id, route_id) !->
 			source_id	= compute_source_id(node_id, route_id)
-			if !@_routing_paths.has(source_id)
+			if !@_routing_paths.has(source_id) #TODO `source_id` should be an array here, but it is still a string
 				return
-			@_routing_paths.delete(source_id)
+			@_routing_paths.delete(source_id) #TODO `source_id` should be an array here, but it is still a string
 			@_router['destroy_routing_path'](node_id, route_id)
 			# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
 			@_pending_pings.delete(source_id)
@@ -1009,7 +1009,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 */
 		_send_ping : (node_id, route_id) ->
 			source_id	= concat_arrays([node_id, route_id])
-			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id) # TODO: `source_id` already an array, but `@_routing_paths` expects a string
+			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
 			@_router['send_data'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0))
 			true

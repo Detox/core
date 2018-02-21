@@ -249,7 +249,7 @@
       this._connected_nodes = ArraySet();
       this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
-      this._routing_paths = new Map;
+      this._routing_paths = ArrayMap();
       this._id_to_routing_path = new Map;
       this._routing_path_to_id = new Map;
       this._used_tags = ArrayMap();
