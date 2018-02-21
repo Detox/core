@@ -257,7 +257,7 @@
       this._routes_timeouts = ArrayMap();
       this._pending_connection = new Map;
       this._announcements_from = ArrayMap();
-      this._forwarding_mapping = new Map;
+      this._forwarding_mapping = ArrayMap();
       this._pending_pings = ArraySet();
       this._encryptor_instances = new Map;
       this._multiplexers = new Map;
@@ -390,7 +390,7 @@
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
         var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, rendezvous_token_string, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, introduction_node_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
-        source_id = compute_source_id(node_id, route_id);
+        source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
           if (this$._bootstrap_node) {
@@ -467,7 +467,7 @@
           }
           clearTimeout(connection_timeout);
           this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
-          target_source_id = compute_source_id(target_node_id, target_route_id);
+          target_source_id = concat_arrays([target_node_id, target_route_id]);
           this$._forwarding_mapping.set(source_id, [target_node_id, target_route_id]);
           this$._forwarding_mapping.set(target_source_id, [node_id, route_id]);
           break;

@@ -238,7 +238,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_routes_timeouts		= ArrayMap()
 		@_pending_connection	= new Map
 		@_announcements_from	= ArrayMap()
-		@_forwarding_mapping	= new Map
+		@_forwarding_mapping	= ArrayMap()
 		@_pending_pings			= ArraySet()
 		@_encryptor_instances	= new Map
 		@_multiplexers			= new Map
@@ -359,7 +359,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				@_send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
-				source_id	= compute_source_id(node_id, route_id)
+				source_id	= concat_arrays([node_id, route_id])
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
 						if @_bootstrap_node
@@ -372,7 +372,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if @_announcements_from.has(public_key)
 							clearInterval(@_announcements_from.get(public_key)[2])
 						announce_interval	= intervalSet(ANNOUNCE_INTERVAL, !~>
-							if !@_routing_paths.has(source_id) #TODO `source_id` should be an array here, but it is still a string
+							if !@_routing_paths.has(source_id)
 								return
 							@_dht['publish_announcement_message'](data)
 						)
@@ -428,14 +428,15 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							return
 						clearTimeout(connection_timeout)
 						@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
-						target_source_id	= compute_source_id(target_node_id, target_route_id)
+						target_source_id	= concat_arrays([target_node_id, target_route_id])
+						# TODO: There is no cleanup for these
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
 						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
 					case ROUTING_COMMAND_INTRODUCTION
-						if !@_routing_path_to_id.has(source_id) #TODO `source_id` should be an array here, but it is still a string
+						if !@_routing_path_to_id.has(source_id)
 							# If routing path unknown - ignore
 							return
-						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id) #TODO `source_id` should be an array here, but it is still a string
+						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
 						real_public_key_string					= real_public_key.join(',')
 						introduction_node_string				= introduction_node.join(',')
 						if !@_real_keypairs.has(real_public_key)
@@ -508,8 +509,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if @_forwarding_mapping.has(source_id)
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
 							@_router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
-						else if @_routing_path_to_id.has(source_id) #TODO `source_id` should be an array here, but it is still a string
-							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id) #TODO `source_id` should be an array here, but it is still a string
+						else if @_routing_path_to_id.has(source_id)
+							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
 							real_public_key_string			= real_public_key.join(',')
 							target_id_string				= target_id.join(',')
 							encryptor_instance				= @_encryptor_instances.get(real_public_key_string + target_id_string)
@@ -526,8 +527,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								command				= data_with_header[0]
 								@'fire'('data', real_public_key, target_id, command, data_with_header.subarray(1))
 					case ROUTING_COMMAND_PING
-						if @_routing_path_to_id.has(source_id) #TODO `source_id` should be an array here, but it is still a string
-							# TODO: Currently `source_id` is a string, while `@_pending_pings` already uses arrays, make sure to fix this ASAP
+						if @_routing_path_to_id.has(source_id)
 							if @_pending_pings.has(source_id)
 								# Don't ping back if we have sent ping ourselves
 								@_pending_pings.delete(source_id)
