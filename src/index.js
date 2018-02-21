@@ -218,13 +218,14 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, timeoutSet, intervalSet, error_handler;
+    var random_bytes, random_int, pull_random_item_from_array, timeoutSet, intervalSet, error_handler, ArraySet;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
     timeoutSet = detoxUtils['timeoutSet'];
     intervalSet = detoxUtils['intervalSet'];
     error_handler = detoxUtils['error_handler'];
+    ArraySet = detoxUtils['ArraySet'];
     /**
      * @constructor
      *
@@ -251,7 +252,7 @@
       this._real_keypairs = new Map;
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
-      this._connected_nodes = new Map;
+      this._connected_nodes = ArraySet();
       this._aware_of_nodes = new Map;
       this._get_nodes_requested = new Set;
       this._routing_paths = new Map;
@@ -317,14 +318,14 @@
         }
       });
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
-        this$._connected_nodes.set(node_id.join(','), node_id);
+        this$._connected_nodes.add(node_id);
         if (this$._more_nodes_needed()) {
           this$._get_more_nodes_from(node_id);
         }
       })['on']('node_disconnected', function(node_id){
         var node_id_string;
         node_id_string = node_id.join(',');
-        this$._connected_nodes['delete'](node_id_string);
+        this$._connected_nodes['delete'](node_id);
         this$._get_nodes_requested['delete'](node_id_string);
       })['on']('data', function(node_id, command, data){
         var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, node_id_string, number_of_nodes, stale_aware_of_nodes, new_node_id, new_node_id_string, stale_node_to_remove;
@@ -370,7 +371,7 @@
             i = i$;
             new_node_id = data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH);
             new_node_id_string = new_node_id.join(',');
-            if (is_string_equal_to_array(new_node_id_string, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id_string)) {
+            if (is_string_equal_to_array(new_node_id_string, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id)) {
               continue;
             }
             if (this$._aware_of_nodes.has(new_node_id_string) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
@@ -1090,7 +1091,7 @@
       _send_to_dht_node: function(node_id, command, data){
         var node_id_string, connected_timeout, this$ = this;
         node_id_string = node_id.join(',');
-        if (this._connected_nodes.has(node_id_string)) {
+        if (this._connected_nodes.has(node_id)) {
           this._update_connection_timeout(node_id);
           this._dht['send_data'](node_id, command, data);
           return;

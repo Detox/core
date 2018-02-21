@@ -207,6 +207,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	timeoutSet					= detox-utils['timeoutSet']
 	intervalSet					= detox-utils['intervalSet']
 	error_handler				= detox-utils['error_handler']
+	ArraySet					= detox-utils['ArraySet']
 	/**
 	 * @constructor
 	 *
@@ -230,7 +231,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
-		@_connected_nodes		= new Map
+		@_connected_nodes		= ArraySet()
 		@_aware_of_nodes		= new Map
 		@_get_nodes_requested	= new Set
 		@_routing_paths			= new Map
@@ -290,13 +291,13 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			bucket_size
 		)
 			.'on'('node_connected', (node_id) !~>
-				@_connected_nodes.set(node_id.join(','), node_id)
+				@_connected_nodes.add(node_id)
 				if @_more_nodes_needed()
 					@_get_more_nodes_from(node_id)
 			)
 			.'on'('node_disconnected', (node_id) !~>
 				node_id_string	= node_id.join(',')
-				@_connected_nodes.delete(node_id_string)
+				@_connected_nodes.delete(node_id)
 				@_get_nodes_requested.delete(node_id_string)
 			)
 			.'on'('data', (node_id, command, data) !~>
@@ -336,7 +337,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							# Ignore already connected nodes and own ID or if there are enough nodes already
 							if (
 								is_string_equal_to_array(new_node_id_string, @_dht_keypair['ed25519']['public']) ||
-								@_connected_nodes.has(new_node_id_string)
+								@_connected_nodes.has(new_node_id)
 							)
 								continue
 							if @_aware_of_nodes.has(new_node_id_string) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
@@ -982,7 +983,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 */
 		_send_to_dht_node : (node_id, command, data) !->
 			node_id_string	= node_id.join(',')
-			if @_connected_nodes.has(node_id_string)
+			if @_connected_nodes.has(node_id)
 				@_update_connection_timeout(node_id)
 				@_dht['send_data'](node_id, command, data)
 				return
