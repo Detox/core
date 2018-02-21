@@ -243,7 +243,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_encryptor_instances	= ArrayMap()
 		@_multiplexers			= ArrayMap()
 		@_demultiplexers		= ArrayMap()
-		@_pending_sending		= new Map
+		@_pending_sending		= ArrayMap()
 
 		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
@@ -769,10 +769,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
 		'send_to' : (real_public_key, target_id, command, data) !->
-			real_public_key_string	= real_public_key.join(',')
-			target_id_string		= target_id.join(',')
-			full_target_id			= concat_arrays([real_public_key, target_id])
-			encryptor_instance		= @_encryptor_instances.get(full_target_id)
+			full_target_id		= concat_arrays([real_public_key, target_id])
+			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if !encryptor_instance || data.length > @_max_data_size
 				return
 			multiplexer			= @_multiplexers.get(full_target_id)
@@ -782,15 +780,15 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				..set([command])
 				..set(data, 1)
 			multiplexer['feed'](data_with_header)
-			if @_pending_sending.has(real_public_key_string + target_id_string)
+			if @_pending_sending.has(full_target_id)
 				# Timer is already in progress
 				return
 			# It might sometimes happen that we send command with small piece of data and the rest of the block is wasted. Sending data after 0 timeout
 			# allows for a few synchronous `send_to` calls to share the same block if possible in order to use space more efficiently
 			@_pending_sending.set(
-				real_public_key_string + target_id_string
+				full_target_id
 				setTimeout !~>
-					@_pending_sending.delete(real_public_key_string + target_id_string)
+					@_pending_sending.delete(full_target_id)
 					while multiplexer['have_more_blocks']()
 						data_block				= multiplexer['get_block']()
 						data_block_encrypted	= encryptor_instance['encrypt'](data_block)
@@ -941,14 +939,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if !@_routing_path_to_id.has(source_id)
 				return
 			[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
-			real_public_key_string			= real_public_key.join(',')
-			target_id_string				= target_id.join(',')
 			full_target_id					= concat_arrays([real_public_key, target_id])
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(full_target_id)
-			if @_pending_sending.has(real_public_key_string + target_id_string)
-				clearTimeout(@_pending_sending.get(real_public_key_string + target_id_string))
-				@_pending_sending.delete(real_public_key_string + target_id_string)
+			if @_pending_sending.has(full_target_id)
+				clearTimeout(@_pending_sending.get(full_target_id))
+				@_pending_sending.delete(full_target_id)
 			if @_real_keypairs.has(real_public_key)
 				announced_to	= @_real_keypairs.get(real_public_key)[3]
 				announced_to.delete(target_id)

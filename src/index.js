@@ -262,7 +262,7 @@
       this._encryptor_instances = ArrayMap();
       this._multiplexers = ArrayMap();
       this._demultiplexers = ArrayMap();
-      this._pending_sending = new Map;
+      this._pending_sending = ArrayMap();
       this._cleanup_interval = intervalSet(LAST_USED_TIMEOUT, function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
@@ -809,9 +809,7 @@
        * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
        */,
       'send_to': function(real_public_key, target_id, command, data){
-        var real_public_key_string, target_id_string, full_target_id, encryptor_instance, multiplexer, x$, data_with_header, this$ = this;
-        real_public_key_string = real_public_key.join(',');
-        target_id_string = target_id.join(',');
+        var full_target_id, encryptor_instance, multiplexer, x$, data_with_header, this$ = this;
         full_target_id = concat_arrays([real_public_key, target_id]);
         encryptor_instance = this._encryptor_instances.get(full_target_id);
         if (!encryptor_instance || data.length > this._max_data_size) {
@@ -825,12 +823,12 @@
         x$.set([command]);
         x$.set(data, 1);
         multiplexer['feed'](data_with_header);
-        if (this._pending_sending.has(real_public_key_string + target_id_string)) {
+        if (this._pending_sending.has(full_target_id)) {
           return;
         }
-        this._pending_sending.set(real_public_key_string + target_id_string, setTimeout(function(){
+        this._pending_sending.set(full_target_id, setTimeout(function(){
           var data_block, data_block_encrypted;
-          this$._pending_sending['delete'](real_public_key_string + target_id_string);
+          this$._pending_sending['delete'](full_target_id);
           while (multiplexer['have_more_blocks']()) {
             data_block = multiplexer['get_block']();
             data_block_encrypted = encryptor_instance['encrypt'](data_block);
@@ -1015,7 +1013,7 @@
        * @param {!Uint8Array} route_id	ID of the route on `node_id`
        */,
       _unregister_routing_path: function(node_id, route_id){
-        var source_id, ref$, real_public_key, target_id, real_public_key_string, target_id_string, full_target_id, announced_to, encryptor_instance, this$ = this;
+        var source_id, ref$, real_public_key, target_id, full_target_id, announced_to, encryptor_instance, this$ = this;
         source_id = concat_arrays([node_id, route_id]);
         if (!this._routing_paths.has(source_id)) {
           return;
@@ -1037,14 +1035,12 @@
           return;
         }
         ref$ = this._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
-        real_public_key_string = real_public_key.join(',');
-        target_id_string = target_id.join(',');
         full_target_id = concat_arrays([real_public_key, target_id]);
         this._routing_path_to_id['delete'](source_id);
         this._id_to_routing_path['delete'](full_target_id);
-        if (this._pending_sending.has(real_public_key_string + target_id_string)) {
-          clearTimeout(this._pending_sending.get(real_public_key_string + target_id_string));
-          this._pending_sending['delete'](real_public_key_string + target_id_string);
+        if (this._pending_sending.has(full_target_id)) {
+          clearTimeout(this._pending_sending.get(full_target_id));
+          this._pending_sending['delete'](full_target_id);
         }
         if (this._real_keypairs.has(real_public_key)) {
           announced_to = this._real_keypairs.get(real_public_key)[3];
