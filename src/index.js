@@ -8,7 +8,7 @@
   /*
    * Implements version 0.1.0 of the specification
    */
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, randombytes;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
   DHT_COMMAND_GET_NODES_REQUEST = 2;
@@ -46,57 +46,6 @@
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED = 0;
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
   ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
-  /**
-   * Changed order of arguments and delay in seconds for convenience
-   */
-  function timeoutSet(delay, func){
-    return setTimeout(func, delay * 1000);
-  }
-  /**
-   * Changed order of arguments and delay in seconds for convenience
-   */
-  function intervalSet(delay, func){
-    return setInterval(func, delay * 1000);
-  }
-  if (typeof crypto !== 'undefined') {
-    randombytes = function(size){
-      var array;
-      array = new Uint8Array(size);
-      crypto.getRandomValues(array);
-      return array;
-    };
-  } else {
-    randombytes = require('crypto').randomBytes;
-  }
-  /**
-   * @param {number} min
-   * @param {number} max
-   *
-   * @return {number}
-   */
-  function random_int(min, max){
-    var bytes, uint32_number;
-    bytes = randombytes(4);
-    uint32_number = new Uint32Array(bytes.buffer)[0];
-    return Math.floor(uint32_number / Math.pow(2, 32) * (max - min + 1)) + min;
-  }
-  /**
-   * @template T
-   *
-   * @param {!Array<T>} array Returned item will be removed from this array
-   *
-   * @return {T}
-   */
-  function pull_random_item_from_array(array){
-    var length, index;
-    length = array.length;
-    if (length === 1) {
-      return array.pop();
-    } else {
-      index = random_int(0, length - 1);
-      return array.splice(index, 1)[0];
-    }
-  }
   /**
    * @param {!Uint8Array}	address
    * @param {!Uint8Array}	route_id
@@ -268,12 +217,14 @@
     introduction_message = message.subarray(ID_LENGTH);
     return [target_id, introduction_message];
   }
-  function error_handler(error){
-    if (error instanceof Error) {
-      return console.error(error);
-    }
-  }
-  function Wrapper(detoxCrypto, detoxTransport, fixedSizeMultiplexer, asyncEventer){
+  function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
+    var random_bytes, random_int, pull_random_item_from_array, timeoutSet, intervalSet, error_handler;
+    random_bytes = detoxUtils['random_bytes'];
+    random_int = detoxUtils['random_int'];
+    pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
+    timeoutSet = detoxUtils['timeoutSet'];
+    intervalSet = detoxUtils['intervalSet'];
+    error_handler = detoxUtils['error_handler'];
     /**
      * @constructor
      *
@@ -434,9 +385,9 @@
           }
         }
       })['on']('ready', function(){
-        this$._dht['lookup'](randombytes(ID_LENGTH));
-        this$._dht['lookup'](randombytes(ID_LENGTH));
-        this$._dht['lookup'](randombytes(ID_LENGTH));
+        this$._dht['lookup'](random_bytes(ID_LENGTH));
+        this$._dht['lookup'](random_bytes(ID_LENGTH));
+        this$._dht['lookup'](random_bytes(ID_LENGTH));
         this$['fire']('ready');
       });
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
@@ -821,7 +772,7 @@
                 return;
               }
               introduction_node = pull_random_item_from_array(introduction_nodes);
-              rendezvous_token = randombytes(ID_LENGTH);
+              rendezvous_token = random_bytes(ID_LENGTH);
               x25519_public_key = detoxCrypto['convert_public_key'](target_id);
               encryptor_instance = detoxCrypto['Encryptor'](true, x25519_public_key);
               handshake_message = encryptor_instance['get_handshake_message']();
@@ -1013,7 +964,7 @@
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
-          this._dht['lookup'](randombytes(ID_LENGTH));
+          this._dht['lookup'](random_bytes(ID_LENGTH));
           return null;
         }
         connected_nodes = Array.from(this._connected_nodes.values());
@@ -1266,11 +1217,11 @@
     };
   }
   if (typeof define === 'function' && define['amd']) {
-    define(['@detox/crypto', '@detox/transport', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
+    define(['@detox/crypto', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
   } else if (typeof exports === 'object') {
-    module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('fixed-size-multiplexer'), require('async-eventer'));
+    module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
   } else {
-    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['fixed_size_multiplexer'], this['async_eventer']);
+    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
   }
   function in$(x, xs){
     var i = -1, l = xs.length >>> 0;

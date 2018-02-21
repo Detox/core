@@ -60,48 +60,6 @@ const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
 const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
 /**
- * Changed order of arguments and delay in seconds for convenience
- */
-function timeoutSet (delay, func)
-	setTimeout(func, delay * 1000)
-/**
- * Changed order of arguments and delay in seconds for convenience
- */
-function intervalSet (delay, func)
-	setInterval(func, delay * 1000)
-
-if typeof crypto != 'undefined'
-	randombytes	= (size) ->
-		array = new Uint8Array(size)
-		crypto.getRandomValues(array)
-		array
-else
-	randombytes	= require('crypto').randomBytes
-/**
- * @param {number} min
- * @param {number} max
- *
- * @return {number}
- */
-function random_int (min, max)
-	bytes			= randombytes(4)
-	uint32_number	= (new Uint32Array(bytes.buffer))[0]
-	Math.floor(uint32_number / 2**32 * (max - min + 1)) + min
-/**
- * @template T
- *
- * @param {!Array<T>} array Returned item will be removed from this array
- *
- * @return {T}
- */
-function pull_random_item_from_array (array)
-	length	= array.length
-	if length == 1
-		array.pop()
-	else
-		index	= random_int(0, length - 1)
-		array.splice(index, 1)[0]
-/**
  * @param {!Uint8Array}	address
  * @param {!Uint8Array}	route_id
  *
@@ -242,11 +200,13 @@ function parse_introduce_to_data (message)
 	introduction_message	= message.subarray(ID_LENGTH)
 	[target_id, introduction_message]
 
-function error_handler (error)
-	if error instanceof Error
-		console.error(error)
-
-function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-eventer)
+function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
+	random_bytes				= detox-utils['random_bytes']
+	random_int					= detox-utils['random_int']
+	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
+	timeoutSet					= detox-utils['timeoutSet']
+	intervalSet					= detox-utils['intervalSet']
+	error_handler				= detox-utils['error_handler']
 	/**
 	 * @constructor
 	 *
@@ -390,9 +350,9 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 			)
 			.'on'('ready', !~>
 				# Make 3 random lookups on start in order to connect to some nodes
-				@_dht['lookup'](randombytes(ID_LENGTH))
-				@_dht['lookup'](randombytes(ID_LENGTH))
-				@_dht['lookup'](randombytes(ID_LENGTH))
+				@_dht['lookup'](random_bytes(ID_LENGTH))
+				@_dht['lookup'](random_bytes(ID_LENGTH))
+				@_dht['lookup'](random_bytes(ID_LENGTH))
 				@'fire'('ready')
 			)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
@@ -756,7 +716,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 								@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 								return
 							introduction_node				= pull_random_item_from_array(introduction_nodes)
-							rendezvous_token				= randombytes(ID_LENGTH)
+							rendezvous_token				= random_bytes(ID_LENGTH)
 							x25519_public_key				= detox-crypto['convert_public_key'](target_id)
 							encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
 							handshake_message				= encryptor_instance['get_handshake_message']()
@@ -927,7 +887,7 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 		_pick_random_connected_nodes : (up_to_number_of_nodes = 1, exclude_nodes = []) ->
 			if !@_connected_nodes.size
 				# Make random lookup in order to fill DHT with known nodes
-				@_dht['lookup'](randombytes(ID_LENGTH))
+				@_dht['lookup'](random_bytes(ID_LENGTH))
 				return null
 			connected_nodes	= Array.from(@_connected_nodes.values())
 			for bootstrap_node in @'get_bootstrap_nodes'()
@@ -1121,10 +1081,10 @@ function Wrapper (detox-crypto, detox-transport, fixed-size-multiplexer, async-e
 
 if typeof define == 'function' && define['amd']
 	# AMD
-	define(['@detox/crypto', '@detox/transport', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
+	define(['@detox/crypto', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
 else if typeof exports == 'object'
 	# CommonJS
-	module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('fixed-size-multiplexer'), require('async-eventer'))
+	module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'))
 else
 	# Browser globals
-	@'detox_core' = Wrapper(@'detox_crypto', @'detox_transport', @'fixed_size_multiplexer', @'async_eventer')
+	@'detox_core' = Wrapper(@'detox_crypto', @'detox_transport', @'detox_utils', @'fixed_size_multiplexer', @'async_eventer')
