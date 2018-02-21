@@ -56,15 +56,6 @@
     return address.join(',') + route_id.join(',');
   }
   /**
-   * @param {string}		string
-   * @param {!Uint8Array}	array
-   *
-   * @return {boolean}
-   */
-  function is_string_equal_to_array(string, array){
-    return string === array.join(',');
-  }
-  /**
    * @param {number}				code
    * @param {!Uint8Array}			target_id
    * @param {!Array<!Uint8Array>}	nodes
@@ -218,10 +209,11 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, timeoutSet, intervalSet, error_handler, ArraySet;
+    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, timeoutSet, intervalSet, error_handler, ArraySet;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
+    are_arrays_equal = detoxUtils['are_arrays_equal'];
     timeoutSet = detoxUtils['timeoutSet'];
     intervalSet = detoxUtils['intervalSet'];
     error_handler = detoxUtils['error_handler'];
@@ -371,7 +363,7 @@
             i = i$;
             new_node_id = data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH);
             new_node_id_string = new_node_id.join(',');
-            if (is_string_equal_to_array(new_node_id_string, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id)) {
+            if (are_arrays_equal(new_node_id, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id)) {
               continue;
             }
             if (this$._aware_of_nodes.has(new_node_id_string) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
@@ -747,17 +739,15 @@
         first_node = nodes[0];
         rendezvous_node = nodes[nodes.length - 1];
         this._router['construct_routing_path'](nodes).then(function(route_id){
-          var first_node_string, route_id_string, find_introduction_nodes_timeout;
+          var find_introduction_nodes_timeout;
           this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE);
-          first_node_string = first_node.join(',');
-          route_id_string = route_id.join(',');
-          function found_introduction_nodes(node_id, route_id, command, data){
-            var ref$, code, target_id, introduction_nodes;
-            if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(route_id_string, route_id) || command !== ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE) {
+          function found_introduction_nodes(new_node_id, new_route_id, command, data){
+            var ref$, code, introduction_target_id, introduction_nodes;
+            if (!are_arrays_equal(first_node, new_node_id) || !are_arrays_equal(route_id, new_route_id) || command !== ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE) {
               return;
             }
-            ref$ = parse_find_introduction_nodes_response(data), code = ref$[0], target_id = ref$[1], introduction_nodes = ref$[2];
-            if (!is_string_equal_to_array(target_id_string, target_id)) {
+            ref$ = parse_find_introduction_nodes_response(data), code = ref$[0], introduction_target_id = ref$[1], introduction_nodes = ref$[2];
+            if (!are_arrays_equal(target_id, introduction_target_id)) {
               return;
             }
             clearTimeout(find_introduction_nodes_timeout);
@@ -786,9 +776,9 @@
               y$.set(signature);
               y$.set(introduction_payload, SIGNATURE_LENGTH);
               introduction_message_encrypted = detoxCrypto['one_way_encrypt'](x25519_public_key, introduction_message);
-              function path_confirmation(node_id, route_id, command, data){
+              function path_confirmation(new_node_id, new_route_id, command, data){
                 var ref$, signature, rendezvous_token_received, handshake_message_received;
-                if (!is_string_equal_to_array(first_node_string, node_id) || !is_string_equal_to_array(route_id_string, route_id) || command !== ROUTING_COMMAND_CONNECTED) {
+                if (!are_arrays_equal(first_node, new_node_id) || !are_arrays_equal(route_id, new_route_id) || command !== ROUTING_COMMAND_CONNECTED) {
                   return;
                 }
                 ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token_received = ref$[1], handshake_message_received = ref$[2];
@@ -1089,15 +1079,14 @@
        * @param {!Uint8Array}	data
        */,
       _send_to_dht_node: function(node_id, command, data){
-        var node_id_string, connected_timeout, this$ = this;
-        node_id_string = node_id.join(',');
+        var connected_timeout, this$ = this;
         if (this._connected_nodes.has(node_id)) {
           this._update_connection_timeout(node_id);
           this._dht['send_data'](node_id, command, data);
           return;
         }
-        function connected(node_id){
-          if (!is_string_equal_to_array(node_id_string, node_id)) {
+        function connected(new_node_id){
+          if (!are_arrays_equal(node_id, new_node_id)) {
             return;
           }
           clearTimeout(connected_timeout);

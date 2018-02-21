@@ -68,14 +68,6 @@ const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 function compute_source_id (address, route_id)
 	address.join(',') + route_id.join(',')
 /**
- * @param {string}		string
- * @param {!Uint8Array}	array
- *
- * @return {boolean}
- */
-function is_string_equal_to_array (string, array)
-	string == array.join(',')
-/**
  * @param {number}				code
  * @param {!Uint8Array}			target_id
  * @param {!Array<!Uint8Array>}	nodes
@@ -204,6 +196,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	random_bytes				= detox-utils['random_bytes']
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
+	are_arrays_equal			= detox-utils['are_arrays_equal']
 	timeoutSet					= detox-utils['timeoutSet']
 	intervalSet					= detox-utils['intervalSet']
 	error_handler				= detox-utils['error_handler']
@@ -336,7 +329,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							new_node_id_string	= new_node_id.join(',')
 							# Ignore already connected nodes and own ID or if there are enough nodes already
 							if (
-								is_string_equal_to_array(new_node_id_string, @_dht_keypair['ed25519']['public']) ||
+								are_arrays_equal(new_node_id, @_dht_keypair['ed25519']['public']) ||
 								@_connected_nodes.has(new_node_id)
 							)
 								continue
@@ -695,17 +688,15 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			@_router['construct_routing_path'](nodes)
 				.then (route_id) !~>
 					@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
-					first_node_string	= first_node.join(',')
-					route_id_string		= route_id.join(',')
-					!~function found_introduction_nodes (node_id, route_id, command, data)
+					!~function found_introduction_nodes (new_node_id, new_route_id, command, data)
 						if (
-							!is_string_equal_to_array(first_node_string, node_id) ||
-							!is_string_equal_to_array(route_id_string, route_id) ||
+							!are_arrays_equal(first_node, new_node_id) ||
+							!are_arrays_equal(route_id, new_route_id) ||
 							command != ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE
 						)
 							return
-						[code, target_id, introduction_nodes]	= parse_find_introduction_nodes_response(data)
-						if !is_string_equal_to_array(target_id_string, target_id)
+						[code, introduction_target_id, introduction_nodes]	= parse_find_introduction_nodes_response(data)
+						if !are_arrays_equal(target_id, introduction_target_id)
 							return
 						clearTimeout(find_introduction_nodes_timeout)
 						if code != CONNECTION_OK
@@ -737,10 +728,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								..set(signature)
 								..set(introduction_payload, SIGNATURE_LENGTH)
 							introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
-							!~function path_confirmation (node_id, route_id, command, data)
+							!~function path_confirmation (new_node_id, new_route_id, command, data)
 								if (
-									!is_string_equal_to_array(first_node_string, node_id) ||
-									!is_string_equal_to_array(route_id_string, route_id) ||
+									!are_arrays_equal(first_node, new_node_id) ||
+									!are_arrays_equal(route_id, new_route_id) ||
 									command != ROUTING_COMMAND_CONNECTED
 								)
 									return
@@ -982,13 +973,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array}	data
 		 */
 		_send_to_dht_node : (node_id, command, data) !->
-			node_id_string	= node_id.join(',')
 			if @_connected_nodes.has(node_id)
 				@_update_connection_timeout(node_id)
 				@_dht['send_data'](node_id, command, data)
 				return
-			!~function connected (node_id)
-				if !is_string_equal_to_array(node_id_string, node_id)
+			!~function connected (new_node_id)
+				if !are_arrays_equal(node_id, new_node_id)
 					return
 				clearTimeout(connected_timeout)
 				@_dht['off']('node_connected', connected)
