@@ -209,7 +209,7 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, timeoutSet, intervalSet, error_handler, ArraySet;
+    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
@@ -217,6 +217,7 @@
     timeoutSet = detoxUtils['timeoutSet'];
     intervalSet = detoxUtils['intervalSet'];
     error_handler = detoxUtils['error_handler'];
+    ArrayMap = detoxUtils['ArrayMap'];
     ArraySet = detoxUtils['ArraySet'];
     /**
      * @constructor
@@ -245,7 +246,7 @@
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._connected_nodes = ArraySet();
-      this._aware_of_nodes = new Map;
+      this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = new Set;
       this._routing_paths = new Map;
       this._id_to_routing_path = new Map;
@@ -320,7 +321,7 @@
         this$._connected_nodes['delete'](node_id);
         this$._get_nodes_requested['delete'](node_id_string);
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, node_id_string, number_of_nodes, stale_aware_of_nodes, new_node_id, new_node_id_string, stale_node_to_remove;
+        var ref$, target_id, introduction_message, target_id_string, target_node_id, target_route_id, nodes, i$, len$, i, node, node_id_string, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -362,16 +363,15 @@
           for (i$ = 0; i$ < number_of_nodes; ++i$) {
             i = i$;
             new_node_id = data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH);
-            new_node_id_string = new_node_id.join(',');
             if (are_arrays_equal(new_node_id, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id)) {
               continue;
             }
-            if (this$._aware_of_nodes.has(new_node_id_string) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
-              this$._aware_of_nodes.set(new_node_id_string, [new_node_id, +new Date]);
+            if (this$._aware_of_nodes.has(new_node_id) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
+              this$._aware_of_nodes.set(new_node_id, +new Date);
             } else if (stale_aware_of_nodes.length) {
               stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes);
               this$._aware_of_nodes['delete'](stale_node_to_remove);
-              this$._aware_of_nodes.set(new_node_id_string, [new_node_id, +new Date]);
+              this$._aware_of_nodes.set(new_node_id, +new Date);
             } else {
               break;
             }
@@ -886,19 +886,19 @@
        * @return {!Array<string>}
        */,
       _get_stale_aware_of_nodes: function(early_exit){
-        var stale_aware_of_nodes, stale_older_than, i$, ref$, len$, ref1$, node_id, date;
+        var stale_aware_of_nodes, stale_older_than, exited;
         early_exit == null && (early_exit = false);
         stale_aware_of_nodes = [];
         stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 1000;
-        for (i$ = 0, len$ = (ref$ = Array.from(this._aware_of_nodes.values())).length; i$ < len$; ++i$) {
-          ref1$ = ref$[i$], node_id = ref1$[0], date = ref1$[1];
-          if (date < stale_older_than) {
-            stale_aware_of_nodes.push(node_id.join(','));
-            if (early_exit) {
-              break;
+        exited = false;
+        this._aware_of_nodes.forEach(function(date, node_id){
+          if (!exited && date < stale_older_than) {
+            stale_aware_of_nodes.push(node_id);
+            if (early_exit && !exited) {
+              exited = true;
             }
           }
-        }
+        });
         return stale_aware_of_nodes;
       }
       /**
@@ -990,7 +990,7 @@
         if (this._aware_of_nodes.size < number_of_nodes) {
           return null;
         }
-        aware_of_nodes = Array.from(this._aware_of_nodes.values());
+        aware_of_nodes = Array.from(this._aware_of_nodes.keys());
         if (exclude_nodes) {
           aware_of_nodes = aware_of_nodes.filter(function(node){
             return !in$(node, exclude_nodes);

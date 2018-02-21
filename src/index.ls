@@ -200,6 +200,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	timeoutSet					= detox-utils['timeoutSet']
 	intervalSet					= detox-utils['intervalSet']
 	error_handler				= detox-utils['error_handler']
+	ArrayMap					= detox-utils['ArrayMap']
 	ArraySet					= detox-utils['ArraySet']
 	/**
 	 * @constructor
@@ -225,7 +226,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
 		@_connected_nodes		= ArraySet()
-		@_aware_of_nodes		= new Map
+		@_aware_of_nodes		= ArrayMap()
 		@_get_nodes_requested	= new Set
 		@_routing_paths			= new Map
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
@@ -325,20 +326,19 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						number_of_nodes			= data.length / ID_LENGTH
 						stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
 						for i from 0 til number_of_nodes
-							new_node_id			= data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH)
-							new_node_id_string	= new_node_id.join(',')
+							new_node_id	= data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH)
 							# Ignore already connected nodes and own ID or if there are enough nodes already
 							if (
 								are_arrays_equal(new_node_id, @_dht_keypair['ed25519']['public']) ||
 								@_connected_nodes.has(new_node_id)
 							)
 								continue
-							if @_aware_of_nodes.has(new_node_id_string) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
-								@_aware_of_nodes.set(new_node_id_string, [new_node_id, +(new Date)])
+							if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
+								@_aware_of_nodes.set(new_node_id, +(new Date))
 							else if stale_aware_of_nodes.length
 								stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes)
 								@_aware_of_nodes.delete(stale_node_to_remove)
-								@_aware_of_nodes.set(new_node_id_string, [new_node_id, +(new Date)])
+								@_aware_of_nodes.set(new_node_id, +(new Date))
 							else
 								break
 			)
@@ -831,11 +831,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		_get_stale_aware_of_nodes : (early_exit = false) ->
 			stale_aware_of_nodes	= []
 			stale_older_than		= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 1000
-			for [node_id, date] in Array.from(@_aware_of_nodes.values())
-				if date < stale_older_than
-					stale_aware_of_nodes.push(node_id.join(','))
-					if early_exit
-						break
+			exited					= false
+			@_aware_of_nodes.forEach (date, node_id) !->
+				if !exited && date < stale_older_than
+					stale_aware_of_nodes.push(node_id)
+					if early_exit && !exited
+						exited	:= true
 			stale_aware_of_nodes
 		/**
 		 * Request more nodes to be aware of from some of the nodes already connected to
@@ -902,7 +903,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		_pick_random_aware_of_nodes : (number_of_nodes, exclude_nodes) ->
 			if @_aware_of_nodes.size < number_of_nodes
 				return null
-			aware_of_nodes	= Array.from(@_aware_of_nodes.values())
+			aware_of_nodes	= Array.from(@_aware_of_nodes.keys())
 			if exclude_nodes
 				aware_of_nodes	= aware_of_nodes.filter (node) ->
 					!(node in exclude_nodes)
