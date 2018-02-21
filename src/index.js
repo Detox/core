@@ -294,7 +294,7 @@
               this$._announce(real_public_key);
             }
           }
-          announced_to.forEach(function(introduction_node, introduction_node_string){
+          announced_to.forEach(function(introduction_node){
             var full_introduction_node_id, ref$, node_id, route_id, source_id;
             full_introduction_node_id = concat_arrays([real_public_key, introduction_node]);
             ref$ = this$._id_to_routing_path.get(full_introduction_node_id), node_id = ref$[0], route_id = ref$[1];
@@ -390,7 +390,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, introduction_node_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, full_target_id, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, public_key_string, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_public_key_string, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, target_id_string, full_target_id, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -477,12 +477,11 @@
           }
           ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], introduction_node = ref$[1];
           real_public_key_string = real_public_key.join(',');
-          introduction_node_string = introduction_node.join(',');
           if (!this$._real_keypairs.has(real_public_key)) {
             return;
           }
           ref$ = this$._real_keypairs.get(real_public_key), real_keypair = ref$[0], announced_to = ref$[3];
-          if (!announced_to.has(introduction_node_string)) {
+          if (!announced_to.has(introduction_node)) {
             return;
           }
           try {
@@ -621,7 +620,7 @@
         if (this._real_keypairs.has(real_public_key)) {
           return null;
         }
-        this._real_keypairs.set(real_public_key, [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]);
+        this._real_keypairs.set(real_public_key, [real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, ArraySet()]);
         this._announce(real_public_key);
         return real_public_key;
       }
@@ -686,10 +685,8 @@
           nodes.push(introduction_node);
           first_node = nodes[0];
           this._router['construct_routing_path'](nodes).then(function(route_id){
-            var introduction_node_string;
             this$._register_routing_path(real_public_key, introduction_node, first_node, route_id);
-            introduction_node_string = introduction_node.join(',');
-            announced_to.set(introduction_node_string, introduction_node);
+            announced_to.add(introduction_node);
             announced(introduction_node);
           })['catch'](function(error){
             error_handler(error);
@@ -1059,7 +1056,7 @@
         }
         if (this._real_keypairs.has(real_public_key)) {
           announced_to = this._real_keypairs.get(real_public_key)[3];
-          announced_to['delete'](target_id_string);
+          announced_to['delete'](target_id);
         }
         encryptor_instance = this._encryptor_instances.get(target_id_string);
         if (encryptor_instance) {

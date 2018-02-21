@@ -266,7 +266,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
 					if last_announcement < reannounce_if_older_than
 						@_announce(real_public_key)
-				announced_to.forEach (introduction_node, introduction_node_string) !~>
+				announced_to.forEach (introduction_node) !~>
 					full_introduction_node_id	= concat_arrays([real_public_key, introduction_node])
 					[node_id, route_id]			= @_id_to_routing_path.get(full_introduction_node_id)
 					if @_send_ping(node_id, route_id)
@@ -438,11 +438,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							return
 						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
 						real_public_key_string					= real_public_key.join(',')
-						introduction_node_string				= introduction_node.join(',')
 						if !@_real_keypairs.has(real_public_key)
 							return
 						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key)
-						if !announced_to.has(introduction_node_string)
+						if !announced_to.has(introduction_node)
 							return
 						try
 							introduction_message_decrypted	= detox-crypto['one_way_decrypt'](real_keypair['x25519']['private'], data)
@@ -583,7 +582,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				return null
 			@_real_keypairs.set(
 				real_public_key
-				[real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, new Map]
+				[real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, ArraySet()]
 			)
 			@_announce(real_public_key)
 			real_public_key
@@ -645,8 +644,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				@_router['construct_routing_path'](nodes)
 					.then (route_id) !~>
 						@_register_routing_path(real_public_key, introduction_node, first_node, route_id)
-						introduction_node_string	= introduction_node.join(',')
-						announced_to.set(introduction_node_string, introduction_node)
+						announced_to.add(introduction_node)
 						announced(introduction_node)
 					.catch (error) !~>
 						error_handler(error)
@@ -961,7 +959,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				@_pending_sending.delete(real_public_key_string + target_id_string)
 			if @_real_keypairs.has(real_public_key)
 				announced_to	= @_real_keypairs.get(real_public_key)[3]
-				announced_to.delete(target_id_string)
+				announced_to.delete(target_id)
 			encryptor_instance	= @_encryptor_instances.get(target_id_string)
 			if encryptor_instance
 				encryptor_instance['destroy']()
