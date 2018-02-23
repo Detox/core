@@ -24,7 +24,6 @@ test('Core', (t) !->
 	t.plan(NUMBER_OF_NODES + 10)
 
 	generated_seed	= lib.generate_seed()
-
 	t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array')
 	t.equal(generated_seed.length, 32, 'Seed length is 32 bytes')
 

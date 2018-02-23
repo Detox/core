@@ -509,8 +509,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								return
 							data_decrypted		= encryptor_instance['decrypt'](data)
 							demultiplexer['feed'](data_decrypted)
-							# Data are always more or equal to block size, so no need to do `while` loop
-							if demultiplexer['have_more_data']()
+							while demultiplexer['have_more_data']()
 								data_with_header	= demultiplexer['get_data']()
 								command				= data_with_header[0]
 								@'fire'('data', real_public_key, target_id, command, data_with_header.subarray(1))
