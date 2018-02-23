@@ -189,6 +189,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
 	are_arrays_equal			= detox-utils['are_arrays_equal']
+	hex2array					= detox-utils['hex2array']
 	concat_arrays				= detox-utils['concat_arrays']
 	timeoutSet					= detox-utils['timeoutSet']
 	intervalSet					= detox-utils['intervalSet']
@@ -842,11 +843,11 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 *
 		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
 		 */
-		_pick_nodes_for_routing_path : (number_of_nodes, exclude_nodes) ->
+		_pick_nodes_for_routing_path : (number_of_nodes, exclude_nodes = []) ->
 			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)
 			if !connected_node
 				return null
-			intermediate_nodes	= @_pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes)
+			intermediate_nodes	= @_pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes.concat([connected_node]))
 			if !intermediate_nodes
 				return null
 			connected_node.concat(intermediate_nodes)
@@ -865,9 +866,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				return null
 			connected_nodes	= Array.from(@_connected_nodes.values())
 			for bootstrap_node in @'get_bootstrap_nodes'()
-				exclude_nodes.push(bootstrap_node['node_id'])
-			connected_nodes	= connected_nodes.filter (node) ->
-				!(node in exclude_nodes)
+				exclude_nodes.push(hex2array(bootstrap_node['node_id']))
+			exclude_nodes_set	= ArraySet(exclude_nodes)
+			connected_nodes		= connected_nodes.filter (node) ->
+				!exclude_nodes_set.has(node)
 			if !connected_nodes.length
 				return null
 			for i from 0 til up_to_number_of_nodes
@@ -886,8 +888,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				return null
 			aware_of_nodes	= Array.from(@_aware_of_nodes.keys())
 			if exclude_nodes
-				aware_of_nodes	= aware_of_nodes.filter (node) ->
-					!(node in exclude_nodes)
+				exclude_nodes_set	= ArraySet(exclude_nodes)
+				aware_of_nodes		= aware_of_nodes.filter (node) ->
+					!exclude_nodes_set.has(node)
 			if aware_of_nodes.length < number_of_nodes
 				return null
 			for i from 0 til number_of_nodes

@@ -200,11 +200,12 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
+    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
     are_arrays_equal = detoxUtils['are_arrays_equal'];
+    hex2array = detoxUtils['hex2array'];
     concat_arrays = detoxUtils['concat_arrays'];
     timeoutSet = detoxUtils['timeoutSet'];
     intervalSet = detoxUtils['intervalSet'];
@@ -907,11 +908,12 @@
        */,
       _pick_nodes_for_routing_path: function(number_of_nodes, exclude_nodes){
         var connected_node, intermediate_nodes;
+        exclude_nodes == null && (exclude_nodes = []);
         connected_node = this._pick_random_connected_nodes(1, exclude_nodes);
         if (!connected_node) {
           return null;
         }
-        intermediate_nodes = this._pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes);
+        intermediate_nodes = this._pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes.concat([connected_node]));
         if (!intermediate_nodes) {
           return null;
         }
@@ -926,7 +928,7 @@
        * @return {Array<!Uint8Array>} `null` if there is no nodes to return
        */,
       _pick_random_connected_nodes: function(up_to_number_of_nodes, exclude_nodes){
-        var connected_nodes, i$, ref$, len$, bootstrap_node, i, results$ = [];
+        var connected_nodes, i$, ref$, len$, bootstrap_node, exclude_nodes_set, i, results$ = [];
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
@@ -936,10 +938,11 @@
         connected_nodes = Array.from(this._connected_nodes.values());
         for (i$ = 0, len$ = (ref$ = this['get_bootstrap_nodes']()).length; i$ < len$; ++i$) {
           bootstrap_node = ref$[i$];
-          exclude_nodes.push(bootstrap_node['node_id']);
+          exclude_nodes.push(hex2array(bootstrap_node['node_id']));
         }
+        exclude_nodes_set = ArraySet(exclude_nodes);
         connected_nodes = connected_nodes.filter(function(node){
-          return !in$(node, exclude_nodes);
+          return !exclude_nodes_set.has(node);
         });
         if (!connected_nodes.length) {
           return null;
@@ -961,14 +964,15 @@
        * @return {Array<!Uint8Array>} `null` if there was not enough nodes
        */,
       _pick_random_aware_of_nodes: function(number_of_nodes, exclude_nodes){
-        var aware_of_nodes, i$, i, results$ = [];
+        var aware_of_nodes, exclude_nodes_set, i$, i, results$ = [];
         if (this._aware_of_nodes.size < number_of_nodes) {
           return null;
         }
         aware_of_nodes = Array.from(this._aware_of_nodes.keys());
         if (exclude_nodes) {
+          exclude_nodes_set = ArraySet(exclude_nodes);
           aware_of_nodes = aware_of_nodes.filter(function(node){
-            return !in$(node, exclude_nodes);
+            return !exclude_nodes_set.has(node);
           });
         }
         if (aware_of_nodes.length < number_of_nodes) {
@@ -1177,10 +1181,5 @@
     module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
   } else {
     this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
-  }
-  function in$(x, xs){
-    var i = -1, l = xs.length >>> 0;
-    while (++i < l) if (x === xs[i]) return true;
-    return false;
   }
 }).call(this);

@@ -43,7 +43,6 @@ Should be scalable already (WARNING: not proven yet, large-scale testing is need
 
 ## Major open issues
 Major open issues in the order from more important to less important (the order is not strict):
-* Tests execution reliability (tests are often fine, but not in 100% and this random errors should be resolved)
 * Nodes selection for anonymous routing (will likely require DHT re-implementation)
 * Make AEZ implementation secure (timings attacks in particular)
 * Conduct security audit for Ronion
