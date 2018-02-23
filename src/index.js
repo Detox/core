@@ -1170,7 +1170,7 @@
        * @return {!Uint8Array} 32 bytes
        */,
       'generate_seed': function(){
-        return detoxCrypto['create_keypair']()['seed'];
+        return random_bytes(ID_LENGTH);
       },
       'Core': Core
     };

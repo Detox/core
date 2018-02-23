@@ -1043,7 +1043,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {!Uint8Array} 32 bytes
 		 */
 		'generate_seed'	: ->
-			detox-crypto['create_keypair']()['seed']
+			random_bytes(ID_LENGTH)
 		'Core'			: Core
 	}
 
