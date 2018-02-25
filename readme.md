@@ -1,7 +1,13 @@
 # Detox core [![Travis CI](https://img.shields.io/travis/Detox/core/master.svg?label=Travis%20CI)](https://travis-ci.org/Detox/core)
 Core library of Detox project that provides high-level APIs used when building end-user applications.
 
+This repository contains high level design overview (design.md), specification for implementors (spec.md) and reference implementation.
+
 Essentially glues `@detox/crypto` and `@detox/transport` together and provides very simple API for connecting to and interacting with Detox network.
+
+WARNING: INSECURE UNTIL PROVEN THE OPPOSITE!!!
+
+This protocol and reference implementation are intended to be secure, but until proper independent audit is conducted you shouldn't consider it to actually be secure and shouldn't use in production applications.
 
 ## Key features
 Detox network is an overlay network that uses WebSocket and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some WebSocket bootstrap nodes are still needed).
@@ -45,6 +51,29 @@ Major open issues in the order from more important to less important (the order 
 * Make AEZ implementation secure (timings attacks in particular)
 * Conduct security audit for Ronion
 * Conduct security audit of a project as the whole
+
+## How to install
+```
+npm install @detox/core
+```
+
+## How to use
+Node.js:
+```javascript
+var detox_core = require('@detox/core')
+
+detox_core.ready(function () {
+    // Do stuff
+});
+```
+Browser:
+```javascript
+requirejs(['@detox/core'], function (detox_core) {
+    detox_core.ready(function () {
+        // Do stuff
+    });
+})
+```
 
 ## API
 ### detox_core.ready(callback)
