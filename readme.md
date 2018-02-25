@@ -3,8 +3,6 @@ Core library of Detox project that provides high-level APIs used when building e
 
 Essentially glues `@detox/crypto` and `@detox/transport` together and provides very simple API for connecting to and interacting with Detox network.
 
-WIP, kind of works, but very fragile at the moment (also see https://github.com/js-platform/node-webrtc/issues/345), don't use for anything more that light experiments.
-
 ## Key features
 Detox network is an overlay network that uses WebSocket and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some WebSocket bootstrap nodes are still needed).
 
