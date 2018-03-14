@@ -219,24 +219,25 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
-		@_connected_nodes		= ArraySet()
-		@_aware_of_nodes		= ArrayMap()
-		@_get_nodes_requested	= ArraySet()
-		@_routing_paths			= ArrayMap()
+		@_connected_nodes			= ArraySet()
+		@_aware_of_nodes			= ArrayMap()
+		@_get_nodes_requested		= ArraySet()
+		@_routing_paths				= ArrayMap()
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
-		@_id_to_routing_path	= ArrayMap()
-		@_routing_path_to_id	= ArrayMap()
-		@_used_tags				= ArrayMap()
-		@_connections_timeouts	= ArrayMap()
-		@_routes_timeouts		= ArrayMap()
-		@_pending_connection	= ArrayMap()
-		@_announcements_from	= ArrayMap()
-		@_forwarding_mapping	= ArrayMap()
-		@_pending_pings			= ArraySet()
-		@_encryptor_instances	= ArrayMap()
-		@_multiplexers			= ArrayMap()
-		@_demultiplexers		= ArrayMap()
-		@_pending_sending		= ArrayMap()
+		@_id_to_routing_path		= ArrayMap()
+		@_routing_path_to_id		= ArrayMap()
+		@_used_tags					= ArrayMap()
+		@_connections_timeouts		= ArrayMap()
+		@_routes_timeouts			= ArrayMap()
+		@_pending_connection		= ArrayMap()
+		@_announcements_from		= ArrayMap()
+		@_forwarding_mapping		= ArrayMap()
+		@_pending_pings				= ArraySet()
+		@_encryptor_instances		= ArrayMap()
+		@_multiplexers				= ArrayMap()
+		@_demultiplexers			= ArrayMap()
+		@_pending_sending			= ArrayMap()
+		@_application_connections	= ArraySet()
 
 		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
@@ -479,8 +480,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 											encryptor_instance['put_handshake_message'](handshake_message)
 											response_handshake_message	= encryptor_instance['get_handshake_message']()
 											@_encryptor_instances.set(full_target_id, encryptor_instance)
-											@_register_routing_path(real_keypair['ed25519']['public'], target_id, first_node, route_id)
-											signature	= detox-crypto['sign'](rendezvous_token, real_keypair['ed25519']['public'], real_keypair['ed25519']['private'])
+											@_register_routing_path(real_public_key, target_id, first_node, route_id)
+											@_register_application_connection(real_public_key, target_id)
+											signature	= detox-crypto['sign'](rendezvous_token, real_public_key, real_keypair['ed25519']['private'])
 											@_send_to_routing_node(
 												real_public_key
 												target_id
@@ -728,6 +730,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								clearTimeout(path_confirmation_timeout)
 								@_router['off']('data', path_confirmation)
 								@_register_routing_path(real_public_key, target_id, first_node, route_id)
+								@_register_application_connection(real_public_key, target_id)
 							@_router['on']('data', path_confirmation)
 							@_router['send_data'](
 								first_node
@@ -912,7 +915,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			# Multiplexer/demultiplexer pair is not needed for introduction node, but for simplicity we'll create it anyway
 			@_multiplexers.set(full_target_id, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
 			@_demultiplexers.set(full_target_id, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
-			@'fire'('connected', real_public_key, target_id)
 		/**
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
@@ -948,7 +950,24 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				@_encryptor_instances.delete(full_target_id)
 			@_multiplexers.delete(full_target_id)
 			@_demultiplexers.delete(full_target_id)
-			@'fire'('disconnected', real_public_key, target_id)
+			@_unregister_application_connection(real_public_key, target_id)
+		/**
+		 * @param {!Uint8Array} real_public_key
+		 * @param {!Uint8Array} target_id		Last node in routing path, responder
+		 */
+		_register_application_connection : (real_public_key, target_id) !->
+			full_target_id	= concat_arrays([real_public_key, target_id])
+			@_application_connections.add(full_target_id)
+			@'fire'('connected', real_public_key, target_id)
+		/**
+		 * @param {!Uint8Array} real_public_key
+		 * @param {!Uint8Array} target_id		Last node in routing path, responder
+		 */
+		_unregister_application_connection : (real_public_key, target_id) !->
+			full_target_id	= concat_arrays([real_public_key, target_id])
+			if @_application_connections.has(full_target_id)
+				@_application_connections.delete(full_target_id)
+				@'fire'('disconnected', real_public_key, target_id)
 		/**
 		 * @param {!Uint8Array}	node_id
 		 * @param {number}		command	0..245

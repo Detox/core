@@ -84,18 +84,17 @@ test('Core', (t) !->
 					data.number_of_intermediate_nodes	= 1
 				)
 				node_3.once('connected', (, target_id) !->
-					if target_id.join(',') == node_1_real_public_key.join(',')
-						t.pass('Connected successfully')
+					t.equal(target_id.join(','), node_1_real_public_key.join(','), 'Connected to intended node successfully')
 
-						node_1.once('data', (, , received_command, received_data) !->
-							t.equal(received_command, command, 'Received command correctly')
-							t.equal(received_data.join(','), data.join(','), 'Received data correctly')
+					node_1.once('data', (, , received_command, received_data) !->
+						t.equal(received_command, command, 'Received command correctly')
+						t.equal(received_data.join(','), data.join(','), 'Received data correctly')
 
-							destroy_nodes()
-						)
+						destroy_nodes()
+					)
 
-						console.log 'Sending data...'
-						node_3.send_to(node_3_real_public_key, node_1_real_public_key, command, data)
+					console.log 'Sending data...'
+					node_3.send_to(node_3_real_public_key, node_1_real_public_key, command, data)
 				)
 				node_3.once('connection_failed', (, , reason) !->
 					t.fail('Connection failed with code ' + reason)

@@ -255,6 +255,7 @@
       this._multiplexers = ArrayMap();
       this._demultiplexers = ArrayMap();
       this._pending_sending = ArrayMap();
+      this._application_connections = ArraySet();
       this._cleanup_interval = intervalSet(LAST_USED_TIMEOUT, function(){
         var unused_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
@@ -513,8 +514,9 @@
                 encryptor_instance['put_handshake_message'](handshake_message);
                 response_handshake_message = encryptor_instance['get_handshake_message']();
                 this$._encryptor_instances.set(full_target_id, encryptor_instance);
-                this$._register_routing_path(real_keypair['ed25519']['public'], target_id, first_node, route_id);
-                signature = detoxCrypto['sign'](rendezvous_token, real_keypair['ed25519']['public'], real_keypair['ed25519']['private']);
+                this$._register_routing_path(real_public_key, target_id, first_node, route_id);
+                this$._register_application_connection(real_public_key, target_id);
+                signature = detoxCrypto['sign'](rendezvous_token, real_public_key, real_keypair['ed25519']['private']);
                 this$._send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(error){
                 error_handler(error);
@@ -767,6 +769,7 @@
                 clearTimeout(path_confirmation_timeout);
                 this$._router['off']('data', path_confirmation);
                 this$._register_routing_path(real_public_key, target_id, first_node, route_id);
+                this$._register_application_connection(real_public_key, target_id);
               }
               this$._router['on']('data', path_confirmation);
               this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
@@ -1001,7 +1004,6 @@
         this._routing_path_to_id.set(source_id, [real_public_key, target_id]);
         this._multiplexers.set(full_target_id, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
         this._demultiplexers.set(full_target_id, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
-        this['fire']('connected', real_public_key, target_id);
       }
       /**
        * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
@@ -1048,7 +1050,29 @@
         }
         this._multiplexers['delete'](full_target_id);
         this._demultiplexers['delete'](full_target_id);
-        this['fire']('disconnected', real_public_key, target_id);
+        this._unregister_application_connection(real_public_key, target_id);
+      }
+      /**
+       * @param {!Uint8Array} real_public_key
+       * @param {!Uint8Array} target_id		Last node in routing path, responder
+       */,
+      _register_application_connection: function(real_public_key, target_id){
+        var full_target_id;
+        full_target_id = concat_arrays([real_public_key, target_id]);
+        this._application_connections.add(full_target_id);
+        this['fire']('connected', real_public_key, target_id);
+      }
+      /**
+       * @param {!Uint8Array} real_public_key
+       * @param {!Uint8Array} target_id		Last node in routing path, responder
+       */,
+      _unregister_application_connection: function(real_public_key, target_id){
+        var full_target_id;
+        full_target_id = concat_arrays([real_public_key, target_id]);
+        if (this._application_connections.has(full_target_id)) {
+          this._application_connections['delete'](full_target_id);
+          this['fire']('disconnected', real_public_key, target_id);
+        }
       }
       /**
        * @param {!Uint8Array}	node_id
