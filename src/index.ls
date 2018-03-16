@@ -219,6 +219,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
+		@_connections_in_progress	= ArraySet()
 		@_connected_nodes			= ArraySet()
 		@_aware_of_nodes			= ArrayMap()
 		@_get_nodes_requested		= ArraySet()
@@ -660,12 +661,19 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
 			full_target_id	= concat_arrays([real_public_key, target_id])
+			# Don't initiate 2 concurrent connections to the same node, it will not end up well
+			if @_connections_in_progress.has(full_target_id)
+				return real_public_key
+			@_connections_in_progress.add(full_target_id)
 			if @_id_to_routing_path.has(full_target_id)
 				# Already connected, do nothing
 				return null
+			!function connection_failed (code)
+				@_connections_in_progress.delete(full_target_id)
+				@'fire'('connection_failed', real_public_key, target_id, code)
 			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
 			if !nodes
-				@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
+				connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return null
 			first_node		= nodes[0]
 			rendezvous_node	= nodes[nodes.length - 1]
@@ -684,12 +692,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							return
 						clearTimeout(find_introduction_nodes_timeout)
 						if code != CONNECTION_OK
-							@'fire'('connection_failed', real_public_key, target_id, code)
+							connection_failed(code)
 							return
 						@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
 						!~function try_to_introduce
 							if !introduction_nodes.length
-								@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
+								connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 								return
 							introduction_node				= pull_random_item_from_array(introduction_nodes)
 							rendezvous_token				= random_bytes(ID_LENGTH)
@@ -730,6 +738,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								clearTimeout(path_confirmation_timeout)
 								@_router['off']('data', path_confirmation)
 								@_register_routing_path(real_public_key, target_id, first_node, route_id)
+								@_connections_in_progress.delete(full_target_id)
 								@_register_application_connection(real_public_key, target_id)
 							@_router['on']('data', path_confirmation)
 							@_router['send_data'](
@@ -749,11 +758,11 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					@_router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
 					find_introduction_nodes_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 						@_router['off']('data', found_introduction_nodes)
-						@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
+						connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
 					)
 				.catch (error) !~>
 					error_handler(error)
-					@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
+					connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
 			real_public_key
 		'get_max_data_size' : ->
 			@_max_data_size

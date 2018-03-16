@@ -238,6 +238,7 @@
       this._real_keypairs = ArrayMap();
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
+      this._connections_in_progress = ArraySet();
       this._connected_nodes = ArraySet();
       this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
@@ -707,12 +708,20 @@
         real_keypair = detoxCrypto['create_keypair'](real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
         full_target_id = concat_arrays([real_public_key, target_id]);
+        if (this._connections_in_progress.has(full_target_id)) {
+          return real_public_key;
+        }
+        this._connections_in_progress.add(full_target_id);
         if (this._id_to_routing_path.has(full_target_id)) {
           return null;
         }
+        function connection_failed(code){
+          this._connections_in_progress['delete'](full_target_id);
+          this['fire']('connection_failed', real_public_key, target_id, code);
+        }
         nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
         if (!nodes) {
-          this['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
+          connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return null;
         }
         first_node = nodes[0];
@@ -731,14 +740,14 @@
             }
             clearTimeout(find_introduction_nodes_timeout);
             if (code !== CONNECTION_OK) {
-              this$['fire']('connection_failed', real_public_key, target_id, code);
+              connection_failed(code);
               return;
             }
             this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
             function try_to_introduce(){
               var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, x$, for_signature, signature, y$, introduction_message, introduction_message_encrypted, path_confirmation_timeout;
               if (!introduction_nodes.length) {
-                this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
+                connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
                 return;
               }
               introduction_node = pull_random_item_from_array(introduction_nodes);
@@ -769,6 +778,7 @@
                 clearTimeout(path_confirmation_timeout);
                 this$._router['off']('data', path_confirmation);
                 this$._register_routing_path(real_public_key, target_id, first_node, route_id);
+                this$._connections_in_progress['delete'](full_target_id);
                 this$._register_application_connection(real_public_key, target_id);
               }
               this$._router['on']('data', path_confirmation);
@@ -786,11 +796,11 @@
           this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
           find_introduction_nodes_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
             this$._router['off']('data', found_introduction_nodes);
-            this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
+            connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
           });
         })['catch'](function(error){
           error_handler(error);
-          this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
+          connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
         });
         return real_public_key;
       },
