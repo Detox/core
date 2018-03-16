@@ -1172,7 +1172,6 @@
     };
     Core.prototype = Object.assign(Object.create(asyncEventer.prototype), Core.prototype);
     Object.defineProperty(Core.prototype, 'constructor', {
-      enumerable: false,
       value: Core
     });
     return {
