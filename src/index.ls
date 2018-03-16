@@ -1048,13 +1048,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	Object.defineProperty(Core::, 'constructor', {value: Core})
 	{
 		'ready'			: (callback) !->
-			wait_for	= 2
-			!function ready
-				--wait_for
-				if !wait_for
-					callback()
-			detox-crypto['ready'](ready)
-			detox-transport['ready'](ready)
+			<-! detox-crypto['ready']
+			<-! detox-transport['ready']
+			callback()
 		/**
 		 * Generate random seed that can be used as keypair seed
 		 *

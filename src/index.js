@@ -1176,16 +1176,11 @@
     });
     return {
       'ready': function(callback){
-        var wait_for;
-        wait_for = 2;
-        function ready(){
-          --wait_for;
-          if (!wait_for) {
+        detoxCrypto['ready'](function(){
+          detoxTransport['ready'](function(){
             callback();
-          }
-        }
-        detoxCrypto['ready'](ready);
-        detoxTransport['ready'](ready);
+          });
+        });
       }
       /**
        * Generate random seed that can be used as keypair seed
