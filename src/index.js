@@ -6,9 +6,9 @@
  */
 (function(){
   /*
-   * Implements version 0.1.0 of the specification
+   * Implements version 0.1.2 of the specification
    */
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
   DHT_COMMAND_GET_NODES_REQUEST = 2;
@@ -38,7 +38,7 @@
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES = 2;
   CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 3;
-  CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT = 4;
+  CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE = 4;
   CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES = 5;
   CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE = 0;
   CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES = 1;
@@ -238,7 +238,7 @@
       this._real_keypairs = ArrayMap();
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
-      this._connections_in_progress = ArraySet();
+      this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
       this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
@@ -383,7 +383,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, full_target_id, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, full_target_id, connection_in_progress, i$, len$, key, item, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -490,6 +490,29 @@
             if (this$._id_to_routing_path.has(full_target_id)) {
               return;
             }
+            if (this$._connections_in_progress.has(friend_id)) {
+              connection_in_progress = this$._connections_in_progress.get(full_target_id);
+              if (connection_in_progress.initiator && !connection_in_progress.discarded) {
+                for (i$ = 0, len$ = real_public_key.length; i$ < len$; ++i$) {
+                  key = i$;
+                  item = real_public_key[i$];
+                  if (item === friend_id[key]) {
+                    continue;
+                  }
+                  if (item > friend_id[key]) {
+                    return;
+                  } else {
+                    connection_in_progress.discarded = true;
+                    break;
+                  }
+                }
+              }
+            } else {
+              connection_in_progress = {
+                initiator: false
+              };
+              this$._connections_in_progress.set(full_target_id, connection_in_progress);
+            }
             data = {
               'real_public_key': real_public_key,
               'target_id': target_id,
@@ -516,14 +539,23 @@
                 response_handshake_message = encryptor_instance['get_handshake_message']();
                 this$._encryptor_instances.set(full_target_id, encryptor_instance);
                 this$._register_routing_path(real_public_key, target_id, first_node, route_id);
+                this$._connections_in_progress['delete'](full_target_id);
                 this$._register_application_connection(real_public_key, target_id);
                 signature = detoxCrypto['sign'](rendezvous_token, real_public_key, real_keypair['ed25519']['private']);
                 this$._send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
               })['catch'](function(error){
                 error_handler(error);
+                this$._connections_in_progress['delete'](full_target_id);
+                if (connection_in_progress.initiator && connection_in_progress.discarded) {
+                  this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE);
+                }
               });
             })['catch'](function(error){
               error_handler(error);
+              this$._connections_in_progress['delete'](full_target_id);
+              if (connection_in_progress.initiator && connection_in_progress.discarded) {
+                this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE);
+              }
             });
           } catch (e$) {
             error = e$;
@@ -569,7 +601,7 @@
     Core['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
     Core['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
     Core['CONNECTION_ERROR_NO_INTRODUCTION_NODES'] = CONNECTION_ERROR_NO_INTRODUCTION_NODES;
-    Core['CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'] = CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT;
+    Core['CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE'] = CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE;
     Core['CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'] = CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES;
     Core['CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'] = CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE;
     Core['CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'] = CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES;
@@ -701,7 +733,7 @@
        * @return {Uint8Array} Real public key or `null` in case of failure
        */,
       'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
-        var real_keypair, real_public_key, full_target_id, nodes, first_node, rendezvous_node, this$ = this;
+        var real_keypair, real_public_key, full_target_id, connection_in_progress, nodes, first_node, rendezvous_node, this$ = this;
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
@@ -711,11 +743,18 @@
         if (this._connections_in_progress.has(full_target_id)) {
           return real_public_key;
         }
-        this._connections_in_progress.add(full_target_id);
+        connection_in_progress = {
+          initiator: true,
+          discarded: false
+        };
+        this._connections_in_progress.set(full_target_id, connection_in_progress);
         if (this._id_to_routing_path.has(full_target_id)) {
           return null;
         }
         function connection_failed(code){
+          if (connection_in_progress.discarded) {
+            return;
+          }
           this._connections_in_progress['delete'](full_target_id);
           this['fire']('connection_failed', real_public_key, target_id, code);
         }
@@ -746,6 +785,9 @@
             this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
             function try_to_introduce(){
               var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, x$, for_signature, signature, y$, introduction_message, introduction_message_encrypted, path_confirmation_timeout;
+              if (connection_in_progress.discarded) {
+                return;
+              }
               if (!introduction_nodes.length) {
                 connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
                 return;
@@ -800,7 +842,7 @@
           });
         })['catch'](function(error){
           error_handler(error);
-          connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT);
+          connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE);
         });
         return real_public_key;
       },

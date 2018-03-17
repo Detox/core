@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version 0.1.0 of the specification
+ * Implements version 0.1.2 of the specification
  */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
@@ -48,7 +48,7 @@ const CONNECTION_OK										= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
 const CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES		= 2
 const CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES	= 3
-const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT	= 4
+const CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE	= 4
 const CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES		= 5
 
 const CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE	= 0
@@ -219,7 +219,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
-		@_connections_in_progress	= ArraySet()
+		@_connections_in_progress	= ArrayMap()
 		@_connected_nodes			= ArraySet()
 		@_aware_of_nodes			= ArrayMap()
 		@_get_nodes_requested		= ArraySet()
@@ -457,6 +457,24 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
 								return
+							if @_connections_in_progress.has(friend_id)
+								connection_in_progress	= @_connections_in_progress.get(full_target_id)
+								if connection_in_progress.initiator && !connection_in_progress.discarded
+									for item, key in real_public_key
+										if item == friend_id[key]
+											continue
+										if item > friend_id[key]
+											# If this node's public_key if bigger, then connection initiated by this node will win and the other side will
+											# discard its initiated connection
+											return
+										else
+											# Otherwise our connection is discarded and we proceed with connection initiated by the other side
+											connection_in_progress.discarded	= true
+											break
+							else
+								connection_in_progress	=
+									initiator	: false
+								@_connections_in_progress.set(full_target_id, connection_in_progress)
 							data	=
 								'real_public_key'				: real_public_key
 								'target_id'						: target_id
@@ -482,6 +500,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 											response_handshake_message	= encryptor_instance['get_handshake_message']()
 											@_encryptor_instances.set(full_target_id, encryptor_instance)
 											@_register_routing_path(real_public_key, target_id, first_node, route_id)
+											@_connections_in_progress.delete(full_target_id)
 											@_register_application_connection(real_public_key, target_id)
 											signature	= detox-crypto['sign'](rendezvous_token, real_public_key, real_keypair['ed25519']['private'])
 											@_send_to_routing_node(
@@ -493,8 +512,14 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 										.catch (error) !~>
 											error_handler(error)
 											# TODO: Retry?
+											@_connections_in_progress.delete(full_target_id)
+											if connection_in_progress.initiator && connection_in_progress.discarded
+												@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE)
 								.catch (error) !~>
 									error_handler(error)
+									@_connections_in_progress.delete(full_target_id)
+									if connection_in_progress.initiator && connection_in_progress.discarded
+										@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE)
 						catch error
 							error_handler(error)
 					case ROUTING_COMMAND_DATA
@@ -530,7 +555,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
-	Core.'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT'	= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT
+	Core.'CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE'		= CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE
 	Core.'CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES'			= CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES
 
 	Core.'CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'	= CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE
@@ -664,11 +689,17 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			# Don't initiate 2 concurrent connections to the same node, it will not end up well
 			if @_connections_in_progress.has(full_target_id)
 				return real_public_key
-			@_connections_in_progress.add(full_target_id)
+			# `discarded` is used when alternative connection from a friend is happening at the same time and this connection establishing is discarded
+			connection_in_progress	=
+				initiator	: true
+				discarded	: false
+			@_connections_in_progress.set(full_target_id, connection_in_progress)
 			if @_id_to_routing_path.has(full_target_id)
 				# Already connected, do nothing
 				return null
 			!function connection_failed (code)
+				if connection_in_progress.discarded
+					return
 				@_connections_in_progress.delete(full_target_id)
 				@'fire'('connection_failed', real_public_key, target_id, code)
 			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
@@ -676,7 +707,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return null
 			first_node		= nodes[0]
-			rendezvous_node	= nodes[nodes.length - 1]
+			rendezvous_node	= nodes[* - 1]
 			@_router['construct_routing_path'](nodes)
 				.then (route_id) !~>
 					@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
@@ -696,6 +727,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 							return
 						@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
 						!~function try_to_introduce
+							if connection_in_progress.discarded
+								return
 							if !introduction_nodes.length
 								connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 								return
@@ -762,7 +795,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					)
 				.catch (error) !~>
 					error_handler(error)
-					connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_POINT)
+					connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE)
 			real_public_key
 		'get_max_data_size' : ->
 			@_max_data_size

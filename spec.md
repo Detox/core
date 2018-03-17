@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.1.1
+Specification version: 0.1.2
 
 Author: Nazar Mokrynskyi
 
@@ -247,6 +247,8 @@ If rendezvous token is known and signature is valid, rendezvous node will sent `
 * 48 bytes - Noise handshake message for end-to-end encryption with a friend (acts as responder, long-term public key is used as local private static key)
 
 Once `COMMAND_CONFIRM_CONNECTION` is received, connection to a friend is considered established and any `COMMAND_DATA` routing commands received on routing paths MUST be blindly forwarded by rendezvous node to target node and back.
+
+NOTE: When two nodes initiated connection to each other approximately at the same time, race condition is resolved by discarding connection initiated by the node whose public key is smaller (comparing bytes starting from the first one).
 
 ### Friendship requests
 Friendship is not specified as special entity or something, but there is a way to make it work.
