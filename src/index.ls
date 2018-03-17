@@ -697,7 +697,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if @_id_to_routing_path.has(full_target_id)
 				# Already connected, do nothing
 				return null
-			!function connection_failed (code)
+			!~function connection_failed (code)
 				if connection_in_progress.discarded
 					return
 				@_connections_in_progress.delete(full_target_id)

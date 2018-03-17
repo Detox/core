@@ -755,8 +755,8 @@
           if (connection_in_progress.discarded) {
             return;
           }
-          this._connections_in_progress['delete'](full_target_id);
-          this['fire']('connection_failed', real_public_key, target_id, code);
+          this$._connections_in_progress['delete'](full_target_id);
+          this$['fire']('connection_failed', real_public_key, target_id, code);
         }
         nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
         if (!nodes) {
