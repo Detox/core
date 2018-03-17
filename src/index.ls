@@ -457,7 +457,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
 								return
-							if @_connections_in_progress.has(friend_id)
+							if @_connections_in_progress.has(full_target_id)
 								connection_in_progress	= @_connections_in_progress.get(full_target_id)
 								if connection_in_progress.initiator && !connection_in_progress.discarded
 									for item, key in real_public_key

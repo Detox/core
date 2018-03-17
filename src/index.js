@@ -490,7 +490,7 @@
             if (this$._id_to_routing_path.has(full_target_id)) {
               return;
             }
-            if (this$._connections_in_progress.has(friend_id)) {
+            if (this$._connections_in_progress.has(full_target_id)) {
               connection_in_progress = this$._connections_in_progress.get(full_target_id);
               if (connection_in_progress.initiator && !connection_in_progress.discarded) {
                 for (i$ = 0, len$ = real_public_key.length; i$ < len$; ++i$) {
