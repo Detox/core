@@ -461,9 +461,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								connection_in_progress	= @_connections_in_progress.get(full_target_id)
 								if connection_in_progress.initiator && !connection_in_progress.discarded
 									for item, key in real_public_key
-										if item == friend_id[key]
+										if item == target_id[key]
 											continue
-										if item > friend_id[key]
+										if item > target_id[key]
 											# If this node's public_key if bigger, then connection initiated by this node will win and the other side will
 											# discard its initiated connection
 											return

@@ -496,10 +496,10 @@
                 for (i$ = 0, len$ = real_public_key.length; i$ < len$; ++i$) {
                   key = i$;
                   item = real_public_key[i$];
-                  if (item === friend_id[key]) {
+                  if (item === target_id[key]) {
                     continue;
                   }
-                  if (item > friend_id[key]) {
+                  if (item > target_id[key]) {
                     return;
                   } else {
                     connection_in_progress.discarded = true;
