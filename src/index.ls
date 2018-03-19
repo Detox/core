@@ -685,6 +685,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				# TODO: Support direct connections here?
 			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
+			# Don't connect to itself
+			if are_arrays_equal(real_public_key, target_id)
+				return null
 			full_target_id	= concat_arrays([real_public_key, target_id])
 			# Don't initiate 2 concurrent connections to the same node, it will not end up well
 			if @_connections_in_progress.has(full_target_id)

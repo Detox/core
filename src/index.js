@@ -739,6 +739,9 @@
         }
         real_keypair = detoxCrypto['create_keypair'](real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
+        if (are_arrays_equal(real_public_key, target_id)) {
+          return null;
+        }
         full_target_id = concat_arrays([real_public_key, target_id]);
         if (this._connections_in_progress.has(full_target_id)) {
           return real_public_key;
