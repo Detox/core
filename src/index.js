@@ -305,11 +305,13 @@
       });
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
         this$._connected_nodes.add(node_id);
+        this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         if (this$._more_nodes_needed()) {
           this$._get_more_nodes_from(node_id);
         }
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id);
+        this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](node_id);
       })['on']('data', function(node_id, command, data){
         var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, i$, len$, i, node, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
@@ -357,10 +359,12 @@
             }
             if (this$._aware_of_nodes.has(new_node_id) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
               this$._aware_of_nodes.set(new_node_id, +new Date);
+              this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
             } else if (stale_aware_of_nodes.length) {
               stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes);
               this$._aware_of_nodes['delete'](stale_node_to_remove);
               this$._aware_of_nodes.set(new_node_id, +new Date);
+              this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
             } else {
               break;
             }
@@ -1059,6 +1063,7 @@
         this._routing_path_to_id.set(source_id, [real_public_key, target_id]);
         this._multiplexers.set(full_target_id, fixedSizeMultiplexer['Multiplexer'](this._max_data_size, this._max_packet_data_size));
         this._demultiplexers.set(full_target_id, fixedSizeMultiplexer['Demultiplexer'](this._max_data_size, this._max_packet_data_size));
+        this['fire']('routing_paths_count', this._id_to_routing_path.size);
       }
       /**
        * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
@@ -1106,6 +1111,7 @@
         this._multiplexers['delete'](full_target_id);
         this._demultiplexers['delete'](full_target_id);
         this._unregister_application_connection(real_public_key, target_id);
+        this['fire']('routing_paths_count', this._id_to_routing_path.size);
       }
       /**
        * @param {!Uint8Array} real_public_key
@@ -1116,6 +1122,7 @@
         full_target_id = concat_arrays([real_public_key, target_id]);
         this._application_connections.add(full_target_id);
         this['fire']('connected', real_public_key, target_id);
+        this['fire']('application_connections_count', this._application_connections.size);
       }
       /**
        * @param {!Uint8Array} real_public_key
@@ -1127,6 +1134,7 @@
         if (this._application_connections.has(full_target_id)) {
           this._application_connections['delete'](full_target_id);
           this['fire']('disconnected', real_public_key, target_id);
+          this['fire']('application_connections_count', this._application_connections.size);
         }
       }
       /**

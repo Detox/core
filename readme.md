@@ -165,7 +165,7 @@ Payload consists of two arguments: `real_public_key` (`Uint8Array`) and `reason`
 Event is fired when announcement failed.
 
 ### Event: announced
-Payload is single argument `real_public_key` (`Uint8Array`). 
+Payload is a single argument `real_public_key` (`Uint8Array`). 
 Event is fired when announcement succeeded.
 
 ### Event: connection_failed
@@ -183,6 +183,22 @@ Event is fired when connection to `target_id` succeeded.
 ### Event: disconnected
 Payload consists of two `Uint8Array` arguments: `real_public_key` and `target_id`.
 Event is fired when `target_id` disconnected for whatever reason.
+
+### Event: connected_nodes_count
+Payload is a single argument `count` (`number`).
+Event is fired when new node connection with DHT node is established or destroyed.
+
+### Event: aware_of_nodes_count
+Payload is a single argument `count` (`number`).
+Event is fired when number of nodes in DHT about which current node is aware of changes.
+
+### Event: routing_paths_count
+Payload is a single argument `count` (`number`).
+Event is fired when new routing path is established or destroyed.
+
+### Event: application_connections_count
+Payload is a single argument `count` (`number`).
+Event is fired when new application connection established or destroyed.
 
 ## Contribution
 Feel free to create issues and send pull requests (for big changes create an issue first and link it from the PR), they are highly appreciated!

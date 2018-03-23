@@ -282,11 +282,13 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		)
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.add(node_id)
+				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				if @_more_nodes_needed()
 					@_get_more_nodes_from(node_id)
 			)
 			.'on'('node_disconnected', (node_id) !~>
 				@_connected_nodes.delete(node_id)
+				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				@_get_nodes_requested.delete(node_id)
 			)
 			.'on'('data', (node_id, command, data) !~>
@@ -328,10 +330,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								continue
 							if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
 								@_aware_of_nodes.set(new_node_id, +(new Date))
+								@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 							else if stale_aware_of_nodes.length
 								stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes)
 								@_aware_of_nodes.delete(stale_node_to_remove)
 								@_aware_of_nodes.set(new_node_id, +(new Date))
+								@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 							else
 								break
 			)
@@ -960,6 +964,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			# Multiplexer/demultiplexer pair is not needed for introduction node, but for simplicity we'll create it anyway
 			@_multiplexers.set(full_target_id, fixed-size-multiplexer['Multiplexer'](@_max_data_size, @_max_packet_data_size))
 			@_demultiplexers.set(full_target_id, fixed-size-multiplexer['Demultiplexer'](@_max_data_size, @_max_packet_data_size))
+			@'fire'('routing_paths_count', @_id_to_routing_path.size)
 		/**
 		 * @param {!Uint8Array} node_id		First node in routing path, used for routing path identification
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
@@ -996,6 +1001,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			@_multiplexers.delete(full_target_id)
 			@_demultiplexers.delete(full_target_id)
 			@_unregister_application_connection(real_public_key, target_id)
+			@'fire'('routing_paths_count', @_id_to_routing_path.size)
 		/**
 		 * @param {!Uint8Array} real_public_key
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
@@ -1004,6 +1010,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			full_target_id	= concat_arrays([real_public_key, target_id])
 			@_application_connections.add(full_target_id)
 			@'fire'('connected', real_public_key, target_id)
+			@'fire'('application_connections_count', @_application_connections.size)
 		/**
 		 * @param {!Uint8Array} real_public_key
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
@@ -1013,6 +1020,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if @_application_connections.has(full_target_id)
 				@_application_connections.delete(full_target_id)
 				@'fire'('disconnected', real_public_key, target_id)
+				@'fire'('application_connections_count', @_application_connections.size)
 		/**
 		 * @param {!Uint8Array}	node_id
 		 * @param {number}		command	0..245
