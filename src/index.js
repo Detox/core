@@ -619,9 +619,11 @@
        *
        * @param {string}	ip
        * @param {number}	port
+       * @param {string}	address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
        */
-      'start_bootstrap_node': function(ip, port){
-        this._dht['start_bootstrap_node'](ip, port);
+      'start_bootstrap_node': function(ip, port, address){
+        address == null && (address = ip);
+        this._dht['start_bootstrap_node'](ip, port, address);
         this._bootstrap_node = true;
       }
       /**

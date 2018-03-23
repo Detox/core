@@ -575,9 +575,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 *
 		 * @param {string}	ip
 		 * @param {number}	port
+		 * @param {string}	address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
 		 */
-		'start_bootstrap_node' : (ip, port) !->
-			@_dht['start_bootstrap_node'](ip, port)
+		'start_bootstrap_node' : (ip, port, address = ip) !->
+			@_dht['start_bootstrap_node'](ip, port, address)
 			@_bootstrap_node	= true
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor

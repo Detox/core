@@ -9,8 +9,9 @@ test			= require('tape')
 
 const NUMBER_OF_NODES = 10
 
-bootstrap_ip	= '127.0.0.1'
-bootstrap_port	= 16882
+bootstrap_ip		= '127.0.0.1'
+bootstrap_address	= 'localhost'
+bootstrap_port		= 16882
 
 command		= 38
 data		= Buffer.from(
@@ -29,7 +30,7 @@ test('Core', (t) !->
 
 	bootstrap_node_info		=
 		node_id	: Buffer(detox-crypto.create_keypair(new Uint8Array(32)).ed25519.public).toString('hex')
-		host	: bootstrap_ip
+		host	: bootstrap_address
 		port	: bootstrap_port
 
 	node_1_real_seed		= new Uint8Array(32)
@@ -48,7 +49,7 @@ test('Core', (t) !->
 			..set([i])
 		if i == 0
 			instance	= lib.Core(dht_seed, [], [], 5, 10)
-			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port)
+			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address)
 		else
 			instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5)
 		instance.once('ready', !->
