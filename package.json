@@ -24,10 +24,10 @@
 	},
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.6.0",
-		"@detox/transport"       : "^0.22.0",
+		"@detox/transport"       : "^0.23.0",
 		"@detox/utils"           : "^1.6.0",
 		"async-eventer"          : "^1.1.5",
-		"fixed-size-multiplexer" : "^0.1.1"
+		"fixed-size-multiplexer" : "^1.0.1"
 	},
 	"devDependencies" : {
 		"build-gc" : "^0.1.1",
