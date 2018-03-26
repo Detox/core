@@ -221,18 +221,20 @@
      * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
      * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
+     * @param {!Object}			other_dht_options		Other internal options supported by underlying DHT implementation `webtorrent-dht`
      *
      * @return {!Core}
      *
      * @throws {Error}
      */
-    function Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments){
+    function Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options){
       var this$ = this;
       packets_per_second == null && (packets_per_second = 1);
       bucket_size == null && (bucket_size = 2);
       max_pending_segments == null && (max_pending_segments = 10);
+      other_dht_options == null && (other_dht_options = {});
       if (!(this instanceof Core)) {
-        return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments);
+        return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options);
       }
       asyncEventer.call(this);
       this._real_keypairs = ArrayMap();
@@ -303,7 +305,7 @@
           this$._get_more_nodes();
         }
       });
-      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size)['on']('node_connected', function(node_id){
+      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size, other_dht_options)['on']('node_connected', function(node_id){
         this$._connected_nodes.add(node_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         if (this$._more_nodes_needed()) {

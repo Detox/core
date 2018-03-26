@@ -82,7 +82,7 @@ requirejs(['@detox/core'], function (detox_core) {
 ### detox_core.generate_seed() : Uint8Array
 Generates random seed that can be later used in `detox_core.Core` constructor.
 
-### detox_core.Core(dht_key_seed : Uint8Array, bootstrap_nodes : Object[], ice_servers : Object[], packets_per_second = 1 : number, bucket_size = 2 : number, max_pending_segments = 10 : number) : detox_core.Core
+### detox_core.Core(dht_key_seed : Uint8Array, bootstrap_nodes : Object[], ice_servers : Object[], packets_per_second = 1 : number, bucket_size = 2 : number, max_pending_segments = 10 : number, other_dht_options = {} : Object) : detox_core.Core
 Constructor for Core object, offers methods for connecting to and interacting with Detox network.
 
 * `dht_key_seed` - seed that corresponds to temporary user identity in DHT network
@@ -91,6 +91,7 @@ Constructor for Core object, offers methods for connecting to and interacting wi
 * `packets_per_second` - packets are sent at constant rate (which together with fixed packet size of 512 bytes can be used to identify bandwidth requirements for specific connection), `1` is minimal supported rate, actual rate is negotiated between 2 sides on connection
 * `bucket_size` - size of the bucket used in DHT internals (directly affects number of active WebRTC connections)
 * `max_pending_segments` - How much segments can be in pending state per one address in router
+* `other_dht_options` - Other internal options supported by underlying DHT implementation `webtorrent-dht`
 
 ### detox_core.Core.start_bootstrap_node(ip : string, port : number, address = ip : string)
 Start bootstrap server (WebSocket) listening on specified IP and port, optionally referred externally by specified address (like domain name).

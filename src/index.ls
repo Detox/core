@@ -205,14 +205,15 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
 	 * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
+	 * @param {!Object}			other_dht_options		Other internal options supported by underlying DHT implementation `webtorrent-dht`
 	 *
 	 * @return {!Core}
 	 *
 	 * @throws {Error}
 	 */
-	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10)
+	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10, other_dht_options = {})
 		if !(@ instanceof Core)
-			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments)
+			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options)
 		async-eventer.call(@)
 
 		@_real_keypairs	= ArrayMap()
@@ -279,6 +280,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			ice_servers
 			packets_per_second
 			bucket_size
+			other_dht_options
 		)
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.add(node_id)
