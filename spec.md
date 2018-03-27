@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.1.2
+Specification version: 0.1.3
 
 Author: Nazar Mokrynskyi
 
@@ -32,7 +32,7 @@ Detox is based on DHT and anonymous (onion) routing that share the same encrypte
 #### Data channel
 Data channel is WebRTC's RTCDataChannel, where data are sent in packets of 512 bytes at a time after at a fixed rate.
 
-As actual data being sent can be either for DHT's operation or for other purposes, also data will almost always be either larger or smaller that the packet size.
+Actual data being sent can be either for DHT's operation or for other purposes, also data will almost always be either larger or smaller that the packet size.
 In order to deal with these 2 issues each piece of data being sent is prepended with a command and then multiplexed into data channel and demultiplexed back on receiving side.
 
 Command is 1 byte unsigned integer, maximum data length supported here is 65535 bytes, hence data length header will be 2 bytes.
