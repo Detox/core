@@ -27,7 +27,7 @@
 		"@detox/transport"       : "^0.26.0",
 		"@detox/utils"           : "^1.6.0",
 		"async-eventer"          : "^1.1.5",
-		"fixed-size-multiplexer" : "^1.0.1"
+		"fixed-size-multiplexer" : "^1.0.2"
 	},
 	"devDependencies" : {
 		"build-gc" : "^0.1.1",
