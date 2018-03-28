@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version 0.1.3 of the specification
+ * Implements version 0.2.0 of the specification
  */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
@@ -269,8 +269,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						@_pending_pings.add(source_id)
 		)
 		@_get_more_nodes_interval		= intervalSet(GET_MORE_NODES_INTERVAL, !~>
-			if @_more_nodes_needed()
-				@_get_more_nodes()
+			if @_more_aware_of_nodes_needed()
+				@_get_more_aware_of_nodes()
 		)
 
 		@_dht		= detox-transport['DHT'](
@@ -285,7 +285,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.add(node_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				if @_more_nodes_needed()
+				if @_more_aware_of_nodes_needed()
 					@_get_more_nodes_from(node_id)
 			)
 			.'on'('node_disconnected', (node_id) !~>
@@ -296,11 +296,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			.'on'('data', (node_id, command, data) !~>
 				switch command
 					case DHT_COMMAND_ROUTING
-						# TODO: Bootstrap node should refuse to act as intermediate node in routing paths
 						@_router['process_packet'](node_id, data)
 					case DHT_COMMAND_FORWARD_INTRODUCTION
-						if @_bootstrap_node
-							return
 						[target_id, introduction_message]	= parse_introduce_to_data(data)
 						if !@_announcements_from.has(target_id)
 							return
@@ -363,8 +360,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				source_id	= concat_arrays([node_id, route_id])
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
-						if @_bootstrap_node
-							return
 						public_key	= @_dht['verify_announcement_message'](data)
 						if !public_key
 							return
@@ -379,8 +374,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						@_announcements_from.set(public_key, [node_id, route_id, announce_interval])
 						@_dht['publish_announcement_message'](data)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
-						if @_bootstrap_node
-							return
 						target_id	= data
 						if target_id.length != ID_LENGTH
 							return
@@ -402,8 +395,6 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 						)
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
-						if @_bootstrap_node
-							return
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						if @_pending_connection.has(rendezvous_token)
 							# Ignore subsequent usages of the same rendezvous token
@@ -582,6 +573,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		'start_bootstrap_node' : (ip, port, address = ip) !->
 			@_dht['start_bootstrap_node'](ip, port, address)
 			@_bootstrap_node	= true
+			# Stop doing any routing tasks immediately
+			@_destroy_router()
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
 		 *
@@ -597,6 +590,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'announce' : (real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes) ->
+			if @_bootstrap_node
+				return null
 			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
 			# Ignore repeated announcement
@@ -687,6 +682,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'connect_to' : (real_key_seed, target_id, application, secret, number_of_intermediate_nodes) ->
+			if @_bootstrap_node
+				return null
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
@@ -816,6 +813,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
 		'send_to' : (real_public_key, target_id, command, data) !->
+			if @_bootstrap_node
+				return
 			full_target_id		= concat_arrays([real_public_key, target_id])
 			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if !encryptor_instance || data.length > @_max_data_size
@@ -844,20 +843,27 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		'destroy' : !->
 			if @_destroyed
 				return
+			# Bootstrap node immediately destroys router, no need to do it again
+			if !@_bootstrap_node
+				@_destroy_router()
+			@_dht['destroy']()
+			@_destroyed	= true
+		_destroy_router : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
 			clearInterval(@_get_more_nodes_interval)
+			# Delete all tags and only rely on DHT's needs for existing connections
+			@_connections_timeouts.forEach (, node_id) !~>
+				@_del_used_tag(node_id)
 			@_routing_paths.forEach ([node_id, route_id]) !~>
 				@_unregister_routing_path(node_id, route_id)
 			@_pending_connection.forEach ([, , , connection_timeout]) !~>
 				clearTimeout(connection_timeout)
-			@_dht['destroy']()
 			@_router['destroy']()
-			@_destroyed	= true
 		/**
 		 * @return {boolean}
 		 */
-		_more_nodes_needed : ->
+		_more_aware_of_nodes_needed : ->
 			!!(@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length)
 		/**
 		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
@@ -877,7 +883,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		/**
 		 * Request more nodes to be aware of from some of the nodes already connected to
 		 */
-		_get_more_nodes : !->
+		_get_more_aware_of_nodes : !->
 			nodes	= @_pick_random_connected_nodes(5)
 			if !nodes
 				return

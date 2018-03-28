@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.1.3
+Specification version: 0.2.0
 
 Author: Nazar Mokrynskyi
 
@@ -90,10 +90,9 @@ This signature is present to ensure that WebRTC connection is established with i
 
 DHT queries and responses are sent with `COMMAND_DHT` as described in previous section.
 
-If node acts as DHT bootstrap node it MUST NOT:
-* act as introduction node
-* act as rendezvous node
-* act as intermediate node on routing paths
+If node acts as DHT bootstrap node it MUST NOT support data channel commands other `COMMAND_DHT`.
+
+Essentially, all routing features MUST be disabled and node only operates as DHT bootstrap node.
 
 #### Router
 Anonymous router is based on [Ronion](https://github.com/nazar-pc/ronion) framework, make yourself familiar with Ronion first as this document will not cover it.

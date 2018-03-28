@@ -6,7 +6,7 @@
  */
 (function(){
   /*
-   * Implements version 0.1.3 of the specification
+   * Implements version 0.2.0 of the specification
    */
   var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
@@ -301,14 +301,14 @@
         });
       });
       this._get_more_nodes_interval = intervalSet(GET_MORE_NODES_INTERVAL, function(){
-        if (this$._more_nodes_needed()) {
-          this$._get_more_nodes();
+        if (this$._more_aware_of_nodes_needed()) {
+          this$._get_more_aware_of_nodes();
         }
       });
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size, other_dht_options)['on']('node_connected', function(node_id){
         this$._connected_nodes.add(node_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
-        if (this$._more_nodes_needed()) {
+        if (this$._more_aware_of_nodes_needed()) {
           this$._get_more_nodes_from(node_id);
         }
       })['on']('node_disconnected', function(node_id){
@@ -322,9 +322,6 @@
           this$._router['process_packet'](node_id, data);
           break;
         case DHT_COMMAND_FORWARD_INTRODUCTION:
-          if (this$._bootstrap_node) {
-            return;
-          }
           ref$ = parse_introduce_to_data(data), target_id = ref$[0], introduction_message = ref$[1];
           if (!this$._announcements_from.has(target_id)) {
             return;
@@ -393,9 +390,6 @@
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
-          if (this$._bootstrap_node) {
-            return;
-          }
           public_key = this$._dht['verify_announcement_message'](data);
           if (!public_key) {
             return;
@@ -413,9 +407,6 @@
           this$._dht['publish_announcement_message'](data);
           break;
         case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
-          if (this$._bootstrap_node) {
-            return;
-          }
           target_id = data;
           if (target_id.length !== ID_LENGTH) {
             return;
@@ -440,9 +431,6 @@
           });
           break;
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
-          if (this$._bootstrap_node) {
-            return;
-          }
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
           if (this$._pending_connection.has(rendezvous_token)) {
             return;
@@ -627,6 +615,7 @@
         address == null && (address = ip);
         this._dht['start_bootstrap_node'](ip, port, address);
         this._bootstrap_node = true;
+        this._destroy_router();
       }
       /**
        * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
@@ -645,6 +634,9 @@
        */,
       'announce': function(real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes){
         var real_keypair, real_public_key;
+        if (this._bootstrap_node) {
+          return null;
+        }
         real_keypair = detoxCrypto['create_keypair'](real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
         if (this._real_keypairs.has(real_public_key)) {
@@ -742,6 +734,9 @@
        */,
       'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
         var real_keypair, real_public_key, full_target_id, connection_in_progress, nodes, first_node, rendezvous_node, this$ = this;
+        if (this._bootstrap_node) {
+          return null;
+        }
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
@@ -868,6 +863,9 @@
        */,
       'send_to': function(real_public_key, target_id, command, data){
         var full_target_id, encryptor_instance, multiplexer, x$, data_with_header, this$ = this;
+        if (this._bootstrap_node) {
+          return;
+        }
         full_target_id = concat_arrays([real_public_key, target_id]);
         encryptor_instance = this._encryptor_instances.get(full_target_id);
         if (!encryptor_instance || data.length > this._max_data_size) {
@@ -895,13 +893,23 @@
         }));
       },
       'destroy': function(){
-        var this$ = this;
         if (this._destroyed) {
           return;
         }
+        if (!this._bootstrap_node) {
+          this._destroy_router();
+        }
+        this._dht['destroy']();
+        this._destroyed = true;
+      },
+      _destroy_router: function(){
+        var this$ = this;
         clearInterval(this._cleanup_interval);
         clearInterval(this._keep_announce_routes_interval);
         clearInterval(this._get_more_nodes_interval);
+        this._connections_timeouts.forEach(function(arg$, node_id){
+          this$._del_used_tag(node_id);
+        });
         this._routing_paths.forEach(function(arg$){
           var node_id, route_id;
           node_id = arg$[0], route_id = arg$[1];
@@ -912,14 +920,12 @@
           connection_timeout = arg$[3];
           clearTimeout(connection_timeout);
         });
-        this._dht['destroy']();
         this._router['destroy']();
-        this._destroyed = true;
       }
       /**
        * @return {boolean}
        */,
-      _more_nodes_needed: function(){
+      _more_aware_of_nodes_needed: function(){
         return !!(this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT || this._get_stale_aware_of_nodes(true).length);
       }
       /**
@@ -946,7 +952,7 @@
       /**
        * Request more nodes to be aware of from some of the nodes already connected to
        */,
-      _get_more_nodes: function(){
+      _get_more_aware_of_nodes: function(){
         var nodes, i$, len$, node_id;
         nodes = this._pick_random_connected_nodes(5);
         if (!nodes) {

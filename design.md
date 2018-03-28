@@ -1,6 +1,6 @@
 # Detox design
 
-Complements specification version: 0.1.3
+Complements specification version: 0.2.0
 
 Author: Nazar Mokrynskyi
 
@@ -46,7 +46,7 @@ Following choices were made for this particular implementation of Ronion:
 ### Types of key pairs
 There are 2 types of key pairs in Detox: temporary (DHT) and long-term.
 
-DHT key pair is used for DHT operation, it is typically temporary (might be permanent for bootstrap nodes) and is not linked to long-term key pair in any way.
+DHT key pair is used for DHT operation, it is typically temporary (might be permanent, but typically only for bootstrap nodes) and is not linked to long-term key pair in any way.
 Long-term key pair identifies the user across sessions, public key of this key pair is used by friends to find each other.
 
 System is designed in a way that DHT and long-term key pairs are independent and while exchanging data with friends, user's location is hidden and no one can link 2 key pairs together.
