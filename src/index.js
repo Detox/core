@@ -307,6 +307,7 @@
       });
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size, other_dht_options)['on']('node_connected', function(node_id){
         this$._connected_nodes.add(node_id);
+        this$._aware_of_nodes['delete'](node_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         if (!this$._more_aware_of_nodes_needed()) {
           this$._get_more_nodes_from(node_id);

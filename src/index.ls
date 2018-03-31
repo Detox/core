@@ -284,6 +284,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		)
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.add(node_id)
+				@_aware_of_nodes.delete(node_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				if !@_more_aware_of_nodes_needed()
 					@_get_more_nodes_from(node_id)
