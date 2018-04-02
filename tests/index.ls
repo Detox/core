@@ -7,7 +7,7 @@ detox-crypto	= require('@detox/crypto')
 lib				= require('..')
 test			= require('tape')
 
-const NUMBER_OF_NODES = 10
+const NUMBER_OF_NODES = 18
 
 bootstrap_ip		= '127.0.0.1'
 bootstrap_address	= 'localhost'
@@ -107,7 +107,7 @@ test('Core', (t) !->
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
-					node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 2)
+					node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 1)
 				), 5000
 			)
 			.once('announcement_failed', (, reason) !->

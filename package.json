@@ -1,36 +1,36 @@
 {
-	"name"            : "@detox/core",
-	"description"     : "Core library of Detox project that provides high-level APIs used when building end-user applications",
-	"keywords"        : [
+	"name": "@detox/core",
+	"description": "Core library of Detox project that provides high-level APIs used when building end-user applications",
+	"keywords": [
 		"detox",
 		"anonymous",
 		"distributed",
 		"p2p"
 	],
-	"version"         : "0.10.0",
-	"homepage"        : "https://github.com/Detox/core",
-	"author"          : "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
-	"repository"      : {
-		"type" : "git",
-		"url"  : "git://github.com/Detox/core.git"
+	"version": "0.10.0",
+	"homepage": "https://github.com/Detox/core",
+	"author": "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
+	"repository": {
+		"type": "git",
+		"url": "git://github.com/Detox/core.git"
 	},
-	"license"         : "0BSD",
-	"main"            : "src/index.js",
-	"files"           : [
+	"license": "0BSD",
+	"main": "src/index.js",
+	"files": [
 		"src"
 	],
-	"scripts"         : {
-		"test" : "tape tests/**/*.js"
+	"scripts": {
+		"test": "tape tests/**/*.js"
 	},
-	"dependencies"    : {
-		"@detox/crypto"          : "^0.6.0",
-		"@detox/transport"       : "^0.29.0",
-		"@detox/utils"           : "^1.6.0",
-		"async-eventer"          : "^1.1.5",
-		"fixed-size-multiplexer" : "^1.0.2"
+	"dependencies": {
+		"@detox/crypto": "^0.6.0",
+		"@detox/transport": "^0.29.0",
+		"@detox/utils": "^1.6.0",
+		"async-eventer": "^1.1.5",
+		"fixed-size-multiplexer": "^1.0.2"
 	},
-	"devDependencies" : {
-		"build-gc" : "^0.1.1",
-		"tape"     : "^4.9.0"
+	"devDependencies": {
+		"build-gc": "^0.1.1",
+		"tape": "^4.9.0"
 	}
 }

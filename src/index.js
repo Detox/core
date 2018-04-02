@@ -200,11 +200,12 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
+    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
     are_arrays_equal = detoxUtils['are_arrays_equal'];
+    array2hex = detoxUtils['array2hex'];
     hex2array = detoxUtils['hex2array'];
     concat_arrays = detoxUtils['concat_arrays'];
     timeoutSet = detoxUtils['timeoutSet'];
@@ -306,11 +307,18 @@
         }
       });
       this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size, other_dht_options)['on']('node_connected', function(node_id){
+        var node_id_hex, bootstrap_nodes;
         this$._connected_nodes.add(node_id);
         this$._aware_of_nodes['delete'](node_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
-        if (!this$._more_aware_of_nodes_needed()) {
-          this$._get_more_nodes_from(node_id);
+        node_id_hex = array2hex(node_id);
+        if (this$._more_aware_of_nodes_needed()) {
+          bootstrap_nodes = this$['get_bootstrap_nodes']().map(function(bootstrap_node){
+            return bootstrap_node['node_id'];
+          });
+          if (!in$(node_id_hex, bootstrap_nodes)) {
+            this$._get_more_nodes_from(node_id);
+          }
         }
       })['on']('node_disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id);
@@ -1273,5 +1281,10 @@
     module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
   } else {
     this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
+  }
+  function in$(x, xs){
+    var i = -1, l = xs.length >>> 0;
+    while (++i < l) if (x === xs[i]) return true;
+    return false;
   }
 }).call(this);

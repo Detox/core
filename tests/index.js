@@ -9,7 +9,7 @@
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 10;
+  NUMBER_OF_NODES = 18;
   bootstrap_ip = '127.0.0.1';
   bootstrap_address = 'localhost';
   bootstrap_port = 16882;
@@ -79,7 +79,7 @@
           console.log('Preparing for connection (5s)...');
           setTimeout(function(){
             console.log('Connecting...');
-            node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 2);
+            node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 1);
           }, 5000);
         }).once('announcement_failed', function(arg$, reason){
           t.fail('Announcement failed with code ' + reason);

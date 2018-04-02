@@ -189,6 +189,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
 	are_arrays_equal			= detox-utils['are_arrays_equal']
+	array2hex					= detox-utils['array2hex']
 	hex2array					= detox-utils['hex2array']
 	concat_arrays				= detox-utils['concat_arrays']
 	timeoutSet					= detox-utils['timeoutSet']
@@ -286,8 +287,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				@_connected_nodes.add(node_id)
 				@_aware_of_nodes.delete(node_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				if !@_more_aware_of_nodes_needed()
-					@_get_more_nodes_from(node_id)
+				node_id_hex	= array2hex(node_id)
+				if @_more_aware_of_nodes_needed()
+					bootstrap_nodes	= @'get_bootstrap_nodes'().map (bootstrap_node) ->
+						bootstrap_node['node_id']
+					if !(node_id_hex in bootstrap_nodes)
+						@_get_more_nodes_from(node_id)
 			)
 			.'on'('node_disconnected', (node_id) !~>
 				@_connected_nodes.delete(node_id)
