@@ -48,7 +48,7 @@ test('Core', (t) !->
 		dht_seed	= new Uint8Array(32)
 			..set([i])
 		if i == 0
-			instance	= lib.Core(dht_seed, [], [], 5, 10)
+			instance	= lib.Core(dht_seed, [], [], 5, 5)
 			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address)
 		else
 			instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5)
