@@ -99,7 +99,7 @@
           instance = lib.Core(dht_seed, [], [], 5, 5);
           instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address);
         } else {
-          instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5);
+          instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1);
         }
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
