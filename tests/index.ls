@@ -7,7 +7,7 @@ detox-crypto	= require('@detox/crypto')
 lib				= require('..')
 test			= require('tape')
 
-const NUMBER_OF_NODES = 18
+const NUMBER_OF_NODES = 30
 
 bootstrap_ip		= '127.0.0.1'
 bootstrap_address	= 'localhost'
@@ -119,6 +119,6 @@ test('Core', (t) !->
 		console.log 'Preparing for announcement (2s)...'
 		setTimeout (!->
 			console.log 'Announcing...'
-			node_1.announce(node_1_real_seed, 2, 1)
+			node_1.announce(node_1_real_seed, 3, 1)
 		), 2000
 )
