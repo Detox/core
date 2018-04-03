@@ -9,7 +9,7 @@
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 30;
+  NUMBER_OF_NODES = 15;
   bootstrap_ip = '127.0.0.1';
   bootstrap_address = 'localhost';
   bootstrap_port = 16882;
@@ -102,8 +102,8 @@
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
           if (wait_for === NUMBER_OF_NODES - 2) {
-            t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
-            t.equal(node_1.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
+            t.deepEqual(instance.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
+            t.equal(instance.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
           }
           --wait_for;
           if (!wait_for) {

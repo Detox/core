@@ -7,7 +7,7 @@ detox-crypto	= require('@detox/crypto')
 lib				= require('..')
 test			= require('tape')
 
-const NUMBER_OF_NODES = 30
+const NUMBER_OF_NODES = 15
 
 bootstrap_ip		= '127.0.0.1'
 bootstrap_address	= 'localhost'
@@ -57,9 +57,9 @@ test('Core', (t) !->
 
 			if wait_for == (NUMBER_OF_NODES - 2)
 				# Only check the first node after bootstrap
-				t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
+				t.deepEqual(instance.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
 
-				t.equal(node_1.get_max_data_size(), 2 ** 16 - 1, 'Max data size returned correctly')
+				t.equal(instance.get_max_data_size(), 2 ** 16 - 1, 'Max data size returned correctly')
 
 			--wait_for
 			if !wait_for
