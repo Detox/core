@@ -96,7 +96,7 @@
         x$ = dht_seed = new Uint8Array(32);
         x$.set([i]);
         if (i === 0) {
-          instance = lib.Core(dht_seed, [], [], 5, 2);
+          instance = lib.Core(dht_seed, [], [], 5, 1);
           instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address);
         } else {
           instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1);
