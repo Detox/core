@@ -53,8 +53,6 @@
         var node_1, node_3;
         node_1 = nodes[1];
         node_3 = nodes[3];
-        t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
-        t.equal(node_1.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
         node_1.once('announced', function(){
           t.pass('Announced successfully');
           node_1.once('introduction', function(data){
@@ -88,7 +86,7 @@
         console.log('Preparing for announcement (2s)...');
         setTimeout(function(){
           console.log('Announcing...');
-          node_1.announce(node_1_real_seed, 3, 1);
+          node_1.announce(node_1_real_seed, 1, 1);
         }, 2000);
       }
       function fn$(i){
@@ -103,6 +101,10 @@
         }
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
+          if (wait_for === NUMBER_OF_NODES - 2) {
+            t.deepEqual(node_1.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
+            t.equal(node_1.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
+          }
           --wait_for;
           if (!wait_for) {
             ready_callback();
