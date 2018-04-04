@@ -310,6 +310,7 @@
         var node_id_hex, bootstrap_nodes;
         this$._connected_nodes.add(node_id);
         this$._aware_of_nodes['delete'](node_id);
+        this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         node_id_hex = array2hex(node_id);
         if (this$._more_aware_of_nodes_needed()) {
