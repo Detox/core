@@ -93,8 +93,8 @@ Constructor for Core object, offers methods for connecting to and interacting wi
 * `max_pending_segments` - How much segments can be in pending state per one address in router
 * `other_dht_options` - Other internal options supported by underlying DHT implementation `webtorrent-dht`
 
-### detox_core.Core.start_bootstrap_node(ip : string, port : number, address = ip : string)
-Start bootstrap server (WebSocket) listening on specified IP and port, optionally referred externally by specified address (like domain name).
+### detox_core.Core.start_bootstrap_node(ip : string, port : number, address = ip : string, public_port = port : number)
+Start bootstrap server (WebSocket) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
 
 ### detox_core.Core.get_bootstrap_nodes() : Object
 Returns array of collected bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor.

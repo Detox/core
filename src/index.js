@@ -619,10 +619,12 @@
        * @param {string}	ip
        * @param {number}	port
        * @param {string}	address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
+       * @param {number}	public_port	Publicly available port on `address`
        */
-      'start_bootstrap_node': function(ip, port, address){
+      'start_bootstrap_node': function(ip, port, address, public_port){
         address == null && (address = ip);
-        this._dht['start_bootstrap_node'](ip, port, address);
+        public_port == null && (public_port = port);
+        this._dht['start_bootstrap_node'](ip, port, address, public_port);
         this._bootstrap_node = true;
         this._destroy_router();
       }
