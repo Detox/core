@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.2.0
+Specification version: 0.2.1
 
 Author: Nazar Mokrynskyi
 
@@ -44,7 +44,7 @@ Data MUST be sent at fixed rate specified by user (in packets per second, which 
 Packet is sent in response after delay that corresponds to packets rate, but not earlier than next packet is received in response.
 This way it is possible to have different packets rates on 2 sides and don't exceed packets rate in general without any need for additional packets rate negotiation.
 
-There are 4 commands supported on data channel level:
+Following commands MUST be supported on data channel level:
 
 | Command name    | Numeric value |
 |-----------------|---------------|
