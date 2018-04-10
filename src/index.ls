@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version 0.2.1 of the specification
+ * Implements version 0.2.2 of the specification
  */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
@@ -571,7 +571,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	Core.'ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core:: =
 		/**
-		 * Start WebSocket server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
+		 * Start HTTP server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
 		 *
 		 * @param {string}	ip
 		 * @param {number}	port

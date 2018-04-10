@@ -10,7 +10,7 @@ WARNING: INSECURE UNTIL PROVEN THE OPPOSITE!!!
 This protocol and reference implementation are intended to be secure, but until proper independent audit is conducted you shouldn't consider it to actually be secure and shouldn't use in production applications.
 
 ## Key features
-Detox network is an overlay network that uses WebSocket and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some WebSocket bootstrap nodes are still needed).
+Detox network is an overlay network that uses HTTP and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some WebSocket bootstrap nodes are still needed).
 
 Here are 3 key features that Detox network aims to offer:
 * security
@@ -94,7 +94,7 @@ Constructor for Core object, offers methods for connecting to and interacting wi
 * `other_dht_options` - Other internal options supported by underlying DHT implementation `webtorrent-dht`
 
 ### detox_core.Core.start_bootstrap_node(ip : string, port : number, address = ip : string, public_port = port : number)
-Start bootstrap server (WebSocket) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
+Start bootstrap server (HTTP) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
 
 ### detox_core.Core.get_bootstrap_nodes() : Object
 Returns array of collected bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor.

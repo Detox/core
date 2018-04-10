@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.2.1
+Specification version: 0.2.2
 
 Author: Nazar Mokrynskyi
 
@@ -86,7 +86,7 @@ DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), wh
 There is a single important change made to WebTorrent DHT: signaling data besides keys `type`, `sdp` and optional `extensions` contains `signature` key.
 `signature` key is a Ed25519 signature (64 bytes) string of `sdp` contents using DHT keypair.
 
-This signature is present to ensure that WebRTC connection is established with intended node, even though SDP was transferred via insecure channel such as unencrypted WebSocket or other node in DHT.
+This signature is present to ensure that WebRTC connection is established with intended node, even though SDP was transferred via insecure channel such as HTTPS or unencrypted HTTP or other node in DHT.
 
 DHT queries and responses are sent with `COMMAND_DHT` as described in previous section.
 
