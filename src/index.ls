@@ -912,13 +912,13 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
 		 */
 		_pick_nodes_for_routing_path : (number_of_nodes, exclude_nodes = []) ->
-			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)
+			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)?[0]
 			if !connected_node
 				return null
 			intermediate_nodes	= @_pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes.concat([connected_node]))
 			if !intermediate_nodes
 				return null
-			connected_node.concat(intermediate_nodes)
+			[connected_node].concat(intermediate_nodes)
 		/**
 		 * Get some random nodes from already connected nodes
 		 *

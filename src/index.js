@@ -991,9 +991,9 @@
        * @return {Array<!Uint8Array>} `null` if there was not enough nodes
        */,
       _pick_nodes_for_routing_path: function(number_of_nodes, exclude_nodes){
-        var connected_node, intermediate_nodes;
+        var connected_node, ref$, intermediate_nodes;
         exclude_nodes == null && (exclude_nodes = []);
-        connected_node = this._pick_random_connected_nodes(1, exclude_nodes);
+        connected_node = (ref$ = this._pick_random_connected_nodes(1, exclude_nodes)) != null ? ref$[0] : void 8;
         if (!connected_node) {
           return null;
         }
@@ -1001,7 +1001,7 @@
         if (!intermediate_nodes) {
           return null;
         }
-        return connected_node.concat(intermediate_nodes);
+        return [connected_node].concat(intermediate_nodes);
       }
       /**
        * Get some random nodes from already connected nodes
