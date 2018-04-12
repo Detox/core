@@ -1,6 +1,6 @@
 # Detox design
 
-Complements specification version: 0.2.2
+Complements specification version: 0.3.0
 
 Author: Nazar Mokrynskyi
 
@@ -34,7 +34,7 @@ DHT implementation in Detox differs from WebTorrent DHT in couple of minor ways:
 * WebRTC data channel used for DHT is shared with anonymous routing, so that single connection multiplexes all of the data transferred between 2 nodes
 * Bootstrap node in addition to IP and port is identified by its DHT public key and during connection signature is checked to ensure WebRTC connection was made to intended node
 * ID space is increased from 160 bits to 256 bits and Ed25519 public keys are used as node ID
-* SHA1 hashing function is replaced by SHA3-256 to have the same size as ID space
+* SHA1 hashing function is replaced by Blake2b-256 to have the same size as ID space
 
 Anonymous routing is based on [Ronion](https://github.com/nazar-pc/ronion) framework, make yourself familiar with Ronion first as this document will not cover it.
 

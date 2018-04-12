@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.2.2
+Specification version: 0.3.0
 
 Author: Nazar Mokrynskyi
 
@@ -83,10 +83,10 @@ This way common identifiers and commands are compressed very efficiently with lo
 #### DHT
 DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is in turn based on BitTorrent DHT, make yourself familiar with BitTorrent DHT and WebTorrent DHT first as this document will not cover them.
 
-There is a single important change made to WebTorrent DHT: signaling data besides keys `type`, `sdp` and optional `extensions` contains `signature` key.
-`signature` key is a Ed25519 signature (64 bytes) string of `sdp` contents using DHT keypair.
-
-This signature is present to ensure that WebRTC connection is established with intended node, even though SDP was transferred via insecure channel such as HTTPS or unencrypted HTTP or other node in DHT.
+There are several important changes made to WebTorrent DHT:
+* signaling data besides keys `type`, `sdp` and optional `extensions` contains `signature` key (`signature` key is a Ed25519 signature (64 bytes) string of `sdp` contents using DHT keypair, it is present to ensure that WebRTC connection is established with intended node, even though SDP was transferred via insecure channel such as HTTPS or unencrypted HTTP or other node in DHT)
+* ID space is increased from 160 bits to 256 bits and Ed25519 public keys are used as node ID
+* SHA1 hashing function is replaced by Blake2b-256 to have the same size as ID space
 
 DHT queries and responses are sent with `COMMAND_DHT` as described in previous section.
 
