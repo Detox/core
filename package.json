@@ -7,7 +7,7 @@
 		"distributed",
 		"p2p"
 	],
-	"version"         : "0.15.1",
+	"version"         : "0.16.0",
 	"homepage"        : "https://github.com/Detox/core",
 	"author"          : "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
 	"repository"      : {
@@ -23,8 +23,8 @@
 		"test" : "tape tests/**/*.js"
 	},
 	"dependencies"    : {
-		"@detox/crypto"          : "^0.6.0",
-		"@detox/transport"       : "^0.33.0",
+		"@detox/crypto"          : "^0.7.0",
+		"@detox/transport"       : "^0.34.0",
 		"@detox/utils"           : "^1.6.0",
 		"async-eventer"          : "^1.1.5",
 		"fixed-size-multiplexer" : "^1.0.2"
