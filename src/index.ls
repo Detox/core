@@ -255,7 +255,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					@_del_used_tag(node_id)
 					@_connections_timeouts.delete(node_id)
 		)
-		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT, !~>
+		# On 4/5 of the way to dropping connection
+		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT / 5 * 4, !~>
 			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node

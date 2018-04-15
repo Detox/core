@@ -280,7 +280,7 @@
           }
         });
       });
-      this._keep_announce_routes_interval = intervalSet(LAST_USED_TIMEOUT, function(){
+      this._keep_announce_routes_interval = intervalSet(LAST_USED_TIMEOUT / 5 * 4, function(){
         this$._real_keypairs.forEach(function(arg$, real_public_key){
           var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, reannounce_if_older_than;
           real_keypair = arg$[0], number_of_introduction_nodes = arg$[1], number_of_intermediate_nodes = arg$[2], announced_to = arg$[3], last_announcement = arg$[4];
