@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.3.0
+Specification version: 0.3.1
 
 Author: Nazar Mokrynskyi
 
@@ -151,7 +151,8 @@ Routing path creation is regular Router routing path with pair of multiplexers/d
 
 Nodes for routing path are selected as described in "Selection of nodes for routing path creation" section above.
 
-Multiplexers/demultiplexers are only used for sending and receiving data, other commands MUST fit into single packet with max size of 509 bytes, so that they take at most 1 data channel packet (actual size of payload that fits into single packet is 488 bytes as Routing is encrypted and has its own overhead).
+Multiplexers/demultiplexers are only used for sending and receiving data, routing commands defined in Ronion specification MUST fit into single packet with max size of 509 bytes, so that they take at most 1 data channel packet (actual size of payload that fits into single packet is 488 bytes as Routing is encrypted and has its own overhead).
+In case command payload is 0 bytes, it should be replaced with zero byte payload, otherwise demultiplexer will treat it as useless padding and will discard such command.
 
 ### Announcement to the network
 Announcement to the network is done anonymously through introduction nodes.

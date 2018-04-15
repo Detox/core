@@ -6,7 +6,7 @@
  */
 (function(){
   /*
-   * Implements version 0.3.0 of the specification
+   * Implements version 0.3.1 of the specification
    */
   var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
@@ -337,7 +337,7 @@
             return;
           }
           ref$ = this$._announcements_from.get(target_id), target_node_id = ref$[0], target_route_id = ref$[1];
-          this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
+          this$._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
           break;
         case DHT_COMMAND_GET_NODES_REQUEST:
           nodes = this$._pick_random_connected_nodes(7) || [];
@@ -428,7 +428,7 @@
           send_response = function(code, nodes){
             var data;
             data = compose_find_introduction_nodes_response(code, target_id, nodes);
-            this$._router['send_data'](node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data);
+            this$._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data);
           };
           this$._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
             if (!introduction_nodes.length) {
@@ -462,7 +462,7 @@
           }
           this$._pending_connection['delete'](rendezvous_token);
           clearTimeout(connection_timeout);
-          this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
+          this$._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
           target_source_id = concat_arrays([target_node_id, target_route_id]);
           this$._forwarding_mapping.set(source_id, [target_node_id, target_route_id]);
           this$._forwarding_mapping.set(target_source_id, [node_id, route_id]);
@@ -569,7 +569,7 @@
         case ROUTING_COMMAND_DATA:
           if (this$._forwarding_mapping.has(source_id)) {
             ref$ = this$._forwarding_mapping.get(source_id), target_node_id = ref$[0], target_route_id = ref$[1];
-            this$._router['send_data'](target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
+            this$._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
           } else if (this$._routing_path_to_id.has(source_id)) {
             ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
             full_target_id = concat_arrays([real_public_key, target_id]);
@@ -842,7 +842,7 @@
                 this$._register_application_connection(real_public_key, target_id);
               }
               this$._router['on']('data', path_confirmation);
-              this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
+              this$._send_to_routing_node_raw(first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
               this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
               path_confirmation_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
                 this$._router['off']('data', path_confirmation);
@@ -853,7 +853,7 @@
             try_to_introduce();
           }
           this$._router['on']('data', found_introduction_nodes);
-          this$._router['send_data'](first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
+          this$._send_to_routing_node_raw(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
           find_introduction_nodes_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
             this$._router['off']('data', found_introduction_nodes);
             connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
@@ -1199,7 +1199,19 @@
           return;
         }
         ref$ = this._id_to_routing_path.get(full_target_id), node_id = ref$[0], route_id = ref$[1];
-        this._router['send_data'](node_id, route_id, command, data);
+        this._send_to_routing_node_raw(node_id, route_id, command, data);
+      }
+      /**
+       * @param {!Uint8Array} node_id
+       * @param {!Uint8Array} route_id
+       * @param {number}		command
+       * @param {!Uint8Array}	data
+       */,
+      _send_to_routing_node_raw: function(node_id, route_id, command, data){
+        if (data.length === 0) {
+          data = new Uint8Array(1);
+        }
+        return this._router['send_data'](node_id, route_id, command, data);
       }
       /**
        * @param {!Uint8Array} node_id
@@ -1213,7 +1225,7 @@
         if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
           return false;
         }
-        this._router['send_data'](node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0));
+        this._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0));
         return true;
       }
       /**
