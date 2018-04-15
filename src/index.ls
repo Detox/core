@@ -35,8 +35,8 @@ const CONNECTION_TIMEOUT			= 30
 const ROUTING_PATH_SEGMENT_TIMEOUT	= 10
 # After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
 const LAST_USED_TIMEOUT				= 60
-# Re-announce each 30 minutes
-const ANNOUNCE_INTERVAL				= 30 * 60
+# Re-announce each 5 minutes
+const ANNOUNCE_INTERVAL				= 10 * 60
 # After 5 minutes aware of node is considered stale and needs refreshing or replacing with a new one
 const STALE_AWARE_OF_NODE_TIMEOUT	= 5 * 60
 # Keep at most 1000 nodes as aware of nodes
