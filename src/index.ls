@@ -258,7 +258,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					@_connections_timeouts.delete(node_id)
 			# Remove aware of nodes that are stale for more that double of regular timeout
 			super_stale_older_than	= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000
-			@_aware_of_nodes.forEach (date, node_id) !->
+			@_aware_of_nodes.forEach (date, node_id) !~>
 				if date < super_stale_older_than
 					@_aware_of_nodes.delete(node_id)
 		)

@@ -282,7 +282,7 @@
         super_stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000;
         this$._aware_of_nodes.forEach(function(date, node_id){
           if (date < super_stale_older_than) {
-            this._aware_of_nodes['delete'](node_id);
+            this$._aware_of_nodes['delete'](node_id);
           }
         });
       });
