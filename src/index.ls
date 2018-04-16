@@ -243,6 +243,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_application_connections	= ArraySet()
 
 		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
+			# Unregister unused routing paths
 			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
 			@_routes_timeouts.forEach (last_updated, source_id) !~>
 				if last_updated < unused_older_than
@@ -250,10 +251,16 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						[node_id, route_id]	= @_routing_paths.get(source_id)
 						@_unregister_routing_path(node_id, route_id)
 					@_routes_timeouts.delete(source_id)
+			# Un-tag connections that are no longer used
 			@_connections_timeouts.forEach (last_updated, node_id) !~>
 				if last_updated < unused_older_than
 					@_del_used_tag(node_id)
 					@_connections_timeouts.delete(node_id)
+			# Remove aware of nodes that are stale for more that double of regular timeout
+			super_stale_older_than	= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000
+			@_aware_of_nodes.forEach (date, node_id) !->
+				if date < super_stale_older_than
+					@_aware_of_nodes.delete(node_id)
 		)
 		# On 4/5 of the way to dropping connection
 		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT / 5 * 4, !~>

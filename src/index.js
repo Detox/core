@@ -261,7 +261,7 @@
       this._pending_sending = ArrayMap();
       this._application_connections = ArraySet();
       this._cleanup_interval = intervalSet(LAST_USED_TIMEOUT, function(){
-        var unused_older_than;
+        var unused_older_than, super_stale_older_than;
         unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
         this$._routes_timeouts.forEach(function(last_updated, source_id){
           var ref$, node_id, route_id;
@@ -277,6 +277,12 @@
           if (last_updated < unused_older_than) {
             this$._del_used_tag(node_id);
             this$._connections_timeouts['delete'](node_id);
+          }
+        });
+        super_stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000;
+        this$._aware_of_nodes.forEach(function(date, node_id){
+          if (date < super_stale_older_than) {
+            this._aware_of_nodes['delete'](node_id);
           }
         });
       });
