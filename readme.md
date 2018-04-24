@@ -10,7 +10,7 @@ WARNING: INSECURE UNTIL PROVEN THE OPPOSITE!!!
 This protocol and reference implementation are intended to be secure, but until proper independent audit is conducted you shouldn't consider it to actually be secure and shouldn't use in production applications.
 
 ## Key features
-Detox network is an overlay network that uses HTTP and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some WebSocket bootstrap nodes are still needed).
+Detox network is an overlay network that uses HTTP and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some HTTP bootstrap nodes are still needed).
 
 Here are a few key features that Detox network aims to offer:
 * security
