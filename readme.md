@@ -1,13 +1,16 @@
 # Detox core [![Travis CI](https://img.shields.io/travis/Detox/core/master.svg?label=Travis%20CI)](https://travis-ci.org/Detox/core)
 Core library of Detox project that provides high-level APIs used when building end-user applications.
 
-This repository contains high level design overview (design.md), specification for implementors (spec.md) and reference implementation.
+This repository contains high level design overview ([design.md](https://github.com/Detox/core/blob/master/design.md)), specification for implementors ([spec.md](https://github.com/Detox/core/blob/master/spec.md)) and reference implementation.
 
 Essentially glues `@detox/crypto` and `@detox/transport` together and provides very simple API for connecting to and interacting with Detox network.
 
 WARNING: INSECURE UNTIL PROVEN THE OPPOSITE!!!
 
 This protocol and reference implementation are intended to be secure, but until proper independent audit is conducted you shouldn't consider it to actually be secure and shouldn't use in production applications.
+
+## Why?
+Rough explanation and short comparison to networks such as Tor and Loopix is given in [why.md](https://github.com/Detox/core/blob/master/why.md).
 
 ## Key features
 Detox network is an overlay network that uses HTTP and WebRTC technologies under the hood and is capable of running in modern web browser (with caveat that some HTTP bootstrap nodes are still needed).
@@ -38,12 +41,12 @@ Anonymity is implemented on architecture level, but implementation is not anonym
 ### Robustness
 Code and its dependencies are fragile right not. Partially robustness is responsibility of the higher level consumer (for instance, there is no confirmation that data were received).
 
-Robustness is not yet implemented yet.
+Robustness is not yet implemented yet (DHT implementation will be rewritten).
 
 ### Scalability
 Scalability is based on scalability of DHT implementation (currently [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is functionally identical to BitTorrent DHT).
 
-Should be scalable already (WARNING: not proven yet, large-scale testing is needed).
+Should be scalable already (WARNING: not proven yet, large-scale testing is needed, DHT implementation will be rewritten).
 
 ## Major open issues
 Major open issues in the order from more important to less important (the order is not strict):
