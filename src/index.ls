@@ -197,6 +197,18 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	error_handler				= detox-utils['error_handler']
 	ArrayMap					= detox-utils['ArrayMap']
 	ArraySet					= detox-utils['ArraySet']
+	/*
+	 * @param {Uint8Array} seed
+	 *
+	 * @return {!Object}
+	 */
+	function create_keypair (seed)
+		detox-crypto['create_keypair'](seed)
+	/**
+	 * @return {!Uint8Array}
+	 */
+	function fake_node_id
+		create_keypair(null)['ed25519']['public']
 	/**
 	 * @constructor
 	 *
@@ -218,7 +230,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		async-eventer.call(@)
 
 		@_real_keypairs	= ArrayMap()
-		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
+		@_dht_keypair	= create_keypair(dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
 		@_used_first_nodes			= ArraySet()
@@ -356,9 +368,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			)
 			.'on'('ready', !~>
 				# Make 3 random lookups on start in order to connect to some nodes
-				@_dht['lookup'](random_bytes(ID_LENGTH))
-				@_dht['lookup'](random_bytes(ID_LENGTH))
-				@_dht['lookup'](random_bytes(ID_LENGTH))
+				# TODO: Think about regular lookups
+				@_random_lookup()
+				@_random_lookup()
+				@_random_lookup()
 				@'fire'('ready')
 			)
 		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
@@ -609,7 +622,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		'announce' : (real_key_seed, number_of_introduction_nodes, number_of_intermediate_nodes) ->
 			if @_bootstrap_node
 				return null
-			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
+			real_keypair	= create_keypair(real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
 			# Ignore repeated announcement
 			if @_real_keypairs.has(real_public_key)
@@ -704,7 +717,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
-			real_keypair	= detox-crypto['create_keypair'](real_key_seed)
+			real_keypair	= create_keypair(real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
 			# Don't connect to itself
 			if are_arrays_equal(real_public_key, target_id)
@@ -943,7 +956,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		_pick_random_connected_nodes : (up_to_number_of_nodes = 1, exclude_nodes = []) ->
 			if !@_connected_nodes.size
 				# Make random lookup in order to fill DHT with known nodes
-				@_dht['lookup'](random_bytes(ID_LENGTH))
+				@_random_lookup()
 				return null
 			connected_nodes	= Array.from(@_connected_nodes.values())
 			for bootstrap_node in @'get_bootstrap_nodes'()
@@ -976,6 +989,8 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				return null
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
+		_random_lookup : !->
+			@_dht['lookup'](fake_node_id())
 		/**
 		 * @param {!Array<!Uint8Array>}
 		 *

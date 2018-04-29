@@ -213,6 +213,20 @@
     error_handler = detoxUtils['error_handler'];
     ArrayMap = detoxUtils['ArrayMap'];
     ArraySet = detoxUtils['ArraySet'];
+    /*
+     * @param {Uint8Array} seed
+     *
+     * @return {!Object}
+     */
+    function create_keypair(seed){
+      return detoxCrypto['create_keypair'](seed);
+    }
+    /**
+     * @return {!Uint8Array}
+     */
+    function fake_node_id(){
+      return create_keypair(null)['ed25519']['public'];
+    }
     /**
      * @constructor
      *
@@ -239,7 +253,7 @@
       }
       asyncEventer.call(this);
       this._real_keypairs = ArrayMap();
-      this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
+      this._dht_keypair = create_keypair(dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
@@ -387,9 +401,9 @@
           }
         }
       })['on']('ready', function(){
-        this$._dht['lookup'](random_bytes(ID_LENGTH));
-        this$._dht['lookup'](random_bytes(ID_LENGTH));
-        this$._dht['lookup'](random_bytes(ID_LENGTH));
+        this$._random_lookup();
+        this$._random_lookup();
+        this$._random_lookup();
         this$['fire']('ready');
       });
       this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
@@ -656,7 +670,7 @@
         if (this._bootstrap_node) {
           return null;
         }
-        real_keypair = detoxCrypto['create_keypair'](real_key_seed);
+        real_keypair = create_keypair(real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
         if (this._real_keypairs.has(real_public_key)) {
           return null;
@@ -759,7 +773,7 @@
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
-        real_keypair = detoxCrypto['create_keypair'](real_key_seed);
+        real_keypair = create_keypair(real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
         if (are_arrays_equal(real_public_key, target_id)) {
           return null;
@@ -1027,7 +1041,7 @@
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
-          this._dht['lookup'](random_bytes(ID_LENGTH));
+          this._random_lookup();
           return null;
         }
         connected_nodes = Array.from(this._connected_nodes.values());
@@ -1078,6 +1092,9 @@
           results$.push(pull_random_item_from_array(aware_of_nodes));
         }
         return results$;
+      },
+      _random_lookup: function(){
+        this._dht['lookup'](fake_node_id());
       }
       /**
        * @param {!Array<!Uint8Array>}
