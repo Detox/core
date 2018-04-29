@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.3.1
+Specification version: 0.3.2
 
 Author: Nazar Mokrynskyi
 
@@ -139,7 +139,7 @@ In this case Noise's `Noise_N_25519_ChaChaPoly_BLAKE2b` is used and the output i
 ### Selection of nodes for routing path creation
 When routing path is created (see "Routing path creation" section below), we need a set of nodes through which to create this routing path.
 
-The first node in routing path MUST be always the random node to which direct connection is already established. The rest of the nodes MUST be those to which direct connections are not yet established.
+The first node in routing path MUST be always the random node to which direct connection is already established, at the same time each new routing path MUST start from unique node (e.g. there MUST NOT be 2 routing paths started from the same node). The rest of the nodes MUST be those to which direct connections are not yet established.
 
 Node can send `COMMAND_GET_NODES_REQUEST` transport command with empty contents to the other nodes and in response it will receive `COMMAND_GET_NODES_RESPONSE` transport command that contains concatenated list of up to 10 unique random IDs of nodes queried node is aware of (node SHOULD return up to 7 directly connected nodes and the rest will be nodes it is aware of).
 When routing path is created, necessary number of nodes is selected from these known nodes.

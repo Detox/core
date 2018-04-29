@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version 0.3.1 of the specification
+ * Implements version 0.3.2 of the specification
  */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
@@ -221,6 +221,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		@_dht_keypair	= detox-crypto['create_keypair'](dht_key_seed)
 		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
 
+		@_used_first_nodes			= ArraySet()
 		@_connections_in_progress	= ArrayMap()
 		@_connected_nodes			= ArraySet()
 		@_aware_of_nodes			= ArrayMap()
@@ -505,7 +506,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 										return
 									nodes.push(rendezvous_node)
 									first_node	= nodes[0]
-									@_router['construct_routing_path'](nodes)
+									@_construct_routing_path(nodes)
 										.then (route_id) !~>
 											encryptor_instance	= detox-crypto['Encryptor'](false, real_keypair['x25519']['private'])
 											encryptor_instance['put_handshake_message'](handshake_message)
@@ -674,7 +675,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					return
 				nodes.push(introduction_node)
 				first_node	= nodes[0]
-				@_router['construct_routing_path'](nodes)
+				@_construct_routing_path(nodes)
 					.then (route_id) !~>
 						@_register_routing_path(real_public_key, introduction_node, first_node, route_id)
 						announced_to.add(introduction_node)
@@ -724,6 +725,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				if connection_in_progress.discarded
 					return
 				@_connections_in_progress.delete(full_target_id)
+				# A bit ugly, but in this case routing path construction may succeed, while eventual connection to the target node fails
+				if first_node
+					@_used_first_nodes.delete(first_node)
 				@'fire'('connection_failed', real_public_key, target_id, code)
 			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
 			if !nodes
@@ -731,7 +735,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				return null
 			first_node		= nodes[0]
 			rendezvous_node	= nodes[* - 1]
-			@_router['construct_routing_path'](nodes)
+			@_construct_routing_path(nodes)
 				.then (route_id) !~>
 					@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE)
 					!~function found_introduction_nodes (new_node_id, new_route_id, command, data)
@@ -920,6 +924,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
 		 */
 		_pick_nodes_for_routing_path : (number_of_nodes, exclude_nodes = []) ->
+			exclude_nodes	= Array.from(@_used_first_nodes.values()).concat(exclude_nodes)
 			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)?[0]
 			if !connected_node
 				return null
@@ -972,6 +977,18 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
 		/**
+		 * @param {!Array<!Uint8Array>}
+		 *
+		 * @return {!Promise}
+		 */
+		_construct_routing_path : (nodes) ->
+			first_node	= nodes[0]
+			# Store first node as used, so that we don't use it for building other routing paths
+			@_used_first_nodes.add(first_node)
+			@_router['construct_routing_path'](nodes)
+				..catch !->
+					@_used_first_nodes.delete(first_node)
+		/**
 		 * @param {!Uint8Array} real_public_key
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
 		 * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
@@ -998,6 +1015,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			source_id	= concat_arrays([node_id, route_id])
 			if !@_routing_paths.has(source_id)
 				return
+			@_used_first_nodes.delete(node_id)
 			@_routing_paths.delete(source_id)
 			@_router['destroy_routing_path'](node_id, route_id)
 			@_pending_pings.delete(source_id)

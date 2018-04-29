@@ -6,7 +6,7 @@
  */
 (function(){
   /*
-   * Implements version 0.3.1 of the specification
+   * Implements version 0.3.2 of the specification
    */
   var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
@@ -241,6 +241,7 @@
       this._real_keypairs = ArrayMap();
       this._dht_keypair = detoxCrypto['create_keypair'](dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
+      this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
       this._aware_of_nodes = ArrayMap();
@@ -542,7 +543,7 @@
               }
               nodes.push(rendezvous_node);
               first_node = nodes[0];
-              this$._router['construct_routing_path'](nodes).then(function(route_id){
+              this$._construct_routing_path(nodes).then(function(route_id){
                 var encryptor_instance, response_handshake_message, signature;
                 encryptor_instance = detoxCrypto['Encryptor'](false, real_keypair['x25519']['private']);
                 encryptor_instance['put_handshake_message'](handshake_message);
@@ -724,7 +725,7 @@
           }
           nodes.push(introduction_node);
           first_node = nodes[0];
-          this._router['construct_routing_path'](nodes).then(function(route_id){
+          this._construct_routing_path(nodes).then(function(route_id){
             this$._register_routing_path(real_public_key, introduction_node, first_node, route_id);
             announced_to.add(introduction_node);
             announced(introduction_node);
@@ -780,6 +781,9 @@
             return;
           }
           this$._connections_in_progress['delete'](full_target_id);
+          if (first_node) {
+            this$._used_first_nodes['delete'](first_node);
+          }
           this$['fire']('connection_failed', real_public_key, target_id, code);
         }
         nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
@@ -789,7 +793,7 @@
         }
         first_node = nodes[0];
         rendezvous_node = nodes[nodes.length - 1];
-        this._router['construct_routing_path'](nodes).then(function(route_id){
+        this._construct_routing_path(nodes).then(function(route_id){
           var find_introduction_nodes_timeout;
           this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE);
           function found_introduction_nodes(new_node_id, new_route_id, command, data){
@@ -999,6 +1003,7 @@
       _pick_nodes_for_routing_path: function(number_of_nodes, exclude_nodes){
         var connected_node, ref$, intermediate_nodes;
         exclude_nodes == null && (exclude_nodes = []);
+        exclude_nodes = Array.from(this._used_first_nodes.values()).concat(exclude_nodes);
         connected_node = (ref$ = this._pick_random_connected_nodes(1, exclude_nodes)) != null ? ref$[0] : void 8;
         if (!connected_node) {
           return null;
@@ -1075,6 +1080,21 @@
         return results$;
       }
       /**
+       * @param {!Array<!Uint8Array>}
+       *
+       * @return {!Promise}
+       */,
+      _construct_routing_path: function(nodes){
+        var first_node, x$;
+        first_node = nodes[0];
+        this._used_first_nodes.add(first_node);
+        x$ = this._router['construct_routing_path'](nodes);
+        x$['catch'](function(){
+          this._used_first_nodes['delete'](first_node);
+        });
+        return x$;
+      }
+      /**
        * @param {!Uint8Array} real_public_key
        * @param {!Uint8Array} target_id		Last node in routing path, responder
        * @param {!Uint8Array} node_id			First node in routing path, used for routing path identification
@@ -1103,6 +1123,7 @@
         if (!this._routing_paths.has(source_id)) {
           return;
         }
+        this._used_first_nodes['delete'](node_id);
         this._routing_paths['delete'](source_id);
         this._router['destroy_routing_path'](node_id, route_id);
         this._pending_pings['delete'](source_id);
