@@ -213,7 +213,7 @@
     error_handler = detoxUtils['error_handler'];
     ArrayMap = detoxUtils['ArrayMap'];
     ArraySet = detoxUtils['ArraySet'];
-    /*
+    /**
      * @param {Uint8Array} seed
      *
      * @return {!Object}
@@ -1097,7 +1097,7 @@
         this._dht['lookup'](fake_node_id());
       }
       /**
-       * @param {!Array<!Uint8Array>}
+       * @param {!Array<!Uint8Array>} nodes
        *
        * @return {!Promise}
        */,

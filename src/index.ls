@@ -197,7 +197,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	error_handler				= detox-utils['error_handler']
 	ArrayMap					= detox-utils['ArrayMap']
 	ArraySet					= detox-utils['ArraySet']
-	/*
+	/**
 	 * @param {Uint8Array} seed
 	 *
 	 * @return {!Object}
@@ -992,7 +992,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		_random_lookup : !->
 			@_dht['lookup'](fake_node_id())
 		/**
-		 * @param {!Array<!Uint8Array>}
+		 * @param {!Array<!Uint8Array>} nodes
 		 *
 		 * @return {!Promise}
 		 */
