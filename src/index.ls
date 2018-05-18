@@ -184,7 +184,7 @@ function parse_introduce_to_data (message)
 	introduction_message	= message.subarray(PUBLIC_KEY_LENGTH)
 	[target_id, introduction_message]
 
-function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
+function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
 	random_bytes				= detox-utils['random_bytes']
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
@@ -1228,10 +1228,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 
 if typeof define == 'function' && define['amd']
 	# AMD
-	define(['@detox/crypto', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
+	define(['@detox/crypto', '@detox/dht', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
 else if typeof exports == 'object'
 	# CommonJS
-	module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'))
+	module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'))
 else
 	# Browser globals
-	@'detox_core' = Wrapper(@'detox_crypto', @'detox_transport', @'detox_utils', @'fixed_size_multiplexer', @'async_eventer')
+	@'detox_core' = Wrapper(@'detox_crypto', @'detox_dht', @'detox_routing', @'detox_transport', @'detox_utils', @'fixed_size_multiplexer', @'async_eventer')

@@ -199,7 +199,7 @@
     introduction_message = message.subarray(PUBLIC_KEY_LENGTH);
     return [target_id, introduction_message];
   }
-  function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
+  function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
     var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
@@ -1391,11 +1391,11 @@
     };
   }
   if (typeof define === 'function' && define['amd']) {
-    define(['@detox/crypto', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
+    define(['@detox/crypto', '@detox/dht', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
   } else if (typeof exports === 'object') {
-    module.exports = Wrapper(require('@detox/crypto'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
+    module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
   } else {
-    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
+    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_dht'], this['detox_routing'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
   }
   function in$(x, xs){
     var i = -1, l = xs.length >>> 0;
