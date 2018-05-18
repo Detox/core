@@ -12,6 +12,7 @@ const DHT_COMMAND_GET_NODES_REQUEST		= 2
 const DHT_COMMAND_GET_NODES_RESPONSE	= 3
 
 const UNCOMPRESSED_COMMANDS_OFFSET						= 10 # 0..9 are reserved as DHT commands
+const ROUTING_COMMANDS_OFFSET							= 20 # 10..19 are reserved as direct commands that do not belong to router or DHT
 const ROUTING_COMMAND_ANNOUNCE							= 0
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE	= 2
@@ -300,12 +301,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 
 		@_dht		= detox-dht['DHT'](
 			@_dht_keypair['ed25519']['public']
-			@_dht_keypair['ed25519']['private']
-			bootstrap_nodes
-			ice_servers
-			packets_per_second
 			bucket_size
-			other_dht_options
+			# TODO: Options below should be configurable
+			1000
+			1000
+			0.2
+			{}
 		)
 			.'on'('node_connected', (node_id) !~>
 				@_connected_nodes.add(node_id)
