@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version 0.3.2 of the specification
+ * Implements version ? of the specification
  */
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
