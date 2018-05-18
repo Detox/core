@@ -21,7 +21,7 @@ const ROUTING_COMMAND_CONNECTED							= 6
 const ROUTING_COMMAND_DATA								= 7
 const ROUTING_COMMAND_PING								= 8
 
-const PUBLIC_KEY_LENGTH						= 32
+const PUBLIC_KEY_LENGTH				= 32
 const SIGNATURE_LENGTH				= 64
 # Handshake message length for Noise_NK_25519_ChaChaPoly_BLAKE2b
 const HANDSHAKE_MESSAGE_LENGTH		= 48
