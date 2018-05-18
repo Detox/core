@@ -8,7 +8,7 @@
   /*
    * Implements version 0.3.2 of the specification
    */
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, ID_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
   DHT_COMMAND_GET_NODES_REQUEST = 2;
@@ -22,7 +22,7 @@
   ROUTING_COMMAND_CONNECTED = 6;
   ROUTING_COMMAND_DATA = 7;
   ROUTING_COMMAND_PING = 8;
-  ID_LENGTH = 32;
+  PUBLIC_KEY_LENGTH = 32;
   SIGNATURE_LENGTH = 64;
   HANDSHAKE_MESSAGE_LENGTH = 48;
   MAC_LENGTH = 16;
@@ -55,13 +55,13 @@
    */
   function compose_find_introduction_nodes_response(code, target_id, nodes){
     var x$, result, i$, len$, i, node;
-    x$ = result = new Uint8Array(1 + ID_LENGTH + nodes.length * ID_LENGTH);
+    x$ = result = new Uint8Array(1 + PUBLIC_KEY_LENGTH + nodes.length * PUBLIC_KEY_LENGTH);
     x$.set([code]);
     x$.set(target_id, 1);
     for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
       i = i$;
       node = nodes[i$];
-      result.set(node, 1 + ID_LENGTH + i * ID_LENGTH);
+      result.set(node, 1 + PUBLIC_KEY_LENGTH + i * PUBLIC_KEY_LENGTH);
     }
     return result;
   }
@@ -73,12 +73,12 @@
   function parse_find_introduction_nodes_response(data){
     var code, target_id, nodes, i$, to$, i;
     code = data[0];
-    target_id = data.subarray(1, 1 + ID_LENGTH);
+    target_id = data.subarray(1, 1 + PUBLIC_KEY_LENGTH);
     nodes = [];
-    data = data.subarray(1 + ID_LENGTH);
-    for (i$ = 0, to$ = data.length / ID_LENGTH; i$ < to$; ++i$) {
+    data = data.subarray(1 + PUBLIC_KEY_LENGTH);
+    for (i$ = 0, to$ = data.length / PUBLIC_KEY_LENGTH; i$ < to$; ++i$) {
       i = i$;
-      nodes.push(data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH));
+      nodes.push(data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH));
     }
     return [code, target_id, nodes];
   }
@@ -94,13 +94,13 @@
    */
   function compose_introduction_payload(target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH);
+    x$ = new Uint8Array(PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + PUBLIC_KEY_LENGTH);
     x$.set(target_id);
-    x$.set(rendezvous_node, ID_LENGTH);
-    x$.set(rendezvous_token, ID_LENGTH * 2);
-    x$.set(handshake_message, ID_LENGTH * 3);
-    x$.set(application, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH);
-    x$.set(secret, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH);
+    x$.set(rendezvous_node, PUBLIC_KEY_LENGTH);
+    x$.set(rendezvous_token, PUBLIC_KEY_LENGTH * 2);
+    x$.set(handshake_message, PUBLIC_KEY_LENGTH * 3);
+    x$.set(application, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH);
+    x$.set(secret, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH);
     return x$;
   }
   /**
@@ -110,12 +110,12 @@
    */
   function parse_introduction_payload(introduction_payload){
     var target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret;
-    target_id = introduction_payload.subarray(0, ID_LENGTH);
-    rendezvous_node = introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2);
-    rendezvous_token = introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
-    handshake_message = introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH);
-    application = introduction_payload.subarray(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH);
-    secret = introduction_payload.subarray(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH);
+    target_id = introduction_payload.subarray(0, PUBLIC_KEY_LENGTH);
+    rendezvous_node = introduction_payload.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2);
+    rendezvous_token = introduction_payload.subarray(PUBLIC_KEY_LENGTH * 2, PUBLIC_KEY_LENGTH * 3);
+    handshake_message = introduction_payload.subarray(PUBLIC_KEY_LENGTH * 3, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH);
+    application = introduction_payload.subarray(PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH);
+    secret = introduction_payload.subarray(PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + PUBLIC_KEY_LENGTH);
     return [target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret];
   }
   /**
@@ -128,11 +128,11 @@
    */
   function compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH * 3 + introduction_message.length);
+    x$ = new Uint8Array(PUBLIC_KEY_LENGTH * 3 + introduction_message.length);
     x$.set(rendezvous_token);
-    x$.set(introduction_node, ID_LENGTH);
-    x$.set(target_id, ID_LENGTH * 2);
-    x$.set(introduction_message, ID_LENGTH * 3);
+    x$.set(introduction_node, PUBLIC_KEY_LENGTH);
+    x$.set(target_id, PUBLIC_KEY_LENGTH * 2);
+    x$.set(introduction_message, PUBLIC_KEY_LENGTH * 3);
     return x$;
   }
   /**
@@ -142,10 +142,10 @@
    */
   function parse_initialize_connection_data(message){
     var rendezvous_token, introduction_node, target_id, introduction_message;
-    rendezvous_token = message.subarray(0, ID_LENGTH);
-    introduction_node = message.subarray(ID_LENGTH, ID_LENGTH * 2);
-    target_id = message.subarray(ID_LENGTH * 2, ID_LENGTH * 3);
-    introduction_message = message.subarray(ID_LENGTH * 3);
+    rendezvous_token = message.subarray(0, PUBLIC_KEY_LENGTH);
+    introduction_node = message.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2);
+    target_id = message.subarray(PUBLIC_KEY_LENGTH * 2, PUBLIC_KEY_LENGTH * 3);
+    introduction_message = message.subarray(PUBLIC_KEY_LENGTH * 3);
     return [rendezvous_token, introduction_node, target_id, introduction_message];
   }
   /**
@@ -157,10 +157,10 @@
    */
   function compose_confirm_connection_data(signature, rendezvous_token, handshake_message){
     var x$;
-    x$ = new Uint8Array(SIGNATURE_LENGTH + ID_LENGTH + HANDSHAKE_MESSAGE_LENGTH);
+    x$ = new Uint8Array(SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH + HANDSHAKE_MESSAGE_LENGTH);
     x$.set(signature);
     x$.set(rendezvous_token, SIGNATURE_LENGTH);
-    x$.set(handshake_message, SIGNATURE_LENGTH + ID_LENGTH);
+    x$.set(handshake_message, SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH);
     return x$;
   }
   /**
@@ -171,8 +171,8 @@
   function parse_confirm_connection_data(message){
     var signature, rendezvous_token, handshake_message;
     signature = message.subarray(0, SIGNATURE_LENGTH);
-    rendezvous_token = message.subarray(SIGNATURE_LENGTH, SIGNATURE_LENGTH + ID_LENGTH);
-    handshake_message = message.subarray(SIGNATURE_LENGTH + ID_LENGTH);
+    rendezvous_token = message.subarray(SIGNATURE_LENGTH, SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH);
+    handshake_message = message.subarray(SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH);
     return [signature, rendezvous_token, handshake_message];
   }
   /**
@@ -183,9 +183,9 @@
    */
   function compose_introduce_to_data(target_id, introduction_message){
     var x$;
-    x$ = new Uint8Array(ID_LENGTH + introduction_message.length);
+    x$ = new Uint8Array(PUBLIC_KEY_LENGTH + introduction_message.length);
     x$.set(target_id);
-    x$.set(introduction_message, ID_LENGTH);
+    x$.set(introduction_message, PUBLIC_KEY_LENGTH);
     return x$;
   }
   /**
@@ -195,8 +195,8 @@
    */
   function parse_introduce_to_data(message){
     var target_id, introduction_message;
-    target_id = message.subarray(0, ID_LENGTH);
-    introduction_message = message.subarray(ID_LENGTH);
+    target_id = message.subarray(0, PUBLIC_KEY_LENGTH);
+    introduction_message = message.subarray(PUBLIC_KEY_LENGTH);
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
@@ -372,14 +372,14 @@
             return;
           }
           this$._get_nodes_requested['delete'](node_id);
-          if (!data.length || data.length % ID_LENGTH !== 0) {
+          if (!data.length || data.length % PUBLIC_KEY_LENGTH !== 0) {
             return;
           }
-          number_of_nodes = data.length / ID_LENGTH;
+          number_of_nodes = data.length / PUBLIC_KEY_LENGTH;
           stale_aware_of_nodes = this$._get_stale_aware_of_nodes();
           for (i$ = 0; i$ < number_of_nodes; ++i$) {
             i = i$;
-            new_node_id = data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH);
+            new_node_id = data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH);
             if (are_arrays_equal(new_node_id, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id)) {
               continue;
             }
@@ -435,7 +435,7 @@
           break;
         case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
           target_id = data;
-          if (target_id.length !== ID_LENGTH) {
+          if (target_id.length !== PUBLIC_KEY_LENGTH) {
             return;
           }
           /**
@@ -829,7 +829,7 @@
                 return;
               }
               introduction_node = pull_random_item_from_array(introduction_nodes);
-              rendezvous_token = random_bytes(ID_LENGTH);
+              rendezvous_token = random_bytes(PUBLIC_KEY_LENGTH);
               x25519_public_key = detoxCrypto['convert_public_key'](target_id);
               encryptor_instance = detoxCrypto['Encryptor'](true, x25519_public_key);
               handshake_message = encryptor_instance['get_handshake_message']();
@@ -1385,7 +1385,7 @@
        * @return {!Uint8Array} 32 bytes
        */,
       'generate_seed': function(){
-        return random_bytes(ID_LENGTH);
+        return random_bytes(PUBLIC_KEY_LENGTH);
       },
       'Core': Core
     };

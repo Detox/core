@@ -21,7 +21,7 @@ const ROUTING_COMMAND_CONNECTED							= 6
 const ROUTING_COMMAND_DATA								= 7
 const ROUTING_COMMAND_PING								= 8
 
-const ID_LENGTH						= 32
+const PUBLIC_KEY_LENGTH						= 32
 const SIGNATURE_LENGTH				= 64
 # Handshake message length for Noise_NK_25519_ChaChaPoly_BLAKE2b
 const HANDSHAKE_MESSAGE_LENGTH		= 48
@@ -67,11 +67,11 @@ const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
  * @return {!Uint8Array}
  */
 function compose_find_introduction_nodes_response (code, target_id, nodes)
-	result	= new Uint8Array(1 + ID_LENGTH + nodes.length * ID_LENGTH)
+	result	= new Uint8Array(1 + PUBLIC_KEY_LENGTH + nodes.length * PUBLIC_KEY_LENGTH)
 		..set([code])
 		..set(target_id, 1)
 	for node, i in nodes
-		result.set(node, 1 + ID_LENGTH + i * ID_LENGTH)
+		result.set(node, 1 + PUBLIC_KEY_LENGTH + i * PUBLIC_KEY_LENGTH)
 	result
 /**
  * @param {!Uint8Array} data
@@ -80,11 +80,11 @@ function compose_find_introduction_nodes_response (code, target_id, nodes)
  */
 function parse_find_introduction_nodes_response (data)
 	code		= data[0]
-	target_id	= data.subarray(1, 1 + ID_LENGTH)
+	target_id	= data.subarray(1, 1 + PUBLIC_KEY_LENGTH)
 	nodes		= []
-	data		= data.subarray(1 + ID_LENGTH)
-	for i from 0 til data.length / ID_LENGTH
-		nodes.push(data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH))
+	data		= data.subarray(1 + PUBLIC_KEY_LENGTH)
+	for i from 0 til data.length / PUBLIC_KEY_LENGTH
+		nodes.push(data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH))
 	[code, target_id, nodes]
 /**
  * @param {!Uint8Array} target_id
@@ -97,25 +97,25 @@ function parse_find_introduction_nodes_response (data)
  * @return {!Uint8Array}
  */
 function compose_introduction_payload (target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret)
-	new Uint8Array(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
+	new Uint8Array(PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + PUBLIC_KEY_LENGTH)
 		..set(target_id)
-		..set(rendezvous_node, ID_LENGTH)
-		..set(rendezvous_token, ID_LENGTH * 2)
-		..set(handshake_message, ID_LENGTH * 3)
-		..set(application, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH)
-		..set(secret, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
+		..set(rendezvous_node, PUBLIC_KEY_LENGTH)
+		..set(rendezvous_token, PUBLIC_KEY_LENGTH * 2)
+		..set(handshake_message, PUBLIC_KEY_LENGTH * 3)
+		..set(application, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH)
+		..set(secret, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
 /**
  * @param {!Uint8Array} introduction_payload
  *
  * @return {!Array<!Uint8Array>} [target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret]
  */
 function parse_introduction_payload (introduction_payload)
-	target_id			= introduction_payload.subarray(0, ID_LENGTH)
-	rendezvous_node		= introduction_payload.subarray(ID_LENGTH, ID_LENGTH * 2)
-	rendezvous_token	= introduction_payload.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
-	handshake_message	= introduction_payload.subarray(ID_LENGTH * 3, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH)
-	application			= introduction_payload.subarray(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
-	secret				= introduction_payload.subarray(ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, ID_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + ID_LENGTH)
+	target_id			= introduction_payload.subarray(0, PUBLIC_KEY_LENGTH)
+	rendezvous_node		= introduction_payload.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2)
+	rendezvous_token	= introduction_payload.subarray(PUBLIC_KEY_LENGTH * 2, PUBLIC_KEY_LENGTH * 3)
+	handshake_message	= introduction_payload.subarray(PUBLIC_KEY_LENGTH * 3, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH)
+	application			= introduction_payload.subarray(PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH)
+	secret				= introduction_payload.subarray(PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH, PUBLIC_KEY_LENGTH * 3 + HANDSHAKE_MESSAGE_LENGTH + APPLICATION_LENGTH + PUBLIC_KEY_LENGTH)
 	[target_id, rendezvous_node, rendezvous_token, handshake_message, application, secret]
 /**
  * @param {!Uint8Array} rendezvous_token
@@ -126,21 +126,21 @@ function parse_introduction_payload (introduction_payload)
  * @return {!Uint8Array}
  */
 function compose_initialize_connection_data (rendezvous_token, introduction_node, target_id, introduction_message)
-	new Uint8Array(ID_LENGTH * 3 + introduction_message.length)
+	new Uint8Array(PUBLIC_KEY_LENGTH * 3 + introduction_message.length)
 		..set(rendezvous_token)
-		..set(introduction_node, ID_LENGTH)
-		..set(target_id, ID_LENGTH * 2)
-		..set(introduction_message, ID_LENGTH * 3)
+		..set(introduction_node, PUBLIC_KEY_LENGTH)
+		..set(target_id, PUBLIC_KEY_LENGTH * 2)
+		..set(introduction_message, PUBLIC_KEY_LENGTH * 3)
 /**
  * @param {!Uint8Array} message
  *
  * @return {!Array<!Uint8Array>} [rendezvous_token, introduction_node, target_id, introduction_message]
  */
 function parse_initialize_connection_data (message)
-	rendezvous_token		= message.subarray(0, ID_LENGTH)
-	introduction_node		= message.subarray(ID_LENGTH, ID_LENGTH * 2)
-	target_id				= message.subarray(ID_LENGTH * 2, ID_LENGTH * 3)
-	introduction_message	= message.subarray(ID_LENGTH * 3)
+	rendezvous_token		= message.subarray(0, PUBLIC_KEY_LENGTH)
+	introduction_node		= message.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2)
+	target_id				= message.subarray(PUBLIC_KEY_LENGTH * 2, PUBLIC_KEY_LENGTH * 3)
+	introduction_message	= message.subarray(PUBLIC_KEY_LENGTH * 3)
 	[rendezvous_token, introduction_node, target_id, introduction_message]
 /**
  * @param {!Uint8Array} signature
@@ -150,10 +150,10 @@ function parse_initialize_connection_data (message)
  * @return {!Uint8Array}
  */
 function compose_confirm_connection_data (signature, rendezvous_token, handshake_message)
-	new Uint8Array(SIGNATURE_LENGTH + ID_LENGTH + HANDSHAKE_MESSAGE_LENGTH)
+	new Uint8Array(SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH + HANDSHAKE_MESSAGE_LENGTH)
 		..set(signature)
 		..set(rendezvous_token, SIGNATURE_LENGTH)
-		..set(handshake_message, SIGNATURE_LENGTH + ID_LENGTH)
+		..set(handshake_message, SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH)
 /**
  * @param {!Uint8Array} message
  *
@@ -161,8 +161,8 @@ function compose_confirm_connection_data (signature, rendezvous_token, handshake
  */
 function parse_confirm_connection_data (message)
 	signature			= message.subarray(0, SIGNATURE_LENGTH)
-	rendezvous_token	= message.subarray(SIGNATURE_LENGTH, SIGNATURE_LENGTH + ID_LENGTH)
-	handshake_message	= message.subarray(SIGNATURE_LENGTH + ID_LENGTH)
+	rendezvous_token	= message.subarray(SIGNATURE_LENGTH, SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH)
+	handshake_message	= message.subarray(SIGNATURE_LENGTH + PUBLIC_KEY_LENGTH)
 	[signature, rendezvous_token, handshake_message]
 /**
  * @param {!Uint8Array} target_id
@@ -171,17 +171,17 @@ function parse_confirm_connection_data (message)
  * @return {!Uint8Array}
  */
 function compose_introduce_to_data (target_id, introduction_message)
-	new Uint8Array(ID_LENGTH + introduction_message.length)
+	new Uint8Array(PUBLIC_KEY_LENGTH + introduction_message.length)
 		..set(target_id)
-		..set(introduction_message, ID_LENGTH)
+		..set(introduction_message, PUBLIC_KEY_LENGTH)
 /**
  * @param {!Uint8Array} message
  *
  * @return {!Array<!Uint8Array>} [target_id, introduction_message]
  */
 function parse_introduce_to_data (message)
-	target_id				= message.subarray(0, ID_LENGTH)
-	introduction_message	= message.subarray(ID_LENGTH)
+	target_id				= message.subarray(0, PUBLIC_KEY_LENGTH)
+	introduction_message	= message.subarray(PUBLIC_KEY_LENGTH)
 	[target_id, introduction_message]
 
 function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
@@ -342,12 +342,12 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						if !@_get_nodes_requested.has(node_id)
 							return
 						@_get_nodes_requested.delete(node_id)
-						if !data.length || data.length % ID_LENGTH != 0
+						if !data.length || data.length % PUBLIC_KEY_LENGTH != 0
 							return
-						number_of_nodes			= data.length / ID_LENGTH
+						number_of_nodes			= data.length / PUBLIC_KEY_LENGTH
 						stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
 						for i from 0 til number_of_nodes
-							new_node_id	= data.subarray(i * ID_LENGTH, (i + 1) * ID_LENGTH)
+							new_node_id	= data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH)
 							# Ignore already connected nodes and own ID or if there are enough nodes already
 							if (
 								are_arrays_equal(new_node_id, @_dht_keypair['ed25519']['public']) ||
@@ -403,7 +403,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						@_publish_announcement_message(data)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
 						target_id	= data
-						if target_id.length != ID_LENGTH
+						if target_id.length != PUBLIC_KEY_LENGTH
 							return
 						/**
 						 * @param {number}				code
@@ -768,7 +768,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 								return
 							introduction_node				= pull_random_item_from_array(introduction_nodes)
-							rendezvous_token				= random_bytes(ID_LENGTH)
+							rendezvous_token				= random_bytes(PUBLIC_KEY_LENGTH)
 							x25519_public_key				= detox-crypto['convert_public_key'](target_id)
 							encryptor_instance				= detox-crypto['Encryptor'](true, x25519_public_key)
 							handshake_message				= encryptor_instance['get_handshake_message']()
@@ -1222,7 +1222,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 * @return {!Uint8Array} 32 bytes
 		 */
 		'generate_seed'	: ->
-			random_bytes(ID_LENGTH)
+			random_bytes(PUBLIC_KEY_LENGTH)
 		'Core'			: Core
 	}
 
