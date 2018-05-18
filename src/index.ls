@@ -11,6 +11,7 @@ const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
 const DHT_COMMAND_GET_NODES_REQUEST		= 2
 const DHT_COMMAND_GET_NODES_RESPONSE	= 3
 
+const UNCOMPRESSED_COMMANDS_OFFSET						= 10 # 0..9 are reserved as DHT commands
 const ROUTING_COMMAND_ANNOUNCE							= 0
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE	= 2
@@ -185,6 +186,7 @@ function parse_introduce_to_data (message)
 	[target_id, introduction_message]
 
 function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
+	P2P_transport				= detox-transport['P2P_transport']
 	random_bytes				= detox-utils['random_bytes']
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
@@ -296,7 +298,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_more_aware_of_nodes()
 		)
 
-		@_dht		= detox-transport['DHT'](
+		@_dht		= detox-dht['DHT'](
 			@_dht_keypair['ed25519']['public']
 			@_dht_keypair['ed25519']['private']
 			bootstrap_nodes
@@ -373,7 +375,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_random_lookup()
 				@'fire'('ready')
 			)
-		@_router	= detox-transport['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
+		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= concat_arrays([node_id, route_id])
 				if !@_routing_paths.has(source_id)

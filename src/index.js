@@ -8,11 +8,12 @@
   /*
    * Implements version 0.3.2 of the specification
    */
-  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, UNCOMPRESSED_COMMANDS_OFFSET, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMAND_ROUTING = 0;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
   DHT_COMMAND_GET_NODES_REQUEST = 2;
   DHT_COMMAND_GET_NODES_RESPONSE = 3;
+  UNCOMPRESSED_COMMANDS_OFFSET = 10;
   ROUTING_COMMAND_ANNOUNCE = 0;
   ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST = 1;
   ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE = 2;
@@ -200,7 +201,8 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
+    var P2P_transport, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
+    P2P_transport = detoxTransport['P2P_transport'];
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
@@ -328,7 +330,7 @@
           this$._get_more_aware_of_nodes();
         }
       });
-      this._dht = detoxTransport['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size, other_dht_options)['on']('node_connected', function(node_id){
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], this._dht_keypair['ed25519']['private'], bootstrap_nodes, ice_servers, packets_per_second, bucket_size, other_dht_options)['on']('node_connected', function(node_id){
         var node_id_hex, bootstrap_nodes;
         this$._connected_nodes.add(node_id);
         this$._aware_of_nodes['delete'](node_id);
@@ -402,7 +404,7 @@
         this$._random_lookup();
         this$['fire']('ready');
       });
-      this._router = detoxTransport['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
+      this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
         var source_id;
         source_id = concat_arrays([node_id, route_id]);
         if (!this$._routing_paths.has(source_id)) {
