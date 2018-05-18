@@ -1214,7 +1214,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	{
 		'ready'			: (callback) !->
 			<-! detox-crypto['ready']
-			<-! detox-transport['ready']
+			<-! detox-dht['ready']
+			<-! detox-routing['ready']
 			callback()
 		/**
 		 * Generate random seed that can be used as keypair seed

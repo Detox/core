@@ -1374,8 +1374,10 @@
     return {
       'ready': function(callback){
         detoxCrypto['ready'](function(){
-          detoxTransport['ready'](function(){
-            callback();
+          detoxDht['ready'](function(){
+            detoxRouting['ready'](function(){
+              callback();
+            });
           });
         });
       }
