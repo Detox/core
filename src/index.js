@@ -421,7 +421,7 @@
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
-          public_key = this$._dht['verify_announcement_message'](data);
+          public_key = this$._verify_announcement_message(data);
           if (!public_key) {
             return;
           }
@@ -432,10 +432,10 @@
             if (!this$._routing_paths.has(source_id)) {
               return;
             }
-            this$._dht['publish_announcement_message'](data);
+            this$._publish_announcement_message(data);
           });
           this$._announcements_from.set(public_key, [node_id, route_id, announce_interval]);
-          this$._dht['publish_announcement_message'](data);
+          this$._publish_announcement_message(data);
           break;
         case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST:
           target_id = data;
@@ -451,13 +451,13 @@
             data = compose_find_introduction_nodes_response(code, target_id, nodes);
             this$._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data);
           };
-          this$._dht['find_introduction_nodes'](target_id, function(introduction_nodes){
+          this$._find_introduction_nodes(target_id).then(function(introduction_nodes){
             if (!introduction_nodes.length) {
               send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, []);
             } else {
               send_response(CONNECTION_OK, introduction_nodes);
             }
-          }, function(){
+          })['catch'](function(){
             send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, []);
           });
           break;
@@ -720,7 +720,7 @@
             return;
           }
           introduction_nodes_confirmed = introduction_nodes_confirmed.concat(old_introduction_nodes);
-          announcement_message = this$._dht['generate_announcement_message'](real_public_key, real_keypair['ed25519']['private'], introduction_nodes_confirmed);
+          announcement_message = this$._generate_announcement_message(real_public_key, real_keypair['ed25519']['private'], introduction_nodes_confirmed);
           for (i$ = 0, len$ = introduction_nodes_confirmed.length; i$ < len$; ++i$) {
             introduction_node = introduction_nodes_confirmed[i$];
             this$._send_to_routing_node(real_public_key, introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message);
@@ -1309,6 +1309,74 @@
         } else {
           this._used_tags.set(node_id, value);
         }
+      }
+      /**
+       * Generate message with introduction nodes that can later be published by any node connected to DHT (typically other node than this for anonymity)
+       *
+       * @param {!Uint8Array}			real_public_key		Ed25519 public key (real one, different from supplied in DHT constructor)
+       * @param {!Uint8Array}			real_private_key	Corresponding Ed25519 private key
+       * @param {!Array<!Uint8Array>}	introduction_nodes	Array of public keys of introduction points
+       *
+       * @return {!Uint8Array}
+       */,
+      _generate_announcement_message: function(real_public_key, real_private_key, introduction_nodes){
+        var time;
+        time = parseInt(+new Date / 1000);
+        return concat_arrays(this._dht['make_mutable_value'](real_public_key, real_private_key, time, concat_arrays(introduction_nodes)));
+      }
+      /**
+       * @param {!Uint8Array} message
+       *
+       * @return {Uint8Array} Public key if signature is correct, `null` otherwise
+       */,
+      _verify_announcement_message: function(message){
+        var real_public_key, data, payload;
+        real_public_key = message.subarray(0, PUBLIC_KEY_LENGTH);
+        data = message.subarray(PUBLIC_KEY_LENGTH);
+        payload = this._dht['verify_value'](real_public_key, data);
+        if (!payload || payload[1].length % PUBLIC_KEY_LENGTH) {
+          return null;
+        } else {
+          return real_public_key;
+        }
+      }
+      /**
+       * Publish message with introduction nodes (typically happens on different node than `_generate_announcement_message()`)
+       *
+       * @param {!Uint8Array} message
+       */,
+      _publish_announcement_message: function(message){
+        var real_public_key, data;
+        if (this._destroyed) {
+          return;
+        }
+        real_public_key = message.subarray(0, PUBLIC_KEY_LENGTH);
+        data = message.subarray(PUBLIC_KEY_LENGTH);
+        this._dht['put_value'](real_public_key, data);
+      }
+      /**
+       * Find nodes in DHT that are acting as introduction points for specified public key
+       *
+       * @param {!Uint8Array}	target_public_key
+       *
+       * @return {!Promise} Resolves with `!Array<!Uint8Array>`
+       */,
+      _find_introduction_nodes: function(target_public_key){
+        if (this._destroyed) {
+          return Promise.reject();
+        }
+        return this._dht['get_value'](target_public_key).then(function(introduction_nodes_bulk){
+          var introduction_nodes, i$, to$, i;
+          if (introduction_nodes_bulk.length % PUBLIC_KEY_LENGTH !== 0) {
+            throw '';
+          }
+          introduction_nodes = [];
+          for (i$ = 0, to$ = introduction_nodes_bulk.length / PUBLIC_KEY_LENGTH; i$ < to$; ++i$) {
+            i = i$;
+            introduction_nodes.push(introduction_nodes_bulk.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH));
+          }
+          return introduction_nodes;
+        });
       }
     };
     Core.prototype = Object.assign(Object.create(asyncEventer.prototype), Core.prototype);

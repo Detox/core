@@ -389,7 +389,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				source_id	= concat_arrays([node_id, route_id])
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
-						public_key	= @_dht['verify_announcement_message'](data)
+						public_key	= @_verify_announcement_message(data)
 						if !public_key
 							return
 						# If re-announcement, make sure to stop old interval
@@ -398,10 +398,10 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						announce_interval	= intervalSet(ANNOUNCE_INTERVAL, !~>
 							if !@_routing_paths.has(source_id)
 								return
-							@_dht['publish_announcement_message'](data)
+							@_publish_announcement_message(data)
 						)
 						@_announcements_from.set(public_key, [node_id, route_id, announce_interval])
-						@_dht['publish_announcement_message'](data)
+						@_publish_announcement_message(data)
 					case ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST
 						target_id	= data
 						if target_id.length != ID_LENGTH
@@ -413,16 +413,14 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						send_response	= (code, nodes) !~>
 							data	= compose_find_introduction_nodes_response(code, target_id, nodes)
 							@_send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data)
-						@_dht['find_introduction_nodes'](
-							target_id
-							(introduction_nodes) !~>
+						@_find_introduction_nodes(target_id)
+							.then (introduction_nodes) !->
 								if !introduction_nodes.length
 									send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 								else
 									send_response(CONNECTION_OK, introduction_nodes)
-							!~>
+							.catch !->
 								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
-						)
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
 						if @_pending_connection.has(rendezvous_token)
@@ -672,7 +670,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 					return
 				# Add old introduction nodes to the list
 				introduction_nodes_confirmed	:= introduction_nodes_confirmed.concat(old_introduction_nodes)
-				announcement_message			= @_dht['generate_announcement_message'](
+				announcement_message			= @_generate_announcement_message(
 					real_public_key
 					real_keypair['ed25519']['private']
 					introduction_nodes_confirmed
@@ -1165,6 +1163,60 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 				@_dht['del_used_tag'](node_id)
 			else
 				@_used_tags.set(node_id, value)
+		/**
+		 * Generate message with introduction nodes that can later be published by any node connected to DHT (typically other node than this for anonymity)
+		 *
+		 * @param {!Uint8Array}			real_public_key		Ed25519 public key (real one, different from supplied in DHT constructor)
+		 * @param {!Uint8Array}			real_private_key	Corresponding Ed25519 private key
+		 * @param {!Array<!Uint8Array>}	introduction_nodes	Array of public keys of introduction points
+		 *
+		 * @return {!Uint8Array}
+		 */
+		_generate_announcement_message : (real_public_key, real_private_key, introduction_nodes) ->
+			time	= parseInt(+(new Date) / 1000) # In seconds, should be enough if kept as unsigned 32-bit integer which we actually do
+			concat_arrays(@_dht['make_mutable_value'](real_public_key, real_private_key, time, concat_arrays(introduction_nodes)))
+		/**
+		 * @param {!Uint8Array} message
+		 *
+		 * @return {Uint8Array} Public key if signature is correct, `null` otherwise
+		 */
+		_verify_announcement_message : (message) ->
+			real_public_key	= message.subarray(0, PUBLIC_KEY_LENGTH)
+			data			= message.subarray(PUBLIC_KEY_LENGTH)
+			payload			= @_dht['verify_value'](real_public_key, data)
+			# If value is not valid or length doesn't fit certain number of introduction nodes exactly
+			if !payload || (payload[1].length % PUBLIC_KEY_LENGTH)
+				null
+			else
+				real_public_key
+		/**
+		 * Publish message with introduction nodes (typically happens on different node than `_generate_announcement_message()`)
+		 *
+		 * @param {!Uint8Array} message
+		 */
+		_publish_announcement_message : (message) !->
+			if @_destroyed
+				return
+			real_public_key	= message.subarray(0, PUBLIC_KEY_LENGTH)
+			data			= message.subarray(PUBLIC_KEY_LENGTH)
+			@_dht['put_value'](real_public_key, data)
+		/**
+		 * Find nodes in DHT that are acting as introduction points for specified public key
+		 *
+		 * @param {!Uint8Array}	target_public_key
+		 *
+		 * @return {!Promise} Resolves with `!Array<!Uint8Array>`
+		 */
+		_find_introduction_nodes : (target_public_key) ->
+			if @_destroyed
+				return Promise.reject()
+			@_dht['get_value'](target_public_key).then (introduction_nodes_bulk) ->
+				if introduction_nodes_bulk.length % PUBLIC_KEY_LENGTH != 0
+					throw ''
+				introduction_nodes	= []
+				for i from 0 til introduction_nodes_bulk.length / PUBLIC_KEY_LENGTH
+					introduction_nodes.push(introduction_nodes_bulk.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH))
+				introduction_nodes
 
 	Core:: = Object.assign(Object.create(async-eventer::), Core::)
 	Object.defineProperty(Core::, 'constructor', {value: Core})
