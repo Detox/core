@@ -197,6 +197,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 	error_handler				= detox-utils['error_handler']
 	ArrayMap					= detox-utils['ArrayMap']
 	ArraySet					= detox-utils['ArraySet']
+	null_array					= new Uint8Array(0)
 	/**
 	 * @param {Uint8Array} seed
 	 *
@@ -335,9 +336,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 						# TODO: This is a naive implementation, can be attacked relatively easily
 						nodes	= @_pick_random_connected_nodes(7) || []
 						nodes	= nodes.concat(@_pick_random_aware_of_nodes(10 - nodes.length) || [])
-						data	= new Uint8Array(nodes.length * ID_LENGTH)
-						for node, i in nodes
-							data.set(node, i * ID_LENGTH)
+						data	= concat_arrays(nodes)
 						@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data)
 					case DHT_COMMAND_GET_NODES_RESPONSE
 						if !@_get_nodes_requested.has(node_id)
@@ -471,9 +470,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								application
 								secret
 							]								= parse_introduction_payload(introduction_payload)
-							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
-								..set(introduction_node)
-								..set(introduction_payload, ID_LENGTH)
+							for_signature					= concat_arrays([introduction_node, introduction_payload])
 							if !detox-crypto['verify'](signature, for_signature, target_id)
 								return
 							full_target_id	= concat_arrays([real_public_key, target_id])
@@ -783,13 +780,9 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 								application
 								secret
 							)
-							for_signature					= new Uint8Array(ID_LENGTH + introduction_payload.length)
-								..set(introduction_node)
-								..set(introduction_payload, ID_LENGTH)
+							for_signature					= concat_arrays([introduction_node, introduction_payload])
 							signature						= detox-crypto['sign'](for_signature, real_public_key, real_keypair['ed25519']['private'])
-							introduction_message			= new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH)
-								..set(signature)
-								..set(introduction_payload, SIGNATURE_LENGTH)
+							introduction_message			= concat_arrays([signature, introduction_payload])
 							introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
 							!~function path_confirmation (new_node_id, new_route_id, command, data)
 								if !(
@@ -853,9 +846,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			multiplexer			= @_multiplexers.get(full_target_id)
 			if !multiplexer
 				return
-			data_with_header	= new Uint8Array(data.length + 1)
-				..set([command])
-				..set(data, 1)
+			data_with_header	= concat_arrays([[command], data])
 			multiplexer['feed'](data_with_header)
 			if @_pending_sending.has(full_target_id)
 				# Timer is already in progress
@@ -925,7 +916,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 		 */
 		_get_more_nodes_from : (node_id) !->
 			@_get_nodes_requested.add(node_id)
-			@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0))
+			@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, null_array)
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
@@ -1132,7 +1123,7 @@ function Wrapper (detox-crypto, detox-transport, detox-utils, fixed-size-multipl
 			source_id	= concat_arrays([node_id, route_id])
 			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
-			@_send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0))
+			@_send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, null_array)
 			true
 		/**
 		 * @param {!Uint8Array} node_id

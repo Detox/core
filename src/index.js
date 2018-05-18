@@ -200,7 +200,7 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet;
+    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
@@ -213,6 +213,7 @@
     error_handler = detoxUtils['error_handler'];
     ArrayMap = detoxUtils['ArrayMap'];
     ArraySet = detoxUtils['ArraySet'];
+    null_array = new Uint8Array(0);
     /**
      * @param {Uint8Array} seed
      *
@@ -347,7 +348,7 @@
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](node_id);
       })['on']('data', function(node_id, command, data){
-        var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, i$, len$, i, node, number_of_nodes, stale_aware_of_nodes, new_node_id, stale_node_to_remove;
+        var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
           this$._router['process_packet'](node_id, data);
@@ -363,12 +364,7 @@
         case DHT_COMMAND_GET_NODES_REQUEST:
           nodes = this$._pick_random_connected_nodes(7) || [];
           nodes = nodes.concat(this$._pick_random_aware_of_nodes(10 - nodes.length) || []);
-          data = new Uint8Array(nodes.length * ID_LENGTH);
-          for (i$ = 0, len$ = nodes.length; i$ < len$; ++i$) {
-            i = i$;
-            node = nodes[i$];
-            data.set(node, i * ID_LENGTH);
-          }
+          data = concat_arrays(nodes);
           this$._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data);
           break;
         case DHT_COMMAND_GET_NODES_RESPONSE:
@@ -417,7 +413,7 @@
       })['on']('send', function(node_id, data){
         this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, x$, for_signature, full_target_id, connection_in_progress, i$, len$, key, item, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, for_signature, full_target_id, connection_in_progress, i$, len$, key, item, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -505,9 +501,7 @@
             signature = introduction_message_decrypted.subarray(0, SIGNATURE_LENGTH);
             introduction_payload = introduction_message_decrypted.subarray(SIGNATURE_LENGTH);
             ref$ = parse_introduction_payload(introduction_payload), target_id = ref$[0], rendezvous_node = ref$[1], rendezvous_token = ref$[2], handshake_message = ref$[3], application = ref$[4], secret = ref$[5];
-            x$ = for_signature = new Uint8Array(ID_LENGTH + introduction_payload.length);
-            x$.set(introduction_node);
-            x$.set(introduction_payload, ID_LENGTH);
+            for_signature = concat_arrays([introduction_node, introduction_payload]);
             if (!detoxCrypto['verify'](signature, for_signature, target_id)) {
               return;
             }
@@ -826,7 +820,7 @@
             }
             this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES);
             function try_to_introduce(){
-              var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, x$, for_signature, signature, y$, introduction_message, introduction_message_encrypted, path_confirmation_timeout;
+              var introduction_node, rendezvous_token, x25519_public_key, encryptor_instance, handshake_message, introduction_payload, for_signature, signature, introduction_message, introduction_message_encrypted, path_confirmation_timeout;
               if (connection_in_progress.discarded) {
                 return;
               }
@@ -840,13 +834,9 @@
               encryptor_instance = detoxCrypto['Encryptor'](true, x25519_public_key);
               handshake_message = encryptor_instance['get_handshake_message']();
               introduction_payload = compose_introduction_payload(real_public_key, rendezvous_node, rendezvous_token, handshake_message, application, secret);
-              x$ = for_signature = new Uint8Array(ID_LENGTH + introduction_payload.length);
-              x$.set(introduction_node);
-              x$.set(introduction_payload, ID_LENGTH);
+              for_signature = concat_arrays([introduction_node, introduction_payload]);
               signature = detoxCrypto['sign'](for_signature, real_public_key, real_keypair['ed25519']['private']);
-              y$ = introduction_message = new Uint8Array(introduction_payload.length + SIGNATURE_LENGTH);
-              y$.set(signature);
-              y$.set(introduction_payload, SIGNATURE_LENGTH);
+              introduction_message = concat_arrays([signature, introduction_payload]);
               introduction_message_encrypted = detoxCrypto['one_way_encrypt'](x25519_public_key, introduction_message);
               function path_confirmation(new_node_id, new_route_id, command, data){
                 var ref$, signature, rendezvous_token_received, handshake_message_received;
@@ -898,7 +888,7 @@
        * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
        */,
       'send_to': function(real_public_key, target_id, command, data){
-        var full_target_id, encryptor_instance, multiplexer, x$, data_with_header, this$ = this;
+        var full_target_id, encryptor_instance, multiplexer, data_with_header, this$ = this;
         if (this._bootstrap_node) {
           return;
         }
@@ -911,9 +901,7 @@
         if (!multiplexer) {
           return;
         }
-        x$ = data_with_header = new Uint8Array(data.length + 1);
-        x$.set([command]);
-        x$.set(data, 1);
+        data_with_header = concat_arrays([[command], data]);
         multiplexer['feed'](data_with_header);
         if (this._pending_sending.has(full_target_id)) {
           return;
@@ -1004,7 +992,7 @@
        */,
       _get_more_nodes_from: function(node_id){
         this._get_nodes_requested.add(node_id);
-        this._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, new Uint8Array(0));
+        this._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, null_array);
       }
       /**
        * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -1269,7 +1257,7 @@
         if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
           return false;
         }
-        this._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, new Uint8Array(0));
+        this._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, null_array);
         return true;
       }
       /**
