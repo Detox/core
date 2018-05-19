@@ -2,7 +2,7 @@
 This document aims to describe primary ideas that drive Detox development as well as major differences and design choices comparing to networks like Tor and Loopix.
 
 ### Reachability (browser environment)
-Detox project aims to be reachable by as many people as possible.
+Detox project aims to be reachable by as many people as possible. Anonymity heavily depends on anonymity set and as more people join the network, it is easier to blend with the crowd.
 In order to achieve this, decision was made to design Detox in a way that will allow it to work in modern web browser without any additional software or configuration required.
 
 This seems to be the first implementation of this kind, in contrast to Tor or Loopix, connection to the network is one click away from the user.
