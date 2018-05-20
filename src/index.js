@@ -1224,20 +1224,17 @@
        */,
       _send_uncompressed_core_command: function(peer_id, command, command_data){
         this._send(peer_id, command + UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data);
-      },
-      _send: function(peer_id, command, command_data){
-        this._transport['send'](peer_id, command, command_data);
       }
       /**
-       * @param {!Uint8Array}	node_id
-       * @param {number}		command	0..245
-       * @param {!Uint8Array}	data
+       * @param {!Uint8Array}	peer_id
+       * @param {number}		command			0..255
+       * @param {!Uint8Array}	command_data
        */,
-      _send_to_dht_node: function(node_id, command, data){
+      _send: function(node_id, command, command_data){
         var connected_timeout, this$ = this;
         if (this._connected_nodes.has(node_id)) {
           this._update_connection_timeout(node_id);
-          this._dht['send_data'](node_id, command, data);
+          this._transport['send'](node_id, command, command_data);
           return;
         }
         function connected(new_node_id){
@@ -1245,13 +1242,13 @@
             return;
           }
           clearTimeout(connected_timeout);
-          this$._dht['off']('node_connected', connected);
+          this$._transport['off']('connected', connected);
           this$._update_connection_timeout(node_id);
-          this$._dht['send_data'](node_id, command, data);
+          this$._transport['send'](node_id, command, command_data);
         }
-        this._dht['on']('node_connected', connected);
+        this._transport['on']('connected', connected);
         connected_timeout = timeoutSet(ROUTING_PATH_SEGMENT_TIMEOUT, function(){
-          this$._dht['off']('node_connected', connected);
+          this$._transport['off']('connected', connected);
         });
         this._dht['lookup'](node_id);
       }

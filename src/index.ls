@@ -1112,30 +1112,28 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_send_uncompressed_core_command : (peer_id, command, command_data) !->
 			@_send(peer_id, command + UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
-		_send : (peer_id, command, command_data) !->
-			@_transport['send'](peer_id, command, command_data)
-			# TODO: Move code from _send_to_dht_node method here?
 		/**
-		 * @param {!Uint8Array}	node_id
-		 * @param {number}		command	0..245
-		 * @param {!Uint8Array}	data
+		 * @param {!Uint8Array}	peer_id
+		 * @param {number}		command			0..255
+		 * @param {!Uint8Array}	command_data
 		 */
-		_send_to_dht_node : (node_id, command, data) !->
+		_send : (node_id, command, command_data) !->
 			if @_connected_nodes.has(node_id)
 				@_update_connection_timeout(node_id)
-				@_dht['send_data'](node_id, command, data)
+				@_transport['send'](node_id, command, command_data)
 				return
 			!~function connected (new_node_id)
 				if !are_arrays_equal(node_id, new_node_id)
 					return
 				clearTimeout(connected_timeout)
-				@_dht['off']('node_connected', connected)
+				@_transport['off']('connected', connected)
 				@_update_connection_timeout(node_id)
-				@_dht['send_data'](node_id, command, data)
-			@_dht['on']('node_connected', connected)
+				@_transport['send'](node_id, command, command_data)
+			@_transport['on']('connected', connected)
 			connected_timeout	= timeoutSet(ROUTING_PATH_SEGMENT_TIMEOUT, !~>
-				@_dht['off']('node_connected', connected)
+				@_transport['off']('connected', connected)
 			)
+			# TODO: This will only work when DHT is properly integrated, also timeout will not be enough in most cases
 			@_dht['lookup'](node_id)
 		/**
 		 * @param {!Uint8Array}	real_public_key
