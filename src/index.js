@@ -8,11 +8,12 @@
   /*
    * Implements version ? of the specification
    */
-  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_GET_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMANDS_OFFSET = 10;
   ROUTING_COMMANDS = 20;
   UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS;
   UNCOMPRESSED_CORE_COMMANDS_OFFSET = 21;
+  COMPRESSED_CORE_COMMAND_GET_SIGNAL = 0;
   UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION = 0;
   UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST = 1;
   UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE = 2;
@@ -49,6 +50,36 @@
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED = 0;
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
   ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
+  /**
+   * @param {!Uint8Array} source_id
+   * @param {!Uint8Array} target_id
+   * @param {!Uint8Array} sdp
+   * @param {!Uint8Array} signature
+   *
+   * @return {!Uint8Array}
+   */
+  function compose_get_signal(source_id, target_id, sdp, signature){
+    var x$;
+    x$ = new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length);
+    x$.set(source_id);
+    x$.set(target_id, PUBLIC_KEY_LENGTH);
+    x$.set(sdp, PUBLIC_KEY_LENGTH * 2);
+    x$.set(signature, PUBLIC_KEY_LENGTH * 2 + sdp.length);
+    return x$;
+  }
+  /**
+   * @param {!Uint8Array} data
+   *
+   * @return {!Array} [source_id, target_id, sdp, signature]
+   */
+  function parse_get_signal(data){
+    var source_id, target_id, sdp, signature;
+    source_id = data.subarray(0, PUBLIC_KEY_LENGTH);
+    target_id = data.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2);
+    sdp = data.subarray(PUBLIC_KEY_LENGTH * 2, data.length - SIGNATURE_LENGTH);
+    signature = data.subarray(data.length - SIGNATURE_LENGTH);
+    return [source_id, target_id, sdp, signature];
+  }
   /**
    * @param {number}				code
    * @param {!Uint8Array}			target_id
@@ -351,7 +382,24 @@
           this$._handle_compressed_core_command(peer_id, command, command_data);
         }
       });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('peer_error', function(peer_id){})['on']('peer_warning', function(peer_id){})['on']('connect_to', function(peer_peer_id, peer_id){})['on']('send', function(peer_id, command, command_data){
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('peer_error', function(peer_id){})['on']('peer_warning', function(peer_id){})['on']('connect_to', function(peer_peer_id, peer_id){
+        var signal_timeout;
+        this$._transport['create_connection'](true, peer_peer_id);
+        function signal(node_id, sdp){
+          var signature;
+          if (!are_arrays_equal(node_id, peer_peer_id)) {
+            return;
+          }
+          clearTimeout(signal_timeout);
+          this$._transport['off']('signal', signal);
+          signature = null_array;
+          this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, compose_get_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature));
+        }
+        this$._transport['on']('signal', signal);
+        signal_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+          this$._transport['off']('signal', signal);
+        });
+      })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
       })['on']('ready', function(){
         this$._random_lookup();
@@ -1130,7 +1178,18 @@
        * @param {number}		command			0..9
        * @param {!Uint8Array}	command_data
        */,
-      _handle_compressed_core_command: function(peer_id, command, command_data){}
+      _handle_compressed_core_command: function(peer_id, command, command_data){
+        var ref$, source_id, target_id, sdp, signature, x$;
+        switch (command) {
+        case COMPRESSED_CORE_COMMAND_GET_SIGNAL:
+          ref$ = parse_get_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+          if (are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
+            x$ = this._transport;
+            x$['create_connection'](false, source_id);
+            x$['signal'](source_id, sdp);
+          } else {}
+        }
+      }
       /**
        * @param {!Uint8Array}	peer_id
        * @param {number}		command			0..9

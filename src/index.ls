@@ -11,6 +11,8 @@ const ROUTING_COMMANDS					= 20				# 10..19 are reserved as DHT commands
 const UNCOMPRESSED_COMMANDS_OFFSET		= ROUTING_COMMANDS	# Core and DHT commands are compressed
 const UNCOMPRESSED_CORE_COMMANDS_OFFSET	= 21
 
+const COMPRESSED_CORE_COMMAND_GET_SIGNAL	= 0
+
 const UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION	= 0
 const UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST		= 1
 const UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE		= 2
@@ -63,6 +65,31 @@ const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED	= 0
 const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
 const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
+/**
+ * @param {!Uint8Array} source_id
+ * @param {!Uint8Array} target_id
+ * @param {!Uint8Array} sdp
+ * @param {!Uint8Array} signature
+ *
+ * @return {!Uint8Array}
+ */
+function compose_get_signal (source_id, target_id, sdp, signature)
+	new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length)
+		..set(source_id)
+		..set(target_id, PUBLIC_KEY_LENGTH)
+		..set(sdp, PUBLIC_KEY_LENGTH * 2)
+		..set(signature, PUBLIC_KEY_LENGTH * 2 + sdp.length)
+/**
+ * @param {!Uint8Array} data
+ *
+ * @return {!Array} [source_id, target_id, sdp, signature]
+ */
+function parse_get_signal (data)
+	source_id	= data.subarray(0, PUBLIC_KEY_LENGTH)
+	target_id	= data.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2)
+	sdp			= data.subarray(PUBLIC_KEY_LENGTH * 2, data.length - SIGNATURE_LENGTH)
+	signature	= data.subarray(data.length - SIGNATURE_LENGTH)
+	[source_id, target_id, sdp, signature]
 /**
  * @param {number}				code
  * @param {!Uint8Array}			target_id
@@ -306,6 +333,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				# TODO
 			)
 			.'on'('connected', (peer_id) !~>
+				# TODO: Add to DHT
 				@_connected_nodes.add(peer_id)
 				@_aware_of_nodes.delete(peer_id)
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
@@ -342,7 +370,24 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				# TODO
 			)
 			.'on'('connect_to', (peer_peer_id, peer_id) !~>
-				# TODO
+				@_transport['create_connection'](true, peer_peer_id)
+				# TODO: Handle `disconnected` event too and fail faster
+				!~function signal (node_id, sdp)
+					if !are_arrays_equal(node_id, peer_peer_id)
+						return
+					clearTimeout(signal_timeout)
+					@_transport['off']('signal', signal)
+					# TODO: Signature
+					signature	= null_array
+					@_send_compressed_core_command(
+						peer_id
+						COMPRESSED_CORE_COMMAND_GET_SIGNAL
+						compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
+					)
+				@_transport['on']('signal', signal)
+				signal_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
+					@_transport['off']('signal', signal)
+				)
 			)
 			.'on'('send', (peer_id, command, command_data) !~>
 				@_send_dht_command(peer_id, command, command_data)
@@ -1055,7 +1100,16 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array}	command_data
 		 */
 		_handle_compressed_core_command : (peer_id, command, command_data) !->
-			# TODO
+			switch command
+				case COMPRESSED_CORE_COMMAND_GET_SIGNAL
+					# TODO: Signature
+					[source_id, target_id, sdp, signature]	= parse_get_signal(command_data)
+					if are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+						@_transport
+							..'create_connection'(false, source_id)
+							..'signal'(source_id, sdp)
+					else
+						# TODO: Forward to peer
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
