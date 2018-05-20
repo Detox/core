@@ -382,7 +382,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						 */
 						send_response	= (code, nodes) !~>
 							data	= compose_find_introduction_nodes_response(code, target_id, nodes)
-							@_send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data)
+							@_send_to_routing_path(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data)
 						@_find_introduction_nodes(target_id)
 							.then (introduction_nodes) !->
 								if !introduction_nodes.length
@@ -414,7 +414,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							return
 						@_pending_connection.delete(rendezvous_token)
 						clearTimeout(connection_timeout)
-						@_send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
+						@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
 						target_source_id	= concat_arrays([target_node_id, target_route_id])
 						# TODO: There is no cleanup for these
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
@@ -517,7 +517,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					case ROUTING_COMMAND_DATA
 						if @_forwarding_mapping.has(source_id)
 							[target_node_id, target_route_id]	= @_forwarding_mapping.get(source_id)
-							@_send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
+							@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
 						else if @_routing_path_to_id.has(source_id)
 							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
 							full_target_id					= concat_arrays([real_public_key, target_id])
@@ -777,7 +777,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								@_connections_in_progress.delete(full_target_id)
 								@_register_application_connection(real_public_key, target_id)
 							@_router['on']('data', path_confirmation)
-							@_send_to_routing_node_raw(
+							@_send_to_routing_path(
 								first_node
 								route_id
 								ROUTING_COMMAND_INITIALIZE_CONNECTION
@@ -791,7 +791,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							)
 						try_to_introduce()
 					@_router['on']('data', found_introduction_nodes)
-					@_send_to_routing_node_raw(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
+					@_send_to_routing_path(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
 					find_introduction_nodes_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 						@_router['off']('data', found_introduction_nodes)
 						connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
@@ -1050,7 +1050,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					if !@_announcements_from.has(target_id)
 						return
 					[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
-					@_send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
+					@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST
 					# TODO: This is a naive implementation, can be attacked relatively easily
 					nodes			= @_pick_random_connected_nodes(7) || []
@@ -1106,7 +1106,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_send(peer_id, ROUTING_COMMANDS, data)
 		/**
 		 * @param {!Uint8Array}	peer_id
-		 * @param {number}		command			0..9
+		 * @param {number}		command			0..234
 		 * @param {!Uint8Array}	command_data
 		 */
 		_send_uncompressed_core_command : (peer_id, command, command_data) !->
@@ -1145,14 +1145,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			if !@_id_to_routing_path.has(full_target_id)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(full_target_id)
-			@_send_to_routing_node_raw(node_id, route_id, command, data)
+			@_send_to_routing_path(node_id, route_id, command, data)
 		/**
 		 * @param {!Uint8Array} node_id
 		 * @param {!Uint8Array} route_id
 		 * @param {number}		command
 		 * @param {!Uint8Array}	data
 		 */
-		_send_to_routing_node_raw : (node_id, route_id, command, data) ->
+		_send_to_routing_path : (node_id, route_id, command, data) ->
 			if data.length == 0
 				# Just to make sure demultiplexer will not discard this command
 				data	= new Uint8Array(1)
@@ -1167,7 +1167,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			source_id	= concat_arrays([node_id, route_id])
 			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
-			@_send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, null_array)
+			@_send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, null_array)
 			true
 		/**
 		 * @param {!Uint8Array} node_id

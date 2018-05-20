@@ -395,7 +395,7 @@
           send_response = function(code, nodes){
             var data;
             data = compose_find_introduction_nodes_response(code, target_id, nodes);
-            this$._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data);
+            this$._send_to_routing_path(node_id, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, data);
           };
           this$._find_introduction_nodes(target_id).then(function(introduction_nodes){
             if (!introduction_nodes.length) {
@@ -429,7 +429,7 @@
           }
           this$._pending_connection['delete'](rendezvous_token);
           clearTimeout(connection_timeout);
-          this$._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
+          this$._send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
           target_source_id = concat_arrays([target_node_id, target_route_id]);
           this$._forwarding_mapping.set(source_id, [target_node_id, target_route_id]);
           this$._forwarding_mapping.set(target_source_id, [node_id, route_id]);
@@ -534,7 +534,7 @@
         case ROUTING_COMMAND_DATA:
           if (this$._forwarding_mapping.has(source_id)) {
             ref$ = this$._forwarding_mapping.get(source_id), target_node_id = ref$[0], target_route_id = ref$[1];
-            this$._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
+            this$._send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_DATA, data);
           } else if (this$._routing_path_to_id.has(source_id)) {
             ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], target_id = ref$[1];
             full_target_id = concat_arrays([real_public_key, target_id]);
@@ -798,7 +798,7 @@
                 this$._register_application_connection(real_public_key, target_id);
               }
               this$._router['on']('data', path_confirmation);
-              this$._send_to_routing_node_raw(first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
+              this$._send_to_routing_path(first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
               this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
               path_confirmation_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
                 this$._router['off']('data', path_confirmation);
@@ -809,7 +809,7 @@
             try_to_introduce();
           }
           this$._router['on']('data', found_introduction_nodes);
-          this$._send_to_routing_node_raw(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
+          this$._send_to_routing_path(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
           find_introduction_nodes_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
             this$._router['off']('data', found_introduction_nodes);
             connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
@@ -1133,7 +1133,7 @@
             return;
           }
           ref$ = this._announcements_from.get(target_id), target_node_id = ref$[0], target_route_id = ref$[1];
-          this._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
+          this._send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
           break;
         case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST:
           nodes = this._pick_random_connected_nodes(7) || [];
@@ -1196,7 +1196,7 @@
       }
       /**
        * @param {!Uint8Array}	peer_id
-       * @param {number}		command			0..9
+       * @param {number}		command			0..234
        * @param {!Uint8Array}	command_data
        */,
       _send_uncompressed_core_command: function(peer_id, command, command_data){
@@ -1242,7 +1242,7 @@
           return;
         }
         ref$ = this._id_to_routing_path.get(full_target_id), node_id = ref$[0], route_id = ref$[1];
-        this._send_to_routing_node_raw(node_id, route_id, command, data);
+        this._send_to_routing_path(node_id, route_id, command, data);
       }
       /**
        * @param {!Uint8Array} node_id
@@ -1250,7 +1250,7 @@
        * @param {number}		command
        * @param {!Uint8Array}	data
        */,
-      _send_to_routing_node_raw: function(node_id, route_id, command, data){
+      _send_to_routing_path: function(node_id, route_id, command, data){
         if (data.length === 0) {
           data = new Uint8Array(1);
         }
@@ -1268,7 +1268,7 @@
         if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
           return false;
         }
-        this._send_to_routing_node_raw(node_id, route_id, ROUTING_COMMAND_PING, null_array);
+        this._send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, null_array);
         return true;
       }
       /**
