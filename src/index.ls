@@ -230,6 +230,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	 * @throws {Error}
 	 */
 	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10, other_dht_options = {})
+		# TODO: Bootstrap nodes are not implemented for updated components yet
 		if !(@ instanceof Core)
 			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options)
 		async-eventer.call(@)
@@ -272,8 +273,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			# Un-tag connections that are no longer used
 			@_connections_timeouts.forEach (last_updated, node_id) !~>
 				if last_updated < unused_older_than
-					@_del_used_tag(node_id)
 					@_connections_timeouts.delete(node_id)
+					@_transport['destroy_connection'](node_id)
 			# Remove aware of nodes that are stale for more that double of regular timeout
 			super_stale_older_than	= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000
 			@_aware_of_nodes.forEach (date, node_id) !~>
@@ -349,7 +350,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				source_id	= concat_arrays([node_id, route_id])
 				if !@_routing_paths.has(source_id)
 					@_routing_paths.set(source_id, [node_id, route_id])
-				@_update_connection_timeout(node_id)
 				@_routes_timeouts.set(source_id, +(new Date))
 			)
 			.'on'('send', (node_id, data) !~>
@@ -567,17 +567,17 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {number}	public_port	Publicly available port on `address`
 		 */
 		'start_bootstrap_node' : (ip, port, address = ip, public_port = port) !->
-			@_dht['start_bootstrap_node'](ip, port, address, public_port)
-			@_bootstrap_node	= true
-			# Stop doing any routing tasks immediately
-			@_destroy_router()
+			# TODO: Bootstrap nodes are not implemented for updated components yet
+#			@_dht['start_bootstrap_node'](ip, port, address, public_port)
+#			@_bootstrap_node	= true
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
 		 *
 		 * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
 		 */
 		'get_bootstrap_nodes' : ->
-			@_dht['get_bootstrap_nodes']()
+			# TODO: Bootstrap nodes are not implemented for updated components yet
+#			@_dht['get_bootstrap_nodes']()
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {number}		number_of_introduction_nodes
@@ -678,8 +678,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'connect_to' : (real_key_seed, target_id, application, secret, number_of_intermediate_nodes) ->
-			if @_bootstrap_node
-				return null
+			# TODO: Bootstrap nodes are not implemented for updated components yet
+#			if @_bootstrap_node
+#				return null
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
@@ -808,8 +809,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
 		 */
 		'send_to' : (real_public_key, target_id, command, data) !->
-			if @_bootstrap_node
-				return
+			# TODO: Bootstrap nodes are not implemented for updated components yet
+#			if @_bootstrap_node
+#				return
 			full_target_id		= concat_arrays([real_public_key, target_id])
 			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if !encryptor_instance || data.length > @_max_data_size
@@ -836,27 +838,23 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'destroy' : !->
 			if @_destroyed
 				return
-			# Bootstrap node immediately destroys router, no need to do it again
-			if !@_bootstrap_node
-				@_destroy_router()
-			@_dht['destroy']()
+			# TODO: Probably check this in more places
 			@_destroyed	= true
-		_destroy_router : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
 			clearInterval(@_get_more_nodes_interval)
-			# Delete all tags and only rely on DHT's needs for existing connections
-			@_connections_timeouts.forEach (, node_id) !~>
-				@_del_used_tag(node_id)
+			@_transport['destroy']()
 			@_routing_paths.forEach ([node_id, route_id]) !~>
 				@_unregister_routing_path(node_id, route_id)
 			@_pending_connection.forEach ([, , , connection_timeout]) !~>
 				clearTimeout(connection_timeout)
 			@_router['destroy']()
+			@_dht['destroy']()
 		/**
 		 * @return {boolean}
 		 */
 		_more_aware_of_nodes_needed : ->
+			# TODO: Bootstrap nodes are not implemented for updated components yet
 			!@_bootstrap_node && !!(@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length)
 		/**
 		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
@@ -919,8 +917,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_random_lookup()
 				return null
 			connected_nodes	= Array.from(@_connected_nodes.values())
-			for bootstrap_node in @'get_bootstrap_nodes'()
-				exclude_nodes.push(hex2array(bootstrap_node['node_id']))
+			# TODO: Bootstrap nodes are not implemented for updated components yet
+#			for bootstrap_node in @'get_bootstrap_nodes'()
+#				exclude_nodes.push(hex2array(bootstrap_node['node_id']))
 			exclude_nodes_set	= ArraySet(exclude_nodes)
 			connected_nodes		= connected_nodes.filter (node) ->
 				!exclude_nodes_set.has(node)
@@ -1174,31 +1173,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array} node_id
 		 */
 		_update_connection_timeout : (node_id) !->
-			if !@_connections_timeouts.has(node_id)
-				@_add_used_tag(node_id)
+			# TODO: Probably track incoming and outgoing requests separately so that we can drop less important connections if needed
 			@_connections_timeouts.set(node_id, +(new Date))
-		/**
-		 * @param {!Uint8Array} node_id
-		 */
-		_add_used_tag : (node_id) !->
-			value = @_used_tags.get(node_id) || 0
-			++value
-			@_used_tags.set(node_id, value)
-			if value == 1
-				@_dht['add_used_tag'](node_id)
-		/**
-		 * @param {!Uint8Array} node_id
-		 */
-		_del_used_tag : (node_id) !->
-			value = @_used_tags.get(node_id)
-			if !value
-				return
-			--value
-			if !value
-				@_used_tags.delete(node_id)
-				@_dht['del_used_tag'](node_id)
-			else
-				@_used_tags.set(node_id, value)
 		/**
 		 * Generate message with introduction nodes that can later be published by any node connected to DHT (typically other node than this for anonymity)
 		 *
@@ -1231,8 +1207,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array} message
 		 */
 		_publish_announcement_message : (message) !->
-			if @_destroyed
-				return
 			real_public_key	= message.subarray(0, PUBLIC_KEY_LENGTH)
 			data			= message.subarray(PUBLIC_KEY_LENGTH)
 			@_dht['put_value'](real_public_key, data)
@@ -1244,8 +1218,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {!Promise} Resolves with `!Array<!Uint8Array>`
 		 */
 		_find_introduction_nodes : (target_public_key) ->
-			if @_destroyed
-				return Promise.reject()
 			@_dht['get_value'](target_public_key).then (introduction_nodes_bulk) ->
 				if introduction_nodes_bulk.length % PUBLIC_KEY_LENGTH != 0
 					throw ''

@@ -294,8 +294,8 @@
         });
         this$._connections_timeouts.forEach(function(last_updated, node_id){
           if (last_updated < unused_older_than) {
-            this$._del_used_tag(node_id);
             this$._connections_timeouts['delete'](node_id);
+            this$._transport['destroy_connection'](node_id);
           }
         });
         super_stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000;
@@ -359,7 +359,6 @@
         if (!this$._routing_paths.has(source_id)) {
           this$._routing_paths.set(source_id, [node_id, route_id]);
         }
-        this$._update_connection_timeout(node_id);
         this$._routes_timeouts.set(source_id, +new Date);
       })['on']('send', function(node_id, data){
         this$._send_routing_command(node_id, data);
@@ -591,18 +590,13 @@
       'start_bootstrap_node': function(ip, port, address, public_port){
         address == null && (address = ip);
         public_port == null && (public_port = port);
-        this._dht['start_bootstrap_node'](ip, port, address, public_port);
-        this._bootstrap_node = true;
-        this._destroy_router();
       }
       /**
        * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
        *
        * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
        */,
-      'get_bootstrap_nodes': function(){
-        return this._dht['get_bootstrap_nodes']();
-      }
+      'get_bootstrap_nodes': function(){}
       /**
        * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
        * @param {number}		number_of_introduction_nodes
@@ -712,9 +706,6 @@
        */,
       'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
         var real_keypair, real_public_key, full_target_id, connection_in_progress, nodes, first_node, rendezvous_node, this$ = this;
-        if (this._bootstrap_node) {
-          return null;
-        }
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
@@ -840,9 +831,6 @@
        */,
       'send_to': function(real_public_key, target_id, command, data){
         var full_target_id, encryptor_instance, multiplexer, data_with_header, this$ = this;
-        if (this._bootstrap_node) {
-          return;
-        }
         full_target_id = concat_arrays([real_public_key, target_id]);
         encryptor_instance = this._encryptor_instances.get(full_target_id);
         if (!encryptor_instance || data.length > this._max_data_size) {
@@ -868,23 +856,15 @@
         }));
       },
       'destroy': function(){
+        var this$ = this;
         if (this._destroyed) {
           return;
         }
-        if (!this._bootstrap_node) {
-          this._destroy_router();
-        }
-        this._dht['destroy']();
         this._destroyed = true;
-      },
-      _destroy_router: function(){
-        var this$ = this;
         clearInterval(this._cleanup_interval);
         clearInterval(this._keep_announce_routes_interval);
         clearInterval(this._get_more_nodes_interval);
-        this._connections_timeouts.forEach(function(arg$, node_id){
-          this$._del_used_tag(node_id);
-        });
+        this._transport['destroy']();
         this._routing_paths.forEach(function(arg$){
           var node_id, route_id;
           node_id = arg$[0], route_id = arg$[1];
@@ -896,6 +876,7 @@
           clearTimeout(connection_timeout);
         });
         this._router['destroy']();
+        this._dht['destroy']();
       }
       /**
        * @return {boolean}
@@ -976,7 +957,7 @@
        * @return {Array<!Uint8Array>} `null` if there is no nodes to return
        */,
       _pick_random_connected_nodes: function(up_to_number_of_nodes, exclude_nodes){
-        var connected_nodes, i$, ref$, len$, bootstrap_node, exclude_nodes_set, i, results$ = [];
+        var connected_nodes, exclude_nodes_set, i$, i, results$ = [];
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
@@ -984,10 +965,6 @@
           return null;
         }
         connected_nodes = Array.from(this._connected_nodes.values());
-        for (i$ = 0, len$ = (ref$ = this['get_bootstrap_nodes']()).length; i$ < len$; ++i$) {
-          bootstrap_node = ref$[i$];
-          exclude_nodes.push(hex2array(bootstrap_node['node_id']));
-        }
         exclude_nodes_set = ArraySet(exclude_nodes);
         connected_nodes = connected_nodes.filter(function(node){
           return !exclude_nodes_set.has(node);
@@ -1298,39 +1275,7 @@
        * @param {!Uint8Array} node_id
        */,
       _update_connection_timeout: function(node_id){
-        if (!this._connections_timeouts.has(node_id)) {
-          this._add_used_tag(node_id);
-        }
         this._connections_timeouts.set(node_id, +new Date);
-      }
-      /**
-       * @param {!Uint8Array} node_id
-       */,
-      _add_used_tag: function(node_id){
-        var value;
-        value = this._used_tags.get(node_id) || 0;
-        ++value;
-        this._used_tags.set(node_id, value);
-        if (value === 1) {
-          this._dht['add_used_tag'](node_id);
-        }
-      }
-      /**
-       * @param {!Uint8Array} node_id
-       */,
-      _del_used_tag: function(node_id){
-        var value;
-        value = this._used_tags.get(node_id);
-        if (!value) {
-          return;
-        }
-        --value;
-        if (!value) {
-          this._used_tags['delete'](node_id);
-          this._dht['del_used_tag'](node_id);
-        } else {
-          this._used_tags.set(node_id, value);
-        }
       }
       /**
        * Generate message with introduction nodes that can later be published by any node connected to DHT (typically other node than this for anonymity)
@@ -1369,9 +1314,6 @@
        */,
       _publish_announcement_message: function(message){
         var real_public_key, data;
-        if (this._destroyed) {
-          return;
-        }
         real_public_key = message.subarray(0, PUBLIC_KEY_LENGTH);
         data = message.subarray(PUBLIC_KEY_LENGTH);
         this._dht['put_value'](real_public_key, data);
@@ -1384,9 +1326,6 @@
        * @return {!Promise} Resolves with `!Array<!Uint8Array>`
        */,
       _find_introduction_nodes: function(target_public_key){
-        if (this._destroyed) {
-          return Promise.reject();
-        }
         return this._dht['get_value'](target_public_key).then(function(introduction_nodes_bulk){
           var introduction_nodes, i$, to$, i;
           if (introduction_nodes_bulk.length % PUBLIC_KEY_LENGTH !== 0) {
