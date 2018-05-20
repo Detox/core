@@ -12,9 +12,8 @@ const UNCOMPRESSED_COMMANDS_OFFSET		= ROUTING_COMMANDS	# Core and DHT commands a
 const UNCOMPRESSED_CORE_COMMANDS_OFFSET	= 21
 
 const UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION	= 0
-
-const DHT_COMMAND_GET_NODES_REQUEST		= 2
-const DHT_COMMAND_GET_NODES_RESPONSE	= 3
+const UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST		= 1
+const UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE		= 2
 
 const ROUTING_COMMAND_ANNOUNCE							= 0
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
@@ -337,41 +336,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 		# TODO: Constant options below should be configurable
 		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
-			.'on'('data', (node_id, command, data) !~>
-				switch command
-					case DHT_COMMAND_GET_NODES_REQUEST
-						# TODO: This is a naive implementation, can be attacked relatively easily
-						nodes	= @_pick_random_connected_nodes(7) || []
-						nodes	= nodes.concat(@_pick_random_aware_of_nodes(10 - nodes.length) || [])
-						data	= concat_arrays(nodes)
-						@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data)
-					case DHT_COMMAND_GET_NODES_RESPONSE
-						if !@_get_nodes_requested.has(node_id)
-							return
-						@_get_nodes_requested.delete(node_id)
-						if !data.length || data.length % PUBLIC_KEY_LENGTH != 0
-							return
-						number_of_nodes			= data.length / PUBLIC_KEY_LENGTH
-						stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
-						for i from 0 til number_of_nodes
-							new_node_id	= data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH)
-							# Ignore already connected nodes and own ID or if there are enough nodes already
-							if (
-								are_arrays_equal(new_node_id, @_dht_keypair['ed25519']['public']) ||
-								@_connected_nodes.has(new_node_id)
-							)
-								continue
-							if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
-								@_aware_of_nodes.set(new_node_id, +(new Date))
-								@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
-							else if stale_aware_of_nodes.length
-								stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes)
-								@_aware_of_nodes.delete(stale_node_to_remove)
-								@_aware_of_nodes.set(new_node_id, +(new Date))
-								@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
-							else
-								break
-			)
 			.'on'('ready', !~>
 				# Make 3 random lookups on start in order to connect to some nodes
 				# TODO: Think about regular lookups
@@ -919,11 +883,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			for node_id in nodes
 				@_get_more_nodes_from(node_id)
 		/**
-		 * @param {!Uint8Array} node_id
+		 * @param {!Uint8Array} peer_id
 		 */
-		_get_more_nodes_from : (node_id) !->
-			@_get_nodes_requested.add(node_id)
-			@_send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, null_array)
+		_get_more_nodes_from : (peer_id) !->
+			@_get_nodes_requested.add(peer_id)
+			@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, null_array)
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
@@ -1083,11 +1047,43 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_handle_uncompressed_core_command : (peer_id, command, command_data) !->
 			switch command
 				case UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION
-					[target_id, introduction_message]	= parse_introduce_to_data(data)
+					[target_id, introduction_message]	= parse_introduce_to_data(command_data)
 					if !@_announcements_from.has(target_id)
 						return
 					[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
 					@_send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
+				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST
+					# TODO: This is a naive implementation, can be attacked relatively easily
+					nodes			= @_pick_random_connected_nodes(7) || []
+					nodes			= nodes.concat(@_pick_random_aware_of_nodes(10 - nodes.length) || [])
+					command_data	= concat_arrays(nodes)
+					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, data)
+				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE
+					if !@_get_nodes_requested.has(peer_id)
+						return
+					@_get_nodes_requested.delete(peer_id)
+					if !command_data.length || command_data.length % PUBLIC_KEY_LENGTH != 0
+						return
+					number_of_nodes			= command_data.length / PUBLIC_KEY_LENGTH
+					stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
+					for i from 0 til number_of_nodes
+						new_node_id	= command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH)
+						# Ignore already connected nodes and own ID or if there are enough nodes already
+						if (
+							are_arrays_equal(new_node_id, @_dht_keypair['ed25519']['public']) ||
+							@_connected_nodes.has(new_node_id)
+						)
+							continue
+						if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
+							@_aware_of_nodes.set(new_node_id, +(new Date))
+							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
+						else if stale_aware_of_nodes.length
+							stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes)
+							@_aware_of_nodes.delete(stale_node_to_remove)
+							@_aware_of_nodes.set(new_node_id, +(new Date))
+							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
+						else
+							break
 				# TODO: Uncompressed core commands
 		/**
 		 * @param {!Uint8Array}	peer_id

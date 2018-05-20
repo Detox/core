@@ -8,14 +8,14 @@
   /*
    * Implements version ? of the specification
    */
-  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMANDS_OFFSET = 10;
   ROUTING_COMMANDS = 20;
   UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS;
   UNCOMPRESSED_CORE_COMMANDS_OFFSET = 21;
   UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION = 0;
-  DHT_COMMAND_GET_NODES_REQUEST = 2;
-  DHT_COMMAND_GET_NODES_RESPONSE = 3;
+  UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST = 1;
+  UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE = 2;
   ROUTING_COMMAND_ANNOUNCE = 0;
   ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST = 1;
   ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE = 2;
@@ -347,45 +347,7 @@
           this$._handle_uncompressed_core_command(peer_id, command - UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data);
         }
       });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('data', function(node_id, command, data){
-        var nodes, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, stale_node_to_remove;
-        switch (command) {
-        case DHT_COMMAND_GET_NODES_REQUEST:
-          nodes = this$._pick_random_connected_nodes(7) || [];
-          nodes = nodes.concat(this$._pick_random_aware_of_nodes(10 - nodes.length) || []);
-          data = concat_arrays(nodes);
-          this$._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_RESPONSE, data);
-          break;
-        case DHT_COMMAND_GET_NODES_RESPONSE:
-          if (!this$._get_nodes_requested.has(node_id)) {
-            return;
-          }
-          this$._get_nodes_requested['delete'](node_id);
-          if (!data.length || data.length % PUBLIC_KEY_LENGTH !== 0) {
-            return;
-          }
-          number_of_nodes = data.length / PUBLIC_KEY_LENGTH;
-          stale_aware_of_nodes = this$._get_stale_aware_of_nodes();
-          for (i$ = 0; i$ < number_of_nodes; ++i$) {
-            i = i$;
-            new_node_id = data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH);
-            if (are_arrays_equal(new_node_id, this$._dht_keypair['ed25519']['public']) || this$._connected_nodes.has(new_node_id)) {
-              continue;
-            }
-            if (this$._aware_of_nodes.has(new_node_id) || this$._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
-              this$._aware_of_nodes.set(new_node_id, +new Date);
-              this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
-            } else if (stale_aware_of_nodes.length) {
-              stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes);
-              this$._aware_of_nodes['delete'](stale_node_to_remove);
-              this$._aware_of_nodes.set(new_node_id, +new Date);
-              this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
-            } else {
-              break;
-            }
-          }
-        }
-      })['on']('ready', function(){
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('ready', function(){
         this$._random_lookup();
         this$._random_lookup();
         this$._random_lookup();
@@ -977,11 +939,11 @@
         }
       }
       /**
-       * @param {!Uint8Array} node_id
+       * @param {!Uint8Array} peer_id
        */,
-      _get_more_nodes_from: function(node_id){
-        this._get_nodes_requested.add(node_id);
-        this._send_to_dht_node(node_id, DHT_COMMAND_GET_NODES_REQUEST, null_array);
+      _get_more_nodes_from: function(peer_id){
+        this._get_nodes_requested.add(peer_id);
+        this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, null_array);
       }
       /**
        * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -1186,15 +1148,50 @@
        * @param {!Uint8Array}	command_data
        */,
       _handle_uncompressed_core_command: function(peer_id, command, command_data){
-        var ref$, target_id, introduction_message, target_node_id, target_route_id;
+        var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, stale_node_to_remove;
         switch (command) {
         case UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION:
-          ref$ = parse_introduce_to_data(data), target_id = ref$[0], introduction_message = ref$[1];
+          ref$ = parse_introduce_to_data(command_data), target_id = ref$[0], introduction_message = ref$[1];
           if (!this._announcements_from.has(target_id)) {
             return;
           }
           ref$ = this._announcements_from.get(target_id), target_node_id = ref$[0], target_route_id = ref$[1];
           this._send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
+          break;
+        case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST:
+          nodes = this._pick_random_connected_nodes(7) || [];
+          nodes = nodes.concat(this._pick_random_aware_of_nodes(10 - nodes.length) || []);
+          command_data = concat_arrays(nodes);
+          this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, data);
+          break;
+        case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE:
+          if (!this._get_nodes_requested.has(peer_id)) {
+            return;
+          }
+          this._get_nodes_requested['delete'](peer_id);
+          if (!command_data.length || command_data.length % PUBLIC_KEY_LENGTH !== 0) {
+            return;
+          }
+          number_of_nodes = command_data.length / PUBLIC_KEY_LENGTH;
+          stale_aware_of_nodes = this._get_stale_aware_of_nodes();
+          for (i$ = 0; i$ < number_of_nodes; ++i$) {
+            i = i$;
+            new_node_id = command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH);
+            if (are_arrays_equal(new_node_id, this._dht_keypair['ed25519']['public']) || this._connected_nodes.has(new_node_id)) {
+              continue;
+            }
+            if (this._aware_of_nodes.has(new_node_id) || this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
+              this._aware_of_nodes.set(new_node_id, +new Date);
+              this['fire']('aware_of_nodes_count', this._aware_of_nodes.size);
+            } else if (stale_aware_of_nodes.length) {
+              stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes);
+              this._aware_of_nodes['delete'](stale_node_to_remove);
+              this._aware_of_nodes.set(new_node_id, +new Date);
+              this['fire']('aware_of_nodes_count', this._aware_of_nodes.size);
+            } else {
+              break;
+            }
+          }
         }
       }
       /**
