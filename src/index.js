@@ -331,29 +331,19 @@
           this$._get_more_aware_of_nodes();
         }
       });
-      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT).on('signal', function(peer_id, signal){}).on('connected', function(peer_id){}).on('disconnected', function(peer_id){}).on('data', function(peer_id, command, command_data){
-        if (command < DHT_COMMANDS_OFFSET) {} else if (command < command && command < ROUTING_COMMANDS_OFFSET) {} else {}
-      });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('node_connected', function(node_id){
-        var node_id_hex, bootstrap_nodes;
+      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT).on('signal', function(peer_id, signal){}).on('connected', function(node_id){
         this$._connected_nodes.add(node_id);
         this$._aware_of_nodes['delete'](node_id);
         this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
-        node_id_hex = array2hex(node_id);
-        if (this$._more_aware_of_nodes_needed()) {
-          bootstrap_nodes = this$['get_bootstrap_nodes']().map(function(bootstrap_node){
-            return bootstrap_node['node_id'];
-          });
-          if (!in$(node_id_hex, bootstrap_nodes)) {
-            this$._get_more_nodes_from(node_id);
-          }
-        }
-      })['on']('node_disconnected', function(node_id){
+      }).on('disconnected', function(node_id){
         this$._connected_nodes['delete'](node_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](node_id);
-      })['on']('data', function(node_id, command, data){
+      }).on('data', function(peer_id, command, command_data){
+        if (command < DHT_COMMANDS_OFFSET) {} else if (command < command && command < ROUTING_COMMANDS_OFFSET) {} else {}
+      });
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('data', function(node_id, command, data){
         var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, stale_node_to_remove;
         switch (command) {
         case DHT_COMMAND_ROUTING:
@@ -1404,10 +1394,5 @@
     module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
   } else {
     this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_dht'], this['detox_routing'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
-  }
-  function in$(x, xs){
-    var i = -1, l = xs.length >>> 0;
-    while (++i < l) if (x === xs[i]) return true;
-    return false;
   }
 }).call(this);

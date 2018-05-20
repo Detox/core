@@ -304,11 +304,23 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.on('signal', (peer_id, signal) !~>
 				# TODO
 			)
-			.on('connected', (peer_id) !~>
-				# TODO
+			.on('connected', (node_id) !~>
+				@_connected_nodes.add(node_id)
+				@_aware_of_nodes.delete(node_id)
+				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
+				@'fire'('connected_nodes_count', @_connected_nodes.size)
+				# TODO: Bootstrap nodes are not implemented for updated components yet
+#				node_id_hex	= array2hex(node_id)
+#				if @_more_aware_of_nodes_needed()
+#					bootstrap_nodes	= @'get_bootstrap_nodes'().map (bootstrap_node) ->
+#						bootstrap_node['node_id']
+#					if !(node_id_hex in bootstrap_nodes)
+#						@_get_more_nodes_from(node_id)
 			)
-			.on('disconnected', (peer_id) !~>
-				# TODO
+			.on('disconnected', (node_id) !~>
+				@_connected_nodes.delete(node_id)
+				@'fire'('connected_nodes_count', @_connected_nodes.size)
+				@_get_nodes_requested.delete(node_id)
 			)
 			.on('data', (peer_id, command, command_data) !~>
 				if command < DHT_COMMANDS_OFFSET
@@ -321,32 +333,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					# TODO: Routing commands
 					void
 			)
-		@_dht		= detox-dht['DHT'](
-			@_dht_keypair['ed25519']['public']
-			bucket_size
-			# TODO: Options below should be configurable
-			1000
-			1000
-			0.2
-			{}
-		)
-			.'on'('node_connected', (node_id) !~>
-				@_connected_nodes.add(node_id)
-				@_aware_of_nodes.delete(node_id)
-				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
-				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				node_id_hex	= array2hex(node_id)
-				if @_more_aware_of_nodes_needed()
-					bootstrap_nodes	= @'get_bootstrap_nodes'().map (bootstrap_node) ->
-						bootstrap_node['node_id']
-					if !(node_id_hex in bootstrap_nodes)
-						@_get_more_nodes_from(node_id)
-			)
-			.'on'('node_disconnected', (node_id) !~>
-				@_connected_nodes.delete(node_id)
-				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				@_get_nodes_requested.delete(node_id)
-			)
+		# TODO: Constant options below should be configurable
+		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
 			.'on'('data', (node_id, command, data) !~>
 				switch command
 					case DHT_COMMAND_ROUTING
