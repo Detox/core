@@ -331,23 +331,27 @@
           this$._get_more_aware_of_nodes();
         }
       });
-      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT).on('signal', function(peer_id, signal){}).on('connected', function(peer_id){
+      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)['on']('signal', function(peer_id, signal){})['on']('connected', function(peer_id){
         this$._connected_nodes.add(peer_id);
         this$._aware_of_nodes['delete'](peer_id);
         this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
-      }).on('disconnected', function(peer_id){
+      })['on']('disconnected', function(peer_id){
         this$._connected_nodes['delete'](peer_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](peer_id);
-      }).on('data', function(peer_id, command, command_data){
-        if (command < DHT_COMMANDS_OFFSET) {} else if (command < command && command < ROUTING_COMMANDS_OFFSET) {} else if (command === ROUTING_COMMANDS) {
+      })['on']('data', function(peer_id, command, command_data){
+        if (command < DHT_COMMANDS_OFFSET) {} else if (command < command && command < ROUTING_COMMANDS_OFFSET) {
+          this$._dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data);
+        } else if (command === ROUTING_COMMANDS) {
           this$._router['process_packet'](node_id, command_data);
         } else {
           this$._handle_uncompressed_core_command(peer_id, command - UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data);
         }
       });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('ready', function(){
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('peer_error', function(peer_id){})['on']('peer_warning', function(peer_id){})['on']('connect_to', function(peer_peer_id, peer_id){})['on']('send', function(peer_id, command, command_data){
+        this$._send_dht_command(peer_id, command, command_data);
+      })['on']('ready', function(){
         this$._random_lookup();
         this$._random_lookup();
         this$._random_lookup();

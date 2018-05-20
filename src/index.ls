@@ -302,10 +302,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		)
 
 		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)
-			.on('signal', (peer_id, signal) !~>
+			.'on'('signal', (peer_id, signal) !~>
 				# TODO
 			)
-			.on('connected', (peer_id) !~>
+			.'on'('connected', (peer_id) !~>
 				@_connected_nodes.add(peer_id)
 				@_aware_of_nodes.delete(peer_id)
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
@@ -318,17 +318,17 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 #					if !(peer_id_hex in bootstrap_nodes)
 #						@_get_more_nodes_from(peer_id)
 			)
-			.on('disconnected', (peer_id) !~>
+			.'on'('disconnected', (peer_id) !~>
 				@_connected_nodes.delete(peer_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				@_get_nodes_requested.delete(peer_id)
 			)
-			.on('data', (peer_id, command, command_data) !~>
+			.'on'('data', (peer_id, command, command_data) !~>
 				if command < DHT_COMMANDS_OFFSET
 					# TODO: Compressed core commands
 					void
 				else if command < command < ROUTING_COMMANDS_OFFSET
-					# TODO: DHT commands
+					@_dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data)
 					void
 				else if command == ROUTING_COMMANDS
 					@_router['process_packet'](node_id, command_data)
@@ -337,6 +337,19 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 		# TODO: Constant options below should be configurable
 		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
+			.'on'('peer_error', (peer_id) !~>
+				# TODO
+			)
+			.'on'('peer_warning', (peer_id) !~>
+				# TODO
+			)
+			.'on'('connect_to', (peer_peer_id, peer_id) !~>
+				# TODO
+			)
+			.'on'('send', (peer_id, command, command_data) !~>
+				@_send_dht_command(peer_id, command, command_data)
+			)
+			# TODO: `ready` event doesn't exist in updated DHT implementation
 			.'on'('ready', !~>
 				# Make 3 random lookups on start in order to connect to some nodes
 				# TODO: Think about regular lookups
