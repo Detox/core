@@ -6,11 +6,10 @@
 /*
  * Implements version ? of the specification
  */
-const DHT_COMMANDS_OFFSET			= 10 # 0..9 are reserved as Core commands
-const ROUTING_COMMANDS_OFFSET		= 20 # 10..19 are reserved as DHT commands
-const UNCOMPRESSED_COMMANDS_OFFSET	= ROUTING_COMMANDS_OFFSET # Core and DHT commands are compressed
+const DHT_COMMANDS_OFFSET			= 10				# 0..9 are reserved as Core commands
+const ROUTING_COMMANDS				= 20				# 10..19 are reserved as DHT commands
+const UNCOMPRESSED_COMMANDS_OFFSET	= ROUTING_COMMANDS	# Core and DHT commands are compressed
 
-const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
 const DHT_COMMAND_GET_NODES_REQUEST		= 2
 const DHT_COMMAND_GET_NODES_RESPONSE	= 3
@@ -304,23 +303,23 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.on('signal', (peer_id, signal) !~>
 				# TODO
 			)
-			.on('connected', (node_id) !~>
-				@_connected_nodes.add(node_id)
-				@_aware_of_nodes.delete(node_id)
+			.on('connected', (peer_id) !~>
+				@_connected_nodes.add(peer_id)
+				@_aware_of_nodes.delete(peer_id)
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				# TODO: Bootstrap nodes are not implemented for updated components yet
-#				node_id_hex	= array2hex(node_id)
+#				peer_id_hex	= array2hex(peer_id)
 #				if @_more_aware_of_nodes_needed()
 #					bootstrap_nodes	= @'get_bootstrap_nodes'().map (bootstrap_node) ->
-#						bootstrap_node['node_id']
-#					if !(node_id_hex in bootstrap_nodes)
-#						@_get_more_nodes_from(node_id)
+#						bootstrap_node['peer_id']
+#					if !(peer_id_hex in bootstrap_nodes)
+#						@_get_more_nodes_from(peer_id)
 			)
-			.on('disconnected', (node_id) !~>
-				@_connected_nodes.delete(node_id)
+			.on('disconnected', (peer_id) !~>
+				@_connected_nodes.delete(peer_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				@_get_nodes_requested.delete(node_id)
+				@_get_nodes_requested.delete(peer_id)
 			)
 			.on('data', (peer_id, command, command_data) !~>
 				if command < DHT_COMMANDS_OFFSET
@@ -329,16 +328,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				else if command < command < ROUTING_COMMANDS_OFFSET
 					# TODO: DHT commands
 					void
-				else
-					# TODO: Routing commands
-					void
+				else if command == ROUTING_COMMANDS
+					@_router['process_packet'](node_id, command_data)
 			)
 		# TODO: Constant options below should be configurable
 		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
 			.'on'('data', (node_id, command, data) !~>
 				switch command
-					case DHT_COMMAND_ROUTING
-						@_router['process_packet'](node_id, data)
 					case DHT_COMMAND_FORWARD_INTRODUCTION
 						[target_id, introduction_message]	= parse_introduce_to_data(data)
 						if !@_announcements_from.has(target_id)
@@ -395,7 +391,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_routes_timeouts.set(source_id, +(new Date))
 			)
 			.'on'('send', (node_id, data) !~>
-				@_send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data)
+				@_send_routing(node_id, data)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
 				source_id	= concat_arrays([node_id, route_id])
@@ -1081,6 +1077,26 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_application_connections.delete(full_target_id)
 				@'fire'('disconnected', real_public_key, target_id)
 				@'fire'('application_connections_count', @_application_connections.size)
+		/**
+		 * @param {!Uint8Array}	peer_id
+		 * @param {number}		command	0..9
+		 * @param {!Uint8Array}	command_data
+		 */
+		_send_core : (peer_id, command, command_data) !->
+			@_transport['send'](peer_id, command, command_data)
+		/**
+		 * @param {!Uint8Array}	peer_id
+		 * @param {number}		command	0..9
+		 * @param {!Uint8Array}	command_data
+		 */
+		_send_dht : (peer_id, command, command_data) !->
+			@_transport['send'](peer_id, command + DHT_COMMANDS_OFFSET, command_data)
+		/**
+		 * @param {!Uint8Array}	peer_id
+		 * @param {!Uint8Array}	data
+		 */
+		_send_routing : (peer_id, data) !->
+			@_transport['send'](peer_id, ROUTING_COMMANDS, data)
 		/**
 		 * @param {!Uint8Array}	node_id
 		 * @param {number}		command	0..245

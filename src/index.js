@@ -8,11 +8,10 @@
   /*
    * Implements version ? of the specification
    */
-  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS_OFFSET, UNCOMPRESSED_COMMANDS_OFFSET, DHT_COMMAND_ROUTING, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, DHT_COMMAND_FORWARD_INTRODUCTION, DHT_COMMAND_GET_NODES_REQUEST, DHT_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, ROUTING_PATH_SEGMENT_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMANDS_OFFSET = 10;
-  ROUTING_COMMANDS_OFFSET = 20;
-  UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS_OFFSET;
-  DHT_COMMAND_ROUTING = 0;
+  ROUTING_COMMANDS = 20;
+  UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS;
   DHT_COMMAND_FORWARD_INTRODUCTION = 1;
   DHT_COMMAND_GET_NODES_REQUEST = 2;
   DHT_COMMAND_GET_NODES_RESPONSE = 3;
@@ -331,24 +330,23 @@
           this$._get_more_aware_of_nodes();
         }
       });
-      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT).on('signal', function(peer_id, signal){}).on('connected', function(node_id){
-        this$._connected_nodes.add(node_id);
-        this$._aware_of_nodes['delete'](node_id);
+      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT).on('signal', function(peer_id, signal){}).on('connected', function(peer_id){
+        this$._connected_nodes.add(peer_id);
+        this$._aware_of_nodes['delete'](peer_id);
         this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
-      }).on('disconnected', function(node_id){
-        this$._connected_nodes['delete'](node_id);
+      }).on('disconnected', function(peer_id){
+        this$._connected_nodes['delete'](peer_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
-        this$._get_nodes_requested['delete'](node_id);
+        this$._get_nodes_requested['delete'](peer_id);
       }).on('data', function(peer_id, command, command_data){
-        if (command < DHT_COMMANDS_OFFSET) {} else if (command < command && command < ROUTING_COMMANDS_OFFSET) {} else {}
+        if (command < DHT_COMMANDS_OFFSET) {} else if (command < command && command < ROUTING_COMMANDS_OFFSET) {} else if (command === ROUTING_COMMANDS) {
+          this$._router['process_packet'](node_id, command_data);
+        }
       });
       this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('data', function(node_id, command, data){
         var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, stale_node_to_remove;
         switch (command) {
-        case DHT_COMMAND_ROUTING:
-          this$._router['process_packet'](node_id, data);
-          break;
         case DHT_COMMAND_FORWARD_INTRODUCTION:
           ref$ = parse_introduce_to_data(data), target_id = ref$[0], introduction_message = ref$[1];
           if (!this$._announcements_from.has(target_id)) {
@@ -407,7 +405,7 @@
         this$._update_connection_timeout(node_id);
         this$._routes_timeouts.set(source_id, +new Date);
       })['on']('send', function(node_id, data){
-        this$._send_to_dht_node(node_id, DHT_COMMAND_ROUTING, data);
+        this$._send_routing(node_id, data);
       })['on']('data', function(node_id, route_id, command, data){
         var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, for_signature, full_target_id, connection_in_progress, i$, len$, key, item, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
@@ -1186,6 +1184,29 @@
           this['fire']('disconnected', real_public_key, target_id);
           this['fire']('application_connections_count', this._application_connections.size);
         }
+      }
+      /**
+       * @param {!Uint8Array}	peer_id
+       * @param {number}		command	0..9
+       * @param {!Uint8Array}	command_data
+       */,
+      _send_core: function(peer_id, command, command_data){
+        this._transport['send'](peer_id, command, command_data);
+      }
+      /**
+       * @param {!Uint8Array}	peer_id
+       * @param {number}		command	0..9
+       * @param {!Uint8Array}	command_data
+       */,
+      _send_dht: function(peer_id, command, command_data){
+        this._transport['send'](peer_id, command + DHT_COMMANDS_OFFSET, command_data);
+      }
+      /**
+       * @param {!Uint8Array}	peer_id
+       * @param {!Uint8Array}	data
+       */,
+      _send_routing: function(peer_id, data){
+        this._transport['send'](peer_id, ROUTING_COMMANDS, data);
       }
       /**
        * @param {!Uint8Array}	node_id

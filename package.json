@@ -25,7 +25,7 @@
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.7.0",
 		"@detox/dht"             : "^0.16.0",
-		"@detox/routing"         : "^0.2.0",
+		"@detox/routing"         : "^0.3.0",
 		"@detox/transport"       : "^0.36.0",
 		"@detox/utils"           : "^1.6.0",
 		"async-eventer"          : "^1.1.5",
