@@ -806,7 +806,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array}	real_public_key	Own real long-term public key as returned by `announce()` and `connect_to()` methods
 		 * @param {!Uint8Array}	target_id		Should be connected already
 		 * @param {number}		command			Command from range `0..255`
-		 * @param {!Uint8Array}	data			Up to 65 KiB (limit defined in `@detox/transport`)
+		 * @param {!Uint8Array}	data			Size limit can be obtained with `get_max_data_size()` method, roughly 65KiB
 		 */
 		'send_to' : (real_public_key, target_id, command, data) !->
 			# TODO: Bootstrap nodes are not implemented for updated components yet

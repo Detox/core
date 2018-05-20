@@ -137,7 +137,7 @@ Send data to previously connected friend.
 * `real_public_key` - own real long-term public key as returned by `announce()` and `connect_to()` methods
 * `target_id` - long-term public key of a friend
 * `command` - command for data, can be any number from the range `0..245`
-* `data` - data being sent
+* `data` - data being sent, size limit can be obtained with `get_max_data_size()` method, roughly 65KiB
 
 ### detox_core.Core.destroy()
 Stops bootstrap server, destroys all connections.
