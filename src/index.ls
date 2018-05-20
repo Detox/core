@@ -6,13 +6,15 @@
 /*
  * Implements version ? of the specification
  */
+const DHT_COMMANDS_OFFSET			= 10 # 0..9 are reserved as Core commands
+const ROUTING_COMMANDS_OFFSET		= 20 # 10..19 are reserved as DHT commands
+const UNCOMPRESSED_COMMANDS_OFFSET	= ROUTING_COMMANDS_OFFSET # Core and DHT commands are compressed
+
 const DHT_COMMAND_ROUTING				= 0
 const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
 const DHT_COMMAND_GET_NODES_REQUEST		= 2
 const DHT_COMMAND_GET_NODES_RESPONSE	= 3
 
-const UNCOMPRESSED_COMMANDS_OFFSET						= 10 # 0..9 are reserved as DHT commands
-const ROUTING_COMMANDS_OFFSET							= 20 # 10..19 are reserved as direct commands that do not belong to router or DHT
 const ROUTING_COMMAND_ANNOUNCE							= 0
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE	= 2
@@ -187,7 +189,6 @@ function parse_introduce_to_data (message)
 	[target_id, introduction_message]
 
 function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
-	P2P_transport				= detox-transport['P2P_transport']
 	random_bytes				= detox-utils['random_bytes']
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
@@ -299,6 +300,27 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_more_aware_of_nodes()
 		)
 
+		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)
+			.on('signal', (peer_id, signal) !~>
+				# TODO
+			)
+			.on('connected', (peer_id) !~>
+				# TODO
+			)
+			.on('disconnected', (peer_id) !~>
+				# TODO
+			)
+			.on('data', (peer_id, command, command_data) !~>
+				if command < DHT_COMMANDS_OFFSET
+					# TODO: Core commands
+					void
+				else if command < command < ROUTING_COMMANDS_OFFSET
+					# TODO: DHT commands
+					void
+				else
+					# TODO: Routing commands
+					void
+			)
 		@_dht		= detox-dht['DHT'](
 			@_dht_keypair['ed25519']['public']
 			bucket_size
