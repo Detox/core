@@ -324,16 +324,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_nodes_requested.delete(peer_id)
 			)
 			.'on'('data', (peer_id, command, command_data) !~>
-				if command < DHT_COMMANDS_OFFSET
-					# TODO: Compressed core commands
-					void
-				else if command < command < ROUTING_COMMANDS_OFFSET
-					@_dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data)
-					void
+				if command >= UNCOMPRESSED_CORE_COMMANDS_OFFSET
+					@_handle_uncompressed_core_command(peer_id, command - UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
 				else if command == ROUTING_COMMANDS
 					@_router['process_packet'](node_id, command_data)
+				else if command >= DHT_COMMANDS_OFFSET
+					@_dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data)
 				else
-					@_handle_uncompressed_core_command(peer_id, command - UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
+					@_handle_compressed_core_command(peer_id, command, command_data)
 			)
 		# TODO: Constant options below should be configurable
 		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
@@ -1051,6 +1049,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_application_connections.delete(full_target_id)
 				@'fire'('disconnected', real_public_key, target_id)
 				@'fire'('application_connections_count', @_application_connections.size)
+		/**
+		 * @param {!Uint8Array}	peer_id
+		 * @param {number}		command			0..9
+		 * @param {!Uint8Array}	command_data
+		 */
+		_handle_compressed_core_command : (peer_id, command, command_data) !->
+			# TODO
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
