@@ -6,11 +6,13 @@
 /*
  * Implements version ? of the specification
  */
-const DHT_COMMANDS_OFFSET			= 10				# 0..9 are reserved as Core commands
-const ROUTING_COMMANDS				= 20				# 10..19 are reserved as DHT commands
-const UNCOMPRESSED_COMMANDS_OFFSET	= ROUTING_COMMANDS	# Core and DHT commands are compressed
+const DHT_COMMANDS_OFFSET				= 10				# 0..9 are reserved as Core commands
+const ROUTING_COMMANDS					= 20				# 10..19 are reserved as DHT commands
+const UNCOMPRESSED_COMMANDS_OFFSET		= ROUTING_COMMANDS	# Core and DHT commands are compressed
+const UNCOMPRESSED_CORE_COMMANDS_OFFSET	= 21
 
-const DHT_COMMAND_FORWARD_INTRODUCTION	= 1
+const UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION	= 0
+
 const DHT_COMMAND_GET_NODES_REQUEST		= 2
 const DHT_COMMAND_GET_NODES_RESPONSE	= 3
 
@@ -323,24 +325,20 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 			.on('data', (peer_id, command, command_data) !~>
 				if command < DHT_COMMANDS_OFFSET
-					# TODO: Core commands
+					# TODO: Compressed core commands
 					void
 				else if command < command < ROUTING_COMMANDS_OFFSET
 					# TODO: DHT commands
 					void
 				else if command == ROUTING_COMMANDS
 					@_router['process_packet'](node_id, command_data)
+				else
+					@_handle_uncompressed_core_command(peer_id, command - UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
 			)
 		# TODO: Constant options below should be configurable
 		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
 			.'on'('data', (node_id, command, data) !~>
 				switch command
-					case DHT_COMMAND_FORWARD_INTRODUCTION
-						[target_id, introduction_message]	= parse_introduce_to_data(data)
-						if !@_announcements_from.has(target_id)
-							return
-						[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
-						@_send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 					case DHT_COMMAND_GET_NODES_REQUEST
 						# TODO: This is a naive implementation, can be attacked relatively easily
 						nodes	= @_pick_random_connected_nodes(7) || []
@@ -391,7 +389,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_routes_timeouts.set(source_id, +(new Date))
 			)
 			.'on'('send', (node_id, data) !~>
-				@_send_routing(node_id, data)
+				@_send_routing_command(node_id, data)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
 				source_id	= concat_arrays([node_id, route_id])
@@ -438,9 +436,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@_pending_connection.delete(rendezvous_token)
 						)
 						@_pending_connection.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout])
-						@_send_to_dht_node(
+						@_send_uncompressed_core_command(
 							introduction_node
-							DHT_COMMAND_FORWARD_INTRODUCTION
+							UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION
 							compose_introduce_to_data(target_id, introduction_message)
 						)
 					case ROUTING_COMMAND_CONFIRM_CONNECTION
@@ -1079,24 +1077,48 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@'fire'('application_connections_count', @_application_connections.size)
 		/**
 		 * @param {!Uint8Array}	peer_id
-		 * @param {number}		command	0..9
+		 * @param {number}		command			0..9
 		 * @param {!Uint8Array}	command_data
 		 */
-		_send_core : (peer_id, command, command_data) !->
-			@_transport['send'](peer_id, command, command_data)
+		_handle_uncompressed_core_command : (peer_id, command, command_data) !->
+			switch command
+				case UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION
+					[target_id, introduction_message]	= parse_introduce_to_data(data)
+					if !@_announcements_from.has(target_id)
+						return
+					[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
+					@_send_to_routing_node_raw(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
+				# TODO: Uncompressed core commands
 		/**
 		 * @param {!Uint8Array}	peer_id
-		 * @param {number}		command	0..9
+		 * @param {number}		command			0..9
 		 * @param {!Uint8Array}	command_data
 		 */
-		_send_dht : (peer_id, command, command_data) !->
-			@_transport['send'](peer_id, command + DHT_COMMANDS_OFFSET, command_data)
+		_send_compressed_core_command : (peer_id, command, command_data) !->
+			@_send(peer_id, command, command_data)
+		/**
+		 * @param {!Uint8Array}	peer_id
+		 * @param {number}		command			0..9
+		 * @param {!Uint8Array}	command_data
+		 */
+		_send_dht_command : (peer_id, command, command_data) !->
+			@_send(peer_id, command + DHT_COMMANDS_OFFSET, command_data)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {!Uint8Array}	data
 		 */
-		_send_routing : (peer_id, data) !->
-			@_transport['send'](peer_id, ROUTING_COMMANDS, data)
+		_send_routing_command : (peer_id, data) !->
+			@_send(peer_id, ROUTING_COMMANDS, data)
+		/**
+		 * @param {!Uint8Array}	peer_id
+		 * @param {number}		command			0..9
+		 * @param {!Uint8Array}	command_data
+		 */
+		_send_uncompressed_core_command : (peer_id, command, command_data) !->
+			@_send(peer_id, command + UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
+		_send : (peer_id, command, command_data) !->
+			@_transport['send'](peer_id, command, command_data)
+			# TODO: Move code from _send_to_dht_node method here?
 		/**
 		 * @param {!Uint8Array}	node_id
 		 * @param {number}		command	0..245
