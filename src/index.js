@@ -289,6 +289,7 @@
       this._real_keypairs = ArrayMap();
       this._dht_keypair = create_keypair(dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
+      this._max_compressed_data_size = detoxTransport['MAX_COMPRESSED_DATA_SIZE'];
       this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
@@ -660,8 +661,9 @@
         public_port == null && (public_port = port);
         zero_id = new Uint8Array(PUBLIC_KEY_LENGTH);
         this._http_server = require('http').createServer(function(request, response){
-          var body;
-          if (request.method !== 'POST') {
+          var content_length, body;
+          content_length = request.getHeader('Content-Length');
+          if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
             response.writeHead(400);
             response.end();
             return;

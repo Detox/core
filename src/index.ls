@@ -260,9 +260,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options)
 		async-eventer.call(@)
 
-		@_real_keypairs	= ArrayMap()
-		@_dht_keypair	= create_keypair(dht_key_seed)
-		@_max_data_size	= detox-transport['MAX_DATA_SIZE']
+		@_real_keypairs				= ArrayMap()
+		@_dht_keypair				= create_keypair(dht_key_seed)
+		@_max_data_size				= detox-transport['MAX_DATA_SIZE']
+		@_max_compressed_data_size	= detox-transport['MAX_COMPRESSED_DATA_SIZE']
 
 		@_used_first_nodes			= ArraySet()
 		@_connections_in_progress	= ArrayMap()
@@ -625,7 +626,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
 			zero_id	= new Uint8Array(PUBLIC_KEY_LENGTH)
 			@_http_server = require('http').createServer (request, response) !~>
-				if request.method != 'POST'
+				content_length	= request.getHeader('Content-Length')
+				if !(
+					request.method == 'POST' &&
+					content_length &&
+					content_length <= @_max_compressed_data_size
+				)
 					response.writeHead(400)
 					response.end()
 					return
