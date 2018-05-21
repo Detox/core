@@ -1194,7 +1194,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 						else
 							break
-				# TODO: Uncompressed core commands
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
