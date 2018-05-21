@@ -36,9 +36,7 @@ const MAC_LENGTH					= 16
 # Length of the application name used during introduction
 const APPLICATION_LENGTH			= 64
 # How long node should wait for rendezvous node to receive incoming connection from intended responder
-const CONNECTION_TIMEOUT			= 30
-# The same as in `@detox/transport`
-const ROUTING_PATH_SEGMENT_TIMEOUT	= 10
+const CONNECTION_TIMEOUT			= 10
 # After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
 const LAST_USED_TIMEOUT				= 60
 # Re-announce each 5 minutes
@@ -329,9 +327,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		)
 
 		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)
-			.'on'('signal', (peer_id, signal) !~>
-				# TODO
-			)
 			.'on'('connected', (peer_id) !~>
 				# TODO: Add to DHT
 				@_connected_nodes.add(peer_id)
@@ -369,25 +364,46 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.'on'('peer_warning', (peer_id) !~>
 				# TODO
 			)
-			.'on'('connect_to', (peer_peer_id, peer_id) !~>
-				@_transport['create_connection'](true, peer_peer_id)
-				# TODO: Handle `disconnected` event too and fail faster
-				!~function signal (node_id, sdp)
-					if !are_arrays_equal(node_id, peer_peer_id)
-						return
-					clearTimeout(signal_timeout)
-					@_transport['off']('signal', signal)
-					# TODO: Signature
-					signature	= null_array
-					@_send_compressed_core_command(
-						peer_id
-						COMPRESSED_CORE_COMMAND_GET_SIGNAL
-						compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
-					)
-				@_transport['on']('signal', signal)
-				signal_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
-					@_transport['off']('signal', signal)
-				)
+			.'on'('connect_to', (peer_peer_id, peer_id) ~>
+				new Promise (resolve, reject) !~>
+					@_transport
+						.'on'('signal', signal)
+						.'on'('connected', connected)
+						.'on'('disconnected', disconnected)
+						.'create_connection'(true, peer_peer_id)
+					timeout	= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
+					!~function signal (node_id, sdp)
+						if !are_arrays_equal(node_id, peer_peer_id)
+							return
+						# Re-run timeout, this time for connection
+						clearTimeout(timeout)
+						timeout	:= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
+						@_transport['off']('signal', signal)
+						# TODO: Signature
+						signature	= null_array
+						@_send_compressed_core_command(
+							peer_id
+							COMPRESSED_CORE_COMMAND_GET_SIGNAL
+							compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
+						)
+					!~function connected (node_id)
+						if !are_arrays_equal(node_id, peer_peer_id)
+							return
+						clearTimeout(timeout)
+						@_transport
+							.'off'('connected', connected)
+							.'off'('disconnected', disconnected)
+						resolve()
+					!~function disconnected (node_id)
+						if !are_arrays_equal(node_id, peer_peer_id)
+							return
+						timeout_callback()
+					!~function timeout_callback
+						@_transport
+							.'off'('signal', signal)
+							.'off'('connected', connected)
+							.'off'('disconnected', disconnected)
+						reject()
 			)
 			.'on'('send', (peer_id, command, command_data) !~>
 				@_send_dht_command(peer_id, command, command_data)
@@ -1201,7 +1217,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_update_connection_timeout(node_id)
 				@_transport['send'](node_id, command, command_data)
 			@_transport['on']('connected', connected)
-			connected_timeout	= timeoutSet(ROUTING_PATH_SEGMENT_TIMEOUT, !~>
+			connected_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 				@_transport['off']('connected', connected)
 			)
 			# TODO: This will only work when DHT is properly integrated, also timeout will not be enough in most cases
