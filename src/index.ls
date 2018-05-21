@@ -334,7 +334,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_aware_of_nodes.delete(peer_id)
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				# TODO: Bootstrap nodes are not implemented for updated components yet
+				# TODO: Bootstrap nodes are not fully implemented for updated components yet
 #				peer_id_hex	= array2hex(peer_id)
 #				if @_more_aware_of_nodes_needed()
 #					bootstrap_nodes	= @'get_bootstrap_nodes'().map (bootstrap_node) ->
@@ -701,6 +701,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'get_bootstrap_nodes' : ->
 			# TODO: Bootstrap nodes are not implemented for updated components yet
 #			@_dht['get_bootstrap_nodes']()
+			[]
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {number}		number_of_introduction_nodes
@@ -801,9 +802,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'connect_to' : (real_key_seed, target_id, application, secret, number_of_intermediate_nodes) ->
-			# TODO: Bootstrap nodes are not implemented for updated components yet
-#			if @_bootstrap_node
-#				return null
+			if @_bootstrap_node
+				return null
 			if !number_of_intermediate_nodes
 				throw new Error('Direct connections are not yet supported')
 				# TODO: Support direct connections here?
@@ -932,9 +932,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array}	data			Size limit can be obtained with `get_max_data_size()` method, roughly 65KiB
 		 */
 		'send_to' : (real_public_key, target_id, command, data) !->
-			# TODO: Bootstrap nodes are not implemented for updated components yet
-#			if @_bootstrap_node
-#				return
+			if @_bootstrap_node
+				return
 			full_target_id		= concat_arrays([real_public_key, target_id])
 			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if !encryptor_instance || data.length > @_max_data_size
@@ -979,7 +978,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {boolean}
 		 */
 		_more_aware_of_nodes_needed : ->
-			# TODO: Bootstrap nodes are not implemented for updated components yet
 			!@_bootstrap_node && !!(@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length)
 		/**
 		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
@@ -1044,8 +1042,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				return null
 			connected_nodes	= Array.from(@_connected_nodes.values())
 			# TODO: Bootstrap nodes are not implemented for updated components yet
-#			for bootstrap_node in @'get_bootstrap_nodes'()
-#				exclude_nodes.push(hex2array(bootstrap_node['node_id']))
+			for bootstrap_node in @'get_bootstrap_nodes'()
+				exclude_nodes.push(hex2array(bootstrap_node['node_id']))
 			exclude_nodes_set	= ArraySet(exclude_nodes)
 			connected_nodes		= connected_nodes.filter (node) ->
 				!exclude_nodes_set.has(node)

@@ -732,7 +732,9 @@
        *
        * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
        */,
-      'get_bootstrap_nodes': function(){}
+      'get_bootstrap_nodes': function(){
+        return [];
+      }
       /**
        * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
        * @param {number}		number_of_introduction_nodes
@@ -842,6 +844,9 @@
        */,
       'connect_to': function(real_key_seed, target_id, application, secret, number_of_intermediate_nodes){
         var real_keypair, real_public_key, full_target_id, connection_in_progress, nodes, first_node, rendezvous_node, this$ = this;
+        if (this._bootstrap_node) {
+          return null;
+        }
         if (!number_of_intermediate_nodes) {
           throw new Error('Direct connections are not yet supported');
         }
@@ -967,6 +972,9 @@
        */,
       'send_to': function(real_public_key, target_id, command, data){
         var full_target_id, encryptor_instance, multiplexer, data_with_header, this$ = this;
+        if (this._bootstrap_node) {
+          return;
+        }
         full_target_id = concat_arrays([real_public_key, target_id]);
         encryptor_instance = this._encryptor_instances.get(full_target_id);
         if (!encryptor_instance || data.length > this._max_data_size) {
@@ -1096,7 +1104,7 @@
        * @return {Array<!Uint8Array>} `null` if there is no nodes to return
        */,
       _pick_random_connected_nodes: function(up_to_number_of_nodes, exclude_nodes){
-        var connected_nodes, exclude_nodes_set, i$, i, results$ = [];
+        var connected_nodes, i$, ref$, len$, bootstrap_node, exclude_nodes_set, i, results$ = [];
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
@@ -1104,6 +1112,10 @@
           return null;
         }
         connected_nodes = Array.from(this._connected_nodes.values());
+        for (i$ = 0, len$ = (ref$ = this['get_bootstrap_nodes']()).length; i$ < len$; ++i$) {
+          bootstrap_node = ref$[i$];
+          exclude_nodes.push(hex2array(bootstrap_node['node_id']));
+        }
         exclude_nodes_set = ArraySet(exclude_nodes);
         connected_nodes = connected_nodes.filter(function(node){
           return !exclude_nodes_set.has(node);
