@@ -359,10 +359,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		# TODO: Constant options below should be configurable
 		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
 			.'on'('peer_error', (peer_id) !~>
-				# TODO
+				@_peer_error(peer_id)
 			)
 			.'on'('peer_warning', (peer_id) !~>
-				# TODO
+				@_peer_warning(peer_id)
 			)
 			.'on'('connect_to', (peer_peer_id, peer_id) ~>
 				new Promise (resolve, reject) !~>
@@ -379,13 +379,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						clearTimeout(timeout)
 						timeout	:= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
 						@_transport['off']('signal', signal)
-						# TODO: Signature
-						signature	= null_array
+						signature	= detox-crypto['sign'](concat_arrays([@_dht_keypair['ed25519']['public'], sdp]), @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 						@_send_compressed_core_command(
 							peer_id
 							COMPRESSED_CORE_COMMAND_GET_SIGNAL
 							compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 						)
+						# TODO: Response
 					!~function connected (node_id)
 						if !are_arrays_equal(node_id, peer_peer_id)
 							return
@@ -1118,14 +1118,18 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_handle_compressed_core_command : (peer_id, command, command_data) !->
 			switch command
 				case COMPRESSED_CORE_COMMAND_GET_SIGNAL
-					# TODO: Signature
 					[source_id, target_id, sdp, signature]	= parse_get_signal(command_data)
+					if !detox-crypto['verify'](signature, concat_arrays([source_id, sdp]), source_id)
+						@_peer_error(peer_id)
+						return
 					if are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
 						@_transport
 							..'create_connection'(false, source_id)
 							..'signal'(source_id, sdp)
-					else
-						# TODO: Forward to peer
+							# TODO: Response
+					else if @_connected_nodes.has(target_id)
+						@_send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, command_data)
+						# TODO: Response
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
@@ -1313,6 +1317,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				for i from 0 til introduction_nodes_bulk.length / PUBLIC_KEY_LENGTH
 					introduction_nodes.push(introduction_nodes_bulk.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH))
 				introduction_nodes
+		_peer_error : (peer_id) !->
+			# TODO
+		_peer_warning : (peer_id) !->
+			# TODO
 
 	Core:: = Object.assign(Object.create(async-eventer::), Core::)
 	Object.defineProperty(Core::, 'constructor', {value: Core})

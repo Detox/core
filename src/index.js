@@ -381,7 +381,11 @@
           this$._handle_compressed_core_command(peer_id, command, command_data);
         }
       });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('peer_error', function(peer_id){})['on']('peer_warning', function(peer_id){})['on']('connect_to', function(peer_peer_id, peer_id){
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('peer_error', function(peer_id){
+        this$._peer_error(peer_id);
+      })['on']('peer_warning', function(peer_id){
+        this$._peer_warning(peer_id);
+      })['on']('connect_to', function(peer_peer_id, peer_id){
         return new Promise(function(resolve, reject){
           var timeout;
           this$._transport['on']('signal', signal)['on']('connected', connected)['on']('disconnected', disconnected)['create_connection'](true, peer_peer_id);
@@ -394,7 +398,7 @@
             clearTimeout(timeout);
             timeout = timeoutSet(CONNECTION_TIMEOUT, timeout_callback);
             this$._transport['off']('signal', signal);
-            signature = null_array;
+            signature = detoxCrypto['sign'](concat_arrays([this$._dht_keypair['ed25519']['public'], sdp]), this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, compose_get_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature));
           }
           function connected(node_id){
@@ -1200,11 +1204,17 @@
         switch (command) {
         case COMPRESSED_CORE_COMMAND_GET_SIGNAL:
           ref$ = parse_get_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+          if (!detoxCrypto['verify'](signature, concat_arrays([source_id, sdp]), source_id)) {
+            this._peer_error(peer_id);
+            return;
+          }
           if (are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
             x$ = this._transport;
             x$['create_connection'](false, source_id);
             x$['signal'](source_id, sdp);
-          } else {}
+          } else if (this._connected_nodes.has(target_id)) {
+            this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, command_data);
+          }
         }
       }
       /**
@@ -1426,7 +1436,9 @@
           }
           return introduction_nodes;
         });
-      }
+      },
+      _peer_error: function(peer_id){},
+      _peer_warning: function(peer_id){}
     };
     Core.prototype = Object.assign(Object.create(asyncEventer.prototype), Core.prototype);
     Object.defineProperty(Core.prototype, 'constructor', {
