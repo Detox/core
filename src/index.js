@@ -57,7 +57,7 @@
    *
    * @return {!Uint8Array}
    */
-  function compose_get_signal(source_id, target_id, sdp, signature){
+  function compose_signal(source_id, target_id, sdp, signature){
     var x$;
     x$ = new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length);
     x$.set(source_id);
@@ -71,7 +71,7 @@
    *
    * @return {!Array} [source_id, target_id, sdp, signature]
    */
-  function parse_get_signal(data){
+  function parse_signal(data){
     var source_id, target_id, sdp, signature;
     source_id = data.subarray(0, PUBLIC_KEY_LENGTH);
     target_id = data.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2);
@@ -400,7 +400,7 @@
             clearTimeout(timeout);
             this$._transport['off']('signal', signal);
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-            command_data = compose_get_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
+            command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             this$._waiting_for_signal_from.add(peer_peer_id);
           }
@@ -1208,7 +1208,7 @@
         var ref$, source_id, target_id, sdp, signature;
         switch (command) {
         case COMPRESSED_CORE_COMMAND_SIGNAL:
-          ref$ = parse_get_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+          ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
           if (!detoxCrypto['verify'](signature, sdp, source_id)) {
             this._peer_error(peer_id);
             return;
@@ -1240,7 +1240,7 @@
               clearTimeout(timeout);
               this$._transport['off']('signal', signal);
               signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-              command_data = compose_get_signal(this$._dht_keypair['ed25519']['public'], target_id, sdp, signature);
+              command_data = compose_signal(this$._dht_keypair['ed25519']['public'], target_id, sdp, signature);
               this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             }
             function timeout_callback(){

@@ -71,7 +71,7 @@ const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
  *
  * @return {!Uint8Array}
  */
-function compose_get_signal (source_id, target_id, sdp, signature)
+function compose_signal (source_id, target_id, sdp, signature)
 	new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length)
 		..set(source_id)
 		..set(target_id, PUBLIC_KEY_LENGTH)
@@ -82,7 +82,7 @@ function compose_get_signal (source_id, target_id, sdp, signature)
  *
  * @return {!Array} [source_id, target_id, sdp, signature]
  */
-function parse_get_signal (data)
+function parse_signal (data)
 	source_id	= data.subarray(0, PUBLIC_KEY_LENGTH)
 	target_id	= data.subarray(PUBLIC_KEY_LENGTH, PUBLIC_KEY_LENGTH * 2)
 	sdp			= data.subarray(PUBLIC_KEY_LENGTH * 2, data.length - SIGNATURE_LENGTH)
@@ -379,7 +379,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						clearTimeout(timeout)
 						@_transport['off']('signal', signal)
 						signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-						command_data	= compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
+						command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 						@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						@_waiting_for_signal_from.add(peer_peer_id)
 					!~function connected (node_id)
@@ -1116,7 +1116,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_handle_compressed_core_command : (peer_id, command, command_data) !->
 			switch command
 				case COMPRESSED_CORE_COMMAND_SIGNAL
-					[source_id, target_id, sdp, signature]	= parse_get_signal(command_data)
+					[source_id, target_id, sdp, signature]	= parse_signal(command_data)
 					if !detox-crypto['verify'](signature, sdp, source_id)
 						@_peer_error(peer_id)
 						return
@@ -1145,7 +1145,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							clearTimeout(timeout)
 							@_transport['off']('signal', signal)
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-							command_data	= compose_get_signal(@_dht_keypair['ed25519']['public'], target_id, sdp, signature)
+							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], target_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						!~function timeout_callback
 							@_transport['off']('signal', signal)
