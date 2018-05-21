@@ -652,10 +652,21 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							return
 						random_connected_node	= @_pick_random_connected_nodes(1)?[0]
 						if random_connected_node
-							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, body)
+							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
+							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 							# TODO: Handle response
 						else
-							# TODO: If there are no other connected nodes to return, use own node
+							connection	= @_transport['create_connection'](false, source_id)
+							if !connection
+								return
+							connection
+								..'signal'(sdp)
+								..'once'('signal', (sdp) !~>
+									signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+									response.setHeader('Access-Control-Allow-Origin', '*')
+									response.write(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature))
+									response.end()
+								)
 					)
 			@_http_server
 				..listen(port, ip, !~>
@@ -1159,16 +1170,16 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						@_transport['signal'](source_id, sdp)
 						return
 					# Otherwise create connection as responder, consume signal and send another answer signal back
-					let # This is just for declaring functions inside
-						connection	= @_transport['create_connection'](false, source_id)
-						if !connection
-							return
-						connection
-							..'signal'(sdp)
-							..'once'('signal', (sdp) !~>
-								signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-								command_data	= compose_signal(@_dht_keypair['ed25519']['public'], target_id, sdp, signature)
-							)
+					connection	= @_transport['create_connection'](false, source_id)
+					if !connection
+						return
+					connection
+						..'signal'(sdp)
+						..'once'('signal', (sdp) !~>
+							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
+							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+						)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9

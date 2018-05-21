@@ -672,7 +672,7 @@
           request.on('data', function(chunk){
             body.push(chunk);
           }).on('end', function(){
-            var ref$, source_id, target_id, sdp, signature, random_connected_node;
+            var ref$, source_id, target_id, sdp, signature, random_connected_node, command_data, connection, x$;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, zero_id))) {
@@ -682,8 +682,23 @@
             }
             random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
             if (random_connected_node) {
-              this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, body);
-            } else {}
+              command_data = compose_signal(source_id, random_connected_node, sdp, signature);
+              this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            } else {
+              connection = this$._transport['create_connection'](false, source_id);
+              if (!connection) {
+                return;
+              }
+              x$ = connection;
+              x$['signal'](sdp);
+              x$['once']('signal', function(sdp){
+                var signature;
+                signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+                response.setHeader('Access-Control-Allow-Origin', '*');
+                response.write(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature));
+                response.end();
+              });
+            }
           });
         });
         x$ = this._http_server;
@@ -1230,7 +1245,7 @@
        * @param {!Uint8Array}	command_data
        */,
       _handle_compressed_core_command: function(peer_id, command, command_data){
-        var ref$, source_id, target_id, sdp, signature;
+        var ref$, source_id, target_id, sdp, signature, connection, x$, this$ = this;
         switch (command) {
         case COMPRESSED_CORE_COMMAND_SIGNAL:
           ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
@@ -1250,20 +1265,18 @@
             this._transport['signal'](source_id, sdp);
             return;
           }
-          (function(){
-            var connection, x$, this$ = this;
-            connection = this._transport['create_connection'](false, source_id);
-            if (!connection) {
-              return;
-            }
-            x$ = connection;
-            x$['signal'](sdp);
-            x$['once']('signal', function(sdp){
-              var signature, command_data;
-              signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-              command_data = compose_signal(this$._dht_keypair['ed25519']['public'], target_id, sdp, signature);
-            });
-          }.call(this));
+          connection = this._transport['create_connection'](false, source_id);
+          if (!connection) {
+            return;
+          }
+          x$ = connection;
+          x$['signal'](sdp);
+          x$['once']('signal', function(sdp){
+            var signature, command_data;
+            signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+            command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
+            this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+          });
         }
       }
       /**
