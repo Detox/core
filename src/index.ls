@@ -11,7 +11,7 @@ const ROUTING_COMMANDS					= 20				# 10..19 are reserved as DHT commands
 const UNCOMPRESSED_COMMANDS_OFFSET		= ROUTING_COMMANDS	# Core and DHT commands are compressed
 const UNCOMPRESSED_CORE_COMMANDS_OFFSET	= 21
 
-const COMPRESSED_CORE_COMMAND_GET_SIGNAL	= 0
+const COMPRESSED_CORE_COMMAND_SIGNAL	= 0
 
 const UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION	= 0
 const UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST		= 1
@@ -267,13 +267,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_used_first_nodes			= ArraySet()
 		@_connections_in_progress	= ArrayMap()
 		@_connected_nodes			= ArraySet()
+		@_waiting_for_signal_from	= ArraySet()
 		@_aware_of_nodes			= ArrayMap()
 		@_get_nodes_requested		= ArraySet()
 		@_routing_paths				= ArrayMap()
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
 		@_id_to_routing_path		= ArrayMap()
 		@_routing_path_to_id		= ArrayMap()
-		@_used_tags					= ArrayMap()
 		@_connections_timeouts		= ArrayMap()
 		@_routes_timeouts			= ArrayMap()
 		@_pending_connection		= ArrayMap()
@@ -375,17 +375,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					!~function signal (node_id, sdp)
 						if !are_arrays_equal(node_id, peer_peer_id)
 							return
-						# Re-run timeout, this time for connection
 						clearTimeout(timeout)
-						timeout	:= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
 						@_transport['off']('signal', signal)
-						signature	= detox-crypto['sign'](concat_arrays([@_dht_keypair['ed25519']['public'], sdp]), @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-						@_send_compressed_core_command(
-							peer_id
-							COMPRESSED_CORE_COMMAND_GET_SIGNAL
-							compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
-						)
-						# TODO: Response
+						signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+						command_data	= compose_get_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
+						@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+						@_waiting_for_signal_from.add(peer_peer_id)
 					!~function connected (node_id)
 						if !are_arrays_equal(node_id, peer_peer_id)
 							return
@@ -1117,19 +1112,40 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_handle_compressed_core_command : (peer_id, command, command_data) !->
 			switch command
-				case COMPRESSED_CORE_COMMAND_GET_SIGNAL
+				case COMPRESSED_CORE_COMMAND_SIGNAL
 					[source_id, target_id, sdp, signature]	= parse_get_signal(command_data)
-					if !detox-crypto['verify'](signature, concat_arrays([source_id, sdp]), source_id)
+					if !detox-crypto['verify'](signature, sdp, source_id)
 						@_peer_error(peer_id)
 						return
-					if are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+					# If command targets our peer, forward it
+					if @_connected_nodes.has(target_id)
+						@_send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+						return
+					# If command doesn't target ourselves - exit
+					if !are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+						return
+					# If we are waiting for command - consume signal
+					if @_waiting_for_signal_from.has(source_id)
+						@_waiting_for_signal_from.delete(source_id)
+						@_transport['signal'](source_id, sdp)
+						return
+					# Otherwise create connection as responder, consume signal and send another answer signal back
+					let # This is just for declaring functions inside
 						@_transport
 							..'create_connection'(false, source_id)
 							..'signal'(source_id, sdp)
-							# TODO: Response
-					else if @_connected_nodes.has(target_id)
-						@_send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, command_data)
-						# TODO: Response
+							..'on'('signal', signal)
+						timeout	= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
+						!~function signal (node_id, sdp)
+							if !are_arrays_equal(node_id, target_id)
+								return
+							clearTimeout(timeout)
+							@_transport['off']('signal', signal)
+							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+							command_data	= compose_get_signal(@_dht_keypair['ed25519']['public'], target_id, sdp, signature)
+							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+						!~function timeout_callback
+							@_transport['off']('signal', signal)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9

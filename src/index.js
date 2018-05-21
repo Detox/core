@@ -8,12 +8,12 @@
   /*
    * Implements version ? of the specification
    */
-  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_GET_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMANDS_OFFSET = 10;
   ROUTING_COMMANDS = 20;
   UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS;
   UNCOMPRESSED_CORE_COMMANDS_OFFSET = 21;
-  COMPRESSED_CORE_COMMAND_GET_SIGNAL = 0;
+  COMPRESSED_CORE_COMMAND_SIGNAL = 0;
   UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION = 0;
   UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST = 1;
   UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE = 2;
@@ -292,12 +292,12 @@
       this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
+      this._waiting_for_signal_from = ArraySet();
       this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
       this._routing_paths = ArrayMap();
       this._id_to_routing_path = ArrayMap();
       this._routing_path_to_id = ArrayMap();
-      this._used_tags = ArrayMap();
       this._connections_timeouts = ArrayMap();
       this._routes_timeouts = ArrayMap();
       this._pending_connection = ArrayMap();
@@ -391,15 +391,16 @@
           this$._transport['on']('signal', signal)['on']('connected', connected)['on']('disconnected', disconnected)['create_connection'](true, peer_peer_id);
           timeout = timeoutSet(CONNECTION_TIMEOUT, timeout_callback);
           function signal(node_id, sdp){
-            var signature;
+            var signature, command_data;
             if (!are_arrays_equal(node_id, peer_peer_id)) {
               return;
             }
             clearTimeout(timeout);
-            timeout = timeoutSet(CONNECTION_TIMEOUT, timeout_callback);
             this$._transport['off']('signal', signal);
-            signature = detoxCrypto['sign'](concat_arrays([this$._dht_keypair['ed25519']['public'], sdp]), this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-            this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, compose_get_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature));
+            signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+            command_data = compose_get_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
+            this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            this$._waiting_for_signal_from.add(peer_peer_id);
           }
           function connected(node_id){
             if (!are_arrays_equal(node_id, peer_peer_id)) {
@@ -1200,21 +1201,48 @@
        * @param {!Uint8Array}	command_data
        */,
       _handle_compressed_core_command: function(peer_id, command, command_data){
-        var ref$, source_id, target_id, sdp, signature, x$;
+        var ref$, source_id, target_id, sdp, signature;
         switch (command) {
-        case COMPRESSED_CORE_COMMAND_GET_SIGNAL:
+        case COMPRESSED_CORE_COMMAND_SIGNAL:
           ref$ = parse_get_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
-          if (!detoxCrypto['verify'](signature, concat_arrays([source_id, sdp]), source_id)) {
+          if (!detoxCrypto['verify'](signature, sdp, source_id)) {
             this._peer_error(peer_id);
             return;
           }
-          if (are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
+          if (this._connected_nodes.has(target_id)) {
+            this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            return;
+          }
+          if (!are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
+            return;
+          }
+          if (this._waiting_for_signal_from.has(source_id)) {
+            this._waiting_for_signal_from['delete'](source_id);
+            this._transport['signal'](source_id, sdp);
+            return;
+          }
+          (function(){
+            var x$, timeout, this$ = this;
             x$ = this._transport;
             x$['create_connection'](false, source_id);
             x$['signal'](source_id, sdp);
-          } else if (this._connected_nodes.has(target_id)) {
-            this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_GET_SIGNAL, command_data);
-          }
+            x$['on']('signal', signal);
+            timeout = timeoutSet(CONNECTION_TIMEOUT, timeout_callback);
+            function signal(node_id, sdp){
+              var signature, command_data;
+              if (!are_arrays_equal(node_id, target_id)) {
+                return;
+              }
+              clearTimeout(timeout);
+              this$._transport['off']('signal', signal);
+              signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+              command_data = compose_get_signal(this$._dht_keypair['ed25519']['public'], target_id, sdp, signature);
+              this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            }
+            function timeout_callback(){
+              this$._transport['off']('signal', signal);
+            }
+          }.call(this));
         }
       }
       /**
