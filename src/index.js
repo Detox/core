@@ -389,37 +389,24 @@
         this$._peer_warning(peer_id);
       })['on']('connect_to', function(peer_peer_id, peer_id){
         return new Promise(function(resolve, reject){
-          var timeout;
-          this$._transport['on']('signal', signal)['on']('connected', connected)['on']('disconnected', disconnected)['create_connection'](true, peer_peer_id);
-          timeout = timeoutSet(CONNECTION_TIMEOUT, timeout_callback);
-          function signal(node_id, sdp){
+          var connection;
+          connection = this$._transport['create_connection'](true, peer_peer_id);
+          if (!connection) {
+            reject();
+            return;
+          }
+          connection['once']('signal', function(sdp){
             var signature, command_data;
-            if (!are_arrays_equal(node_id, peer_peer_id)) {
-              return;
-            }
-            clearTimeout(timeout);
-            this$._transport['off']('signal', signal);
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             this$._waiting_for_signal_from.add(peer_peer_id);
-          }
-          function connected(node_id){
-            if (!are_arrays_equal(node_id, peer_peer_id)) {
-              return;
-            }
-            clearTimeout(timeout);
-            this$._transport['off']('connected', connected)['off']('disconnected', disconnected);
+          })['once']('connected', function(){
+            connection['off']('disconnected', disconnected);
             resolve();
-          }
-          function disconnected(node_id){
-            if (!are_arrays_equal(node_id, peer_peer_id)) {
-              return;
-            }
-            timeout_callback();
-          }
-          function timeout_callback(){
-            this$._transport['off']('signal', signal)['off']('connected', connected)['off']('disconnected', disconnected);
+          })['once']('disconnected', disconnected);
+          function disconnected(){
+            this$._waiting_for_signal_from['delete'](peer_peer_id);
             reject();
           }
         });
@@ -664,12 +651,45 @@
        *
        * @param {string}	ip
        * @param {number}	port
-       * @param {string}	address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
-       * @param {number}	public_port	Publicly available port on `address`
+       * @param {string}	public_address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
+       * @param {number}	public_port		Publicly available port on `address`
        */
-      'start_bootstrap_node': function(ip, port, address, public_port){
-        address == null && (address = ip);
+      'start_bootstrap_node': function(ip, port, public_address, public_port){
+        var zero_id, x$, this$ = this;
+        public_address == null && (public_address = ip);
         public_port == null && (public_port = port);
+        zero_id = new Uint8Array(PUBLIC_KEY_LENGTH);
+        this._http_server = require('http').createServer(function(request, response){
+          var body;
+          if (request.method !== 'POST') {
+            response.writeHead(400);
+            response.end();
+            return;
+          }
+          body = [];
+          request.on('data', function(chunk){
+            body.push(chunk);
+          }).on('end', function(){
+            var ref$, source_id, target_id, sdp, signature, random_connected_node;
+            body = concat_arrays(body);
+            ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+            if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, zero_id))) {
+              response.writeHead(400);
+              response.end();
+              return;
+            }
+            random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
+            if (random_connected_node) {
+              this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, body);
+            } else {}
+          });
+        });
+        x$ = this._http_server;
+        x$.listen(port, ip, function(){
+          this$._http_server_address = [public_address, public_port];
+        });
+        x$.on('error', error_handler);
+        this._bootstrap_node = true;
       }
       /**
        * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
@@ -957,6 +977,9 @@
         });
         this._router['destroy']();
         this._dht['destroy']();
+        if (this._http_server) {
+          this._http_server.close();
+        }
       }
       /**
        * @return {boolean}
@@ -1226,26 +1249,18 @@
             return;
           }
           (function(){
-            var x$, timeout, this$ = this;
-            x$ = this._transport;
-            x$['create_connection'](false, source_id);
-            x$['signal'](source_id, sdp);
-            x$['on']('signal', signal);
-            timeout = timeoutSet(CONNECTION_TIMEOUT, timeout_callback);
-            function signal(node_id, sdp){
+            var connection, x$, this$ = this;
+            connection = this._transport['create_connection'](false, source_id);
+            if (!connection) {
+              return;
+            }
+            x$ = connection;
+            x$['signal'](sdp);
+            x$['once']('signal', function(sdp){
               var signature, command_data;
-              if (!are_arrays_equal(node_id, target_id)) {
-                return;
-              }
-              clearTimeout(timeout);
-              this$._transport['off']('signal', signal);
               signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
               command_data = compose_signal(this$._dht_keypair['ed25519']['public'], target_id, sdp, signature);
-              this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            }
-            function timeout_callback(){
-              this$._transport['off']('signal', signal);
-            }
+            });
           }.call(this));
         }
       }

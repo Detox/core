@@ -367,38 +367,24 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 			.'on'('connect_to', (peer_peer_id, peer_id) ~>
 				new Promise (resolve, reject) !~>
-					@_transport
-						.'on'('signal', signal)
-						.'on'('connected', connected)
-						.'on'('disconnected', disconnected)
-						.'create_connection'(true, peer_peer_id)
-					timeout	= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
-					!~function signal (node_id, sdp)
-						if !are_arrays_equal(node_id, peer_peer_id)
-							return
-						clearTimeout(timeout)
-						@_transport['off']('signal', signal)
-						signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-						command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
-						@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-						@_waiting_for_signal_from.add(peer_peer_id)
-					!~function connected (node_id)
-						if !are_arrays_equal(node_id, peer_peer_id)
-							return
-						clearTimeout(timeout)
-						@_transport
-							.'off'('connected', connected)
-							.'off'('disconnected', disconnected)
-						resolve()
-					!~function disconnected (node_id)
-						if !are_arrays_equal(node_id, peer_peer_id)
-							return
-						timeout_callback()
-					!~function timeout_callback
-						@_transport
-							.'off'('signal', signal)
-							.'off'('connected', connected)
-							.'off'('disconnected', disconnected)
+					connection	= @_transport['create_connection'](true, peer_peer_id)
+					if !connection
+						reject()
+						return
+					connection
+						.'once'('signal', (sdp) !~>
+							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
+							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+							@_waiting_for_signal_from.add(peer_peer_id)
+						)
+						.'once'('connected', !~>
+							connection['off']('disconnected', disconnected)
+							resolve()
+						)
+						.'once'('disconnected', disconnected)
+					!~function disconnected
+						@_waiting_for_signal_from.delete(peer_peer_id)
 						reject()
 			)
 			.'on'('send', (peer_id, command, command_data) !~>
@@ -633,13 +619,44 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 *
 		 * @param {string}	ip
 		 * @param {number}	port
-		 * @param {string}	address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
-		 * @param {number}	public_port	Publicly available port on `address`
+		 * @param {string}	public_address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
+		 * @param {number}	public_port		Publicly available port on `address`
 		 */
-		'start_bootstrap_node' : (ip, port, address = ip, public_port = port) !->
-			# TODO: Bootstrap nodes are not implemented for updated components yet
-#			@_dht['start_bootstrap_node'](ip, port, address, public_port)
-#			@_bootstrap_node	= true
+		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
+			zero_id	= new Uint8Array(PUBLIC_KEY_LENGTH)
+			@_http_server = require('http').createServer (request, response) !~>
+				if request.method != 'POST'
+					response.writeHead(400)
+					response.end()
+					return
+				body	= []
+				request
+					.on('data', (chunk) !->
+						body.push(chunk)
+					)
+					.on('end', !~>
+						body	:= concat_arrays(body)
+						[source_id, target_id, sdp, signature]	= parse_signal(body)
+						if !(
+							detox-crypto['verify'](signature, sdp, source_id) &&
+							are_arrays_equal(target_id, zero_id)
+						)
+							response.writeHead(400)
+							response.end()
+							return
+						random_connected_node	= @_pick_random_connected_nodes(1)?[0]
+						if random_connected_node
+							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, body)
+							# TODO: Handle response
+						else
+							# TODO: If there are no other connected nodes to return, use own node
+					)
+			@_http_server
+				..listen(port, ip, !~>
+					@_http_server_address	= [public_address, public_port]
+				)
+				..on('error', error_handler)
+			@_bootstrap_node	= true
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
 		 *
@@ -920,6 +937,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				clearTimeout(connection_timeout)
 			@_router['destroy']()
 			@_dht['destroy']()
+			if @_http_server
+				@_http_server.close()
 		/**
 		 * @return {boolean}
 		 */
@@ -982,6 +1001,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {Array<!Uint8Array>} `null` if there is no nodes to return
 		 */
 		_pick_random_connected_nodes : (up_to_number_of_nodes = 1, exclude_nodes = []) ->
+			# TODO: Some trust model, only return trusted nodes
 			if !@_connected_nodes.size
 				# Make random lookup in order to fill DHT with known nodes
 				@_random_lookup()
@@ -1134,21 +1154,15 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						return
 					# Otherwise create connection as responder, consume signal and send another answer signal back
 					let # This is just for declaring functions inside
-						@_transport
-							..'create_connection'(false, source_id)
-							..'signal'(source_id, sdp)
-							..'on'('signal', signal)
-						timeout	= timeoutSet(CONNECTION_TIMEOUT, timeout_callback)
-						!~function signal (node_id, sdp)
-							if !are_arrays_equal(node_id, target_id)
-								return
-							clearTimeout(timeout)
-							@_transport['off']('signal', signal)
-							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], target_id, sdp, signature)
-							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-						!~function timeout_callback
-							@_transport['off']('signal', signal)
+						connection	= @_transport['create_connection'](false, source_id)
+						if !connection
+							return
+						connection
+							..'signal'(sdp)
+							..'once'('signal', (sdp) !~>
+								signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+								command_data	= compose_signal(@_dht_keypair['ed25519']['public'], target_id, sdp, signature)
+							)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
