@@ -293,7 +293,7 @@
       this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
-      this._waiting_for_signal_from = ArraySet();
+      this._waiting_for_signal = ArrayMap();
       this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
       this._routing_paths = ArrayMap();
@@ -390,24 +390,27 @@
         this$._peer_warning(peer_id);
       })['on']('connect_to', function(peer_peer_id, peer_id){
         return new Promise(function(resolve, reject){
-          var connection;
+          var connection, waiting_for_signal_key;
           connection = this$._transport['create_connection'](true, peer_peer_id);
           if (!connection) {
             reject();
             return;
           }
+          waiting_for_signal_key = concat_arrays([this$._dht_keypair['ed25519']['public'], peer_peer_id]);
           connection['once']('signal', function(sdp){
             var signature, command_data;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            this$._waiting_for_signal_from.add(peer_peer_id);
+            this$._waiting_for_signal.add(waiting_for_signal_key, function(sdp){
+              this$._transport['signal'](peer_peer_id, sdp);
+            });
           })['once']('connected', function(){
             connection['off']('disconnected', disconnected);
             resolve();
           })['once']('disconnected', disconnected);
           function disconnected(){
-            this$._waiting_for_signal_from['delete'](peer_peer_id);
+            this$._waiting_for_signal['delete'](waiting_for_signal_key);
             reject();
           }
         });
@@ -662,6 +665,7 @@
         zero_id = new Uint8Array(PUBLIC_KEY_LENGTH);
         this._http_server = require('http').createServer(function(request, response){
           var content_length, body;
+          response.setHeader('Access-Control-Allow-Origin', '*');
           content_length = request.getHeader('Content-Length');
           if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
             response.writeHead(400);
@@ -672,7 +676,7 @@
           request.on('data', function(chunk){
             body.push(chunk);
           }).on('end', function(){
-            var ref$, source_id, target_id, sdp, signature, random_connected_node, command_data, connection, x$;
+            var ref$, source_id, target_id, sdp, signature, random_connected_node, command_data, waiting_for_signal_key, timeout, connection, x$;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, zero_id))) {
@@ -684,6 +688,22 @@
             if (random_connected_node) {
               command_data = compose_signal(source_id, random_connected_node, sdp, signature);
               this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+              waiting_for_signal_key = concat_arrays([source_id, random_connected_node]);
+              this$._waiting_for_signal.add(waiting_for_signal_key, function(sdp, signature, command_data){
+                clearTimeout(timeout);
+                if (detoxCrypto['verify'](signature, sdp, random_connected_node)) {
+                  response.write(command_data);
+                  response.end();
+                } else {
+                  response.writeHead(502);
+                  response.end();
+                }
+              });
+              timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+                response.writeHead(504);
+                response.end();
+                this$._waiting_for_signal['delete'](waiting_for_signal_callback);
+              });
             } else {
               connection = this$._transport['create_connection'](false, source_id);
               if (!connection) {
@@ -694,7 +714,6 @@
               x$['once']('signal', function(sdp){
                 var signature;
                 signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-                response.setHeader('Access-Control-Allow-Origin', '*');
                 response.write(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature));
                 response.end();
               });
@@ -1245,7 +1264,7 @@
        * @param {!Uint8Array}	command_data
        */,
       _handle_compressed_core_command: function(peer_id, command, command_data){
-        var ref$, source_id, target_id, sdp, signature, connection, x$, this$ = this;
+        var ref$, source_id, target_id, sdp, signature, waiting_for_signal_key, waiting_for_signal_callback, connection, x$, this$ = this;
         switch (command) {
         case COMPRESSED_CORE_COMMAND_SIGNAL:
           ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
@@ -1260,9 +1279,11 @@
           if (!are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
             return;
           }
-          if (this._waiting_for_signal_from.has(source_id)) {
-            this._waiting_for_signal_from['delete'](source_id);
-            this._transport['signal'](source_id, sdp);
+          waiting_for_signal_key = concat_arrays([target_id, source_id]);
+          waiting_for_signal_callback = this._waiting_for_signal.get(waiting_for_signal_key);
+          if (waiting_for_signal_callback) {
+            waiting_for_signal_callback(sdp, signature, command_data);
+            this._waiting_for_signal['delete'](waiting_for_signal_callback);
             return;
           }
           connection = this._transport['create_connection'](false, source_id);

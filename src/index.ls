@@ -268,7 +268,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_used_first_nodes			= ArraySet()
 		@_connections_in_progress	= ArrayMap()
 		@_connected_nodes			= ArraySet()
-		@_waiting_for_signal_from	= ArraySet()
+		@_waiting_for_signal		= ArrayMap()
 		@_aware_of_nodes			= ArrayMap()
 		@_get_nodes_requested		= ArraySet()
 		@_routing_paths				= ArrayMap()
@@ -372,12 +372,16 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					if !connection
 						reject()
 						return
+					waiting_for_signal_key	= concat_arrays([@_dht_keypair['ed25519']['public'], peer_peer_id])
 					connection
 						.'once'('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							@_waiting_for_signal_from.add(peer_peer_id)
+							# TODO: Check for duplicated additions
+							@_waiting_for_signal.add(waiting_for_signal_key, (sdp) !~>
+								@_transport['signal'](peer_peer_id, sdp)
+							)
 						)
 						.'once'('connected', !~>
 							connection['off']('disconnected', disconnected)
@@ -385,7 +389,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						)
 						.'once'('disconnected', disconnected)
 					!~function disconnected
-						@_waiting_for_signal_from.delete(peer_peer_id)
+						@_waiting_for_signal.delete(waiting_for_signal_key)
 						reject()
 			)
 			.'on'('send', (peer_id, command, command_data) !~>
@@ -626,6 +630,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
 			zero_id	= new Uint8Array(PUBLIC_KEY_LENGTH)
 			@_http_server = require('http').createServer (request, response) !~>
+				response.setHeader('Access-Control-Allow-Origin', '*')
 				content_length	= request.getHeader('Content-Length')
 				if !(
 					request.method == 'POST' &&
@@ -654,7 +659,22 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						if random_connected_node
 							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
 							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							# TODO: Handle response
+							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
+							# TODO: Check for duplicated additions
+							@_waiting_for_signal.add(waiting_for_signal_key, (sdp, signature, command_data) !~>
+								clearTimeout(timeout)
+								if detox-crypto['verify'](signature, sdp, random_connected_node)
+									response.write(command_data)
+									response.end()
+								else
+									response.writeHead(502)
+									response.end()
+							)
+							timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
+								response.writeHead(504)
+								response.end()
+								@_waiting_for_signal.delete(waiting_for_signal_callback)
+							)
 						else
 							connection	= @_transport['create_connection'](false, source_id)
 							if !connection
@@ -662,8 +682,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							connection
 								..'signal'(sdp)
 								..'once'('signal', (sdp) !~>
-									signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-									response.setHeader('Access-Control-Allow-Origin', '*')
+									signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 									response.write(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature))
 									response.end()
 								)
@@ -1164,10 +1183,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					# If command doesn't target ourselves - exit
 					if !are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
 						return
-					# If we are waiting for command - consume signal
-					if @_waiting_for_signal_from.has(source_id)
-						@_waiting_for_signal_from.delete(source_id)
-						@_transport['signal'](source_id, sdp)
+					# If we are waiting for command - consume with callback
+					waiting_for_signal_key		= concat_arrays([target_id, source_id])
+					waiting_for_signal_callback	= @_waiting_for_signal.get(waiting_for_signal_key)
+					if waiting_for_signal_callback
+						waiting_for_signal_callback(sdp, signature, command_data)
+						@_waiting_for_signal.delete(waiting_for_signal_callback)
 						return
 					# Otherwise create connection as responder, consume signal and send another answer signal back
 					connection	= @_transport['create_connection'](false, source_id)
