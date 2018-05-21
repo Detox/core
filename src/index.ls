@@ -276,7 +276,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_routing_path_to_id		= ArrayMap()
 		@_connections_timeouts		= ArrayMap()
 		@_routes_timeouts			= ArrayMap()
-		@_pending_connection		= ArrayMap()
+		@_pending_connections		= ArrayMap()
 		@_announcements_from		= ArrayMap()
 		@_forwarding_mapping		= ArrayMap()
 		@_pending_pings				= ArraySet()
@@ -461,13 +461,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
-						if @_pending_connection.has(rendezvous_token)
+						if @_pending_connections.has(rendezvous_token)
 							# Ignore subsequent usages of the same rendezvous token
 							return
 						connection_timeout														= timeoutSet(CONNECTION_TIMEOUT, !~>
-							@_pending_connection.delete(rendezvous_token)
+							@_pending_connections.delete(rendezvous_token)
 						)
-						@_pending_connection.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout])
+						@_pending_connections.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout])
 						@_send_uncompressed_core_command(
 							introduction_node
 							UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION
@@ -475,12 +475,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						)
 					case ROUTING_COMMAND_CONFIRM_CONNECTION
 						[signature, rendezvous_token, handshake_message]	= parse_confirm_connection_data(data)
-						if !@_pending_connection.has(rendezvous_token)
+						pending_connection									= @_pending_connections.get(rendezvous_token)
+						if !pending_connection
 							return
-						[target_node_id, target_route_id, target_id, connection_timeout]	= @_pending_connection.get(rendezvous_token)
+						[target_node_id, target_route_id, target_id, connection_timeout]	= pending_connection
 						if !detox-crypto['verify'](signature, rendezvous_token, target_id)
 							return
-						@_pending_connection.delete(rendezvous_token)
+						@_pending_connections.delete(rendezvous_token)
 						clearTimeout(connection_timeout)
 						@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
 						target_source_id	= concat_arrays([target_node_id, target_route_id])
@@ -488,10 +489,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
 						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
 					case ROUTING_COMMAND_INTRODUCTION
-						if !@_routing_path_to_id.has(source_id)
+						routing_path_details	= @_routing_path_to_id.get(source_id)
+						if !routing_path_details
 							# If routing path unknown - ignore
 							return
-						[real_public_key, introduction_node]	= @_routing_path_to_id.get(source_id)
+						[real_public_key, introduction_node]	= routing_path_details
 						if !@_real_keypairs.has(real_public_key)
 							return
 						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key)
@@ -914,7 +916,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_transport['destroy']()
 			@_routing_paths.forEach ([node_id, route_id]) !~>
 				@_unregister_routing_path(node_id, route_id)
-			@_pending_connection.forEach ([, , , connection_timeout]) !~>
+			@_pending_connections.forEach ([, , , connection_timeout]) !~>
 				clearTimeout(connection_timeout)
 			@_router['destroy']()
 			@_dht['destroy']()

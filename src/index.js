@@ -300,7 +300,7 @@
       this._routing_path_to_id = ArrayMap();
       this._connections_timeouts = ArrayMap();
       this._routes_timeouts = ArrayMap();
-      this._pending_connection = ArrayMap();
+      this._pending_connections = ArrayMap();
       this._announcements_from = ArrayMap();
       this._forwarding_mapping = ArrayMap();
       this._pending_pings = ArraySet();
@@ -441,7 +441,7 @@
       })['on']('send', function(node_id, data){
         this$._send_routing_command(node_id, data);
       })['on']('data', function(node_id, route_id, command, data){
-        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, target_node_id, target_route_id, target_source_id, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, for_signature, full_target_id, connection_in_progress, i$, len$, key, item, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
+        var source_id, public_key, announce_interval, target_id, send_response, ref$, rendezvous_token, introduction_node, introduction_message, connection_timeout, signature, handshake_message, pending_connection, target_node_id, target_route_id, target_source_id, routing_path_details, real_public_key, real_keypair, announced_to, introduction_message_decrypted, introduction_payload, rendezvous_node, application, secret, for_signature, full_target_id, connection_in_progress, i$, len$, key, item, error, encryptor_instance, demultiplexer, data_decrypted, data_with_header;
         source_id = concat_arrays([node_id, route_id]);
         switch (command) {
         case ROUTING_COMMAND_ANNOUNCE:
@@ -487,25 +487,26 @@
           break;
         case ROUTING_COMMAND_INITIALIZE_CONNECTION:
           ref$ = parse_initialize_connection_data(data), rendezvous_token = ref$[0], introduction_node = ref$[1], target_id = ref$[2], introduction_message = ref$[3];
-          if (this$._pending_connection.has(rendezvous_token)) {
+          if (this$._pending_connections.has(rendezvous_token)) {
             return;
           }
           connection_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
-            this$._pending_connection['delete'](rendezvous_token);
+            this$._pending_connections['delete'](rendezvous_token);
           });
-          this$._pending_connection.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout]);
+          this$._pending_connections.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout]);
           this$._send_uncompressed_core_command(introduction_node, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, compose_introduce_to_data(target_id, introduction_message));
           break;
         case ROUTING_COMMAND_CONFIRM_CONNECTION:
           ref$ = parse_confirm_connection_data(data), signature = ref$[0], rendezvous_token = ref$[1], handshake_message = ref$[2];
-          if (!this$._pending_connection.has(rendezvous_token)) {
+          pending_connection = this$._pending_connections.get(rendezvous_token);
+          if (!pending_connection) {
             return;
           }
-          ref$ = this$._pending_connection.get(rendezvous_token), target_node_id = ref$[0], target_route_id = ref$[1], target_id = ref$[2], connection_timeout = ref$[3];
+          target_node_id = pending_connection[0], target_route_id = pending_connection[1], target_id = pending_connection[2], connection_timeout = pending_connection[3];
           if (!detoxCrypto['verify'](signature, rendezvous_token, target_id)) {
             return;
           }
-          this$._pending_connection['delete'](rendezvous_token);
+          this$._pending_connections['delete'](rendezvous_token);
           clearTimeout(connection_timeout);
           this$._send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data);
           target_source_id = concat_arrays([target_node_id, target_route_id]);
@@ -513,10 +514,11 @@
           this$._forwarding_mapping.set(target_source_id, [node_id, route_id]);
           break;
         case ROUTING_COMMAND_INTRODUCTION:
-          if (!this$._routing_path_to_id.has(source_id)) {
+          routing_path_details = this$._routing_path_to_id.get(source_id);
+          if (!routing_path_details) {
             return;
           }
-          ref$ = this$._routing_path_to_id.get(source_id), real_public_key = ref$[0], introduction_node = ref$[1];
+          real_public_key = routing_path_details[0], introduction_node = routing_path_details[1];
           if (!this$._real_keypairs.has(real_public_key)) {
             return;
           }
@@ -948,7 +950,7 @@
           node_id = arg$[0], route_id = arg$[1];
           this$._unregister_routing_path(node_id, route_id);
         });
-        this._pending_connection.forEach(function(arg$){
+        this._pending_connections.forEach(function(arg$){
           var connection_timeout;
           connection_timeout = arg$[3];
           clearTimeout(connection_timeout);
