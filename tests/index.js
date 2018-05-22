@@ -23,11 +23,7 @@
       generated_seed = lib.generate_seed();
       t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array');
       t.equal(generated_seed.length, 32, 'Seed length is 32 bytes');
-      bootstrap_node_info = {
-        node_id: Buffer(detoxCrypto.create_keypair(new Uint8Array(32)).ed25519['public']).toString('hex'),
-        host: bootstrap_address,
-        port: bootstrap_port
-      };
+      bootstrap_node_info = bootstrap_address + ":" + bootstrap_port;
       x$ = node_1_real_seed = new Uint8Array(32);
       x$.set([1, 1]);
       node_1_real_public_key = detoxCrypto.create_keypair(node_1_real_seed).ed25519['public'];
@@ -102,8 +98,8 @@
         instance.once('ready', function(){
           t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
           if (wait_for === NUMBER_OF_NODES - 2) {
-            t.deepEqual(instance.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly');
-            t.equal(instance.get_max_data_size(), Math.pow(2, 16) - 1, 'Max data size returned correctly');
+            t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly');
+            t.equal(instance.get_max_data_size(), Math.pow(2, 16) - 2, 'Max data size returned correctly');
           }
           --wait_for;
           if (!wait_for) {

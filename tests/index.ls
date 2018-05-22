@@ -28,10 +28,7 @@ test('Core', (t) !->
 	t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array')
 	t.equal(generated_seed.length, 32, 'Seed length is 32 bytes')
 
-	bootstrap_node_info		=
-		node_id	: Buffer(detox-crypto.create_keypair(new Uint8Array(32)).ed25519.public).toString('hex')
-		host	: bootstrap_address
-		port	: bootstrap_port
+	bootstrap_node_info		= "#bootstrap_address:#bootstrap_port"
 
 	node_1_real_seed		= new Uint8Array(32)
 		..set([1, 1])
@@ -57,9 +54,9 @@ test('Core', (t) !->
 
 			if wait_for == (NUMBER_OF_NODES - 2)
 				# Only check the first node after bootstrap
-				t.deepEqual(instance.get_bootstrap_nodes()[0], bootstrap_node_info, 'Bootstrap nodes are returned correctly')
+				t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly')
 
-				t.equal(instance.get_max_data_size(), 2 ** 16 - 1, 'Max data size returned correctly')
+				t.equal(instance.get_max_data_size(), 2 ** 16 - 2, 'Max data size returned correctly')
 
 			--wait_for
 			if !wait_for
