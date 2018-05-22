@@ -16,6 +16,7 @@ const COMPRESSED_CORE_COMMAND_SIGNAL	= 0
 const UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION	= 0
 const UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST		= 1
 const UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE		= 2
+const UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE			= 3
 
 const ROUTING_COMMAND_ANNOUNCE							= 0
 const ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST	= 1
@@ -350,12 +351,18 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 			.'on'('data', (peer_id, command, command_data) !~>
 				if command >= UNCOMPRESSED_CORE_COMMANDS_OFFSET
+					if @_bootstrap_node && command != UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
+						return
 					@_handle_uncompressed_core_command(peer_id, command - UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
 				else if command == ROUTING_COMMANDS
+					if @_bootstrap_node
+						return
 					@_router['process_packet'](node_id, command_data)
 				else if command >= DHT_COMMANDS_OFFSET
 					@_dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data)
 				else
+					if @_bootstrap_node && command != COMPRESSED_CORE_COMMAND_SIGNAL
+						return
 					@_handle_compressed_core_command(peer_id, command, command_data)
 			)
 		# TODO: Constant options below should be configurable
@@ -1244,6 +1251,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 						else
 							break
+				case UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
+					void
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
