@@ -233,8 +233,9 @@
     introduction_message = message.subarray(PUBLIC_KEY_LENGTH);
     return [target_id, introduction_message];
   }
-  function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
+  function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer, fetch){
     var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, empty_array, null_id;
+    fetch == null && (fetch = window['fetch']);
     string2array = detoxUtils['string2array'];
     array2string = detoxUtils['array2string'];
     random_bytes = detoxUtils['random_bytes'];
@@ -772,9 +773,37 @@
             return;
           }
           connection['once']('signal', function(sdp){
-            var signature, command_data;
+            var signature, init;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-            command_data = compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature);
+            init = {
+              method: 'POST',
+              body: compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature)
+            };
+            fetch("https://" + bootstrap_node, init)['catch'](function(e){
+              if (typeof location === 'undefined' || location.protocol === 'http:') {
+                return fetch("http://" + bootstrap_node, init);
+              } else {
+                throw e;
+              }
+            }).then(function(response){
+              if (!response['ok']) {
+                throw 'Request failed';
+              }
+              return response['arrayBuffer']();
+            }).then(function(buffer){
+              return new Uint8Array(buffer);
+            }).then(function(command_data){
+              var ref$, source_id, target_id, sdp, signature;
+              ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this._dht_keypair['ed25519']['public']))) {
+                throw 'Bad response';
+              }
+              this._transport['update_peer_id'](random_id, source_id);
+              connection['signal'](sdp);
+            })['catch'](function(e){
+              error_handler(e);
+              connection['destroy']();
+            });
           })['once']('connected', function(){
             connection['off']('disconnected', disconnected);
             done();
@@ -1618,7 +1647,7 @@
   if (typeof define === 'function' && define['amd']) {
     define(['@detox/crypto', '@detox/dht', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
   } else if (typeof exports === 'object') {
-    module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'));
+    module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'), require('node-fetch'));
   } else {
     this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_dht'], this['detox_routing'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
   }

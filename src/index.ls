@@ -214,7 +214,7 @@ function parse_introduce_to_data (message)
 	introduction_message	= message.subarray(PUBLIC_KEY_LENGTH)
 	[target_id, introduction_message]
 
-function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
+function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer, fetch = window['fetch'])
 	string2array				= detox-utils['string2array']
 	array2string				= detox-utils['array2string']
 	random_bytes				= detox-utils['random_bytes']
@@ -613,6 +613,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
+		# TODO: This should probably be called when a lot of nodes are disconnected too, not just once during start
 		@_bootstrap()
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
@@ -724,9 +725,35 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					return
 				connection
 					.'once'('signal', (sdp) !~>
-						signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-						command_data	= compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature)
-						# TODO: fetch and the rest
+						signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+						init		=
+							method	: 'POST'
+							body	: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature)
+						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
+						fetch("https://#bootstrap_node", init)
+							.catch (e) ->
+								if typeof location == 'undefined' || location.protocol == 'http:'
+									fetch("http://#bootstrap_node", init)
+								else
+									throw e
+							.then (response) ->
+								if !response['ok']
+									throw 'Request failed'
+								response['arrayBuffer']()
+							.then (buffer) ->
+								new Uint8Array(buffer)
+							.then (command_data) !->
+								[source_id, target_id, sdp, signature]	= parse_signal(body)
+								if !(
+									detox-crypto['verify'](signature, sdp, source_id) &&
+									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+								)
+									throw 'Bad response'
+								@_transport['update_peer_id'](random_id, source_id)
+								connection['signal'](sdp)
+							.catch (e) !~>
+								error_handler(e)
+								connection['destroy']()
 					)
 					.'once'('connected', !~>
 						connection['off']('disconnected', disconnected)
@@ -1445,12 +1472,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'Core'			: Core
 	}
 
+# NOTE: `node-fetch` dependency is the last one and only specified for CommonJS, make sure to insert new dependencies before it
 if typeof define == 'function' && define['amd']
 	# AMD
 	define(['@detox/crypto', '@detox/dht', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
 else if typeof exports == 'object'
 	# CommonJS
-	module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'))
+	module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'), require('node-fetch'))
 else
 	# Browser globals
 	@'detox_core' = Wrapper(@'detox_crypto', @'detox_dht', @'detox_routing', @'detox_transport', @'detox_utils', @'fixed_size_multiplexer', @'async_eventer')
