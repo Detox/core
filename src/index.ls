@@ -405,15 +405,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.'on'('send', (peer_id, command, command_data) !~>
 				@_send_dht_command(peer_id, command, command_data)
 			)
-			# TODO: `ready` event doesn't exist in updated DHT implementation
-			.'on'('ready', !~>
-				# Make 3 random lookups on start in order to connect to some nodes
-				# TODO: Think about regular lookups
-				@_random_lookup()
-				@_random_lookup()
-				@_random_lookup()
-				@'fire'('ready')
-			)
 		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= concat_arrays([node_id, route_id])
@@ -616,7 +607,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
 		# TODO: This should probably be called when a lot of nodes are disconnected too, not just once during start
-		@_bootstrap()
+		@_bootstrap(
+			# Make 3 random lookups on start in order to connect to some nodes
+			# TODO: Think about regular lookups
+			@_random_lookup()
+			@_random_lookup()
+			@_random_lookup()
+			@'fire'('ready')
+		)
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -718,13 +716,16 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		'get_bootstrap_nodes' : ->
 			Array.from(@_bootstrap_nodes)
-		_bootstrap : !->
+		/**
+		 * @param {!Function} callback
+		 */
+		_bootstrap : (callback) !->
 			waiting_for	= @_bootstrap_nodes.size
 			!~function done
 				--waiting_for
 				if waiting_for
 					return
-				# TODO: Finish bootstrap, whatever that means
+				callback?()
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
 				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
 				connection	= @_transport['create_connection'](true, random_id)

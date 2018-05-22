@@ -440,11 +440,6 @@
         });
       })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
-      })['on']('ready', function(){
-        this$._random_lookup();
-        this$._random_lookup();
-        this$._random_lookup();
-        this$['fire']('ready');
       });
       this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
         var source_id;
@@ -661,7 +656,7 @@
         }
       });
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
-      this._bootstrap();
+      this._bootstrap(this._random_lookup(), this._random_lookup(), this._random_lookup(), this['fire']('ready'));
     }
     Core['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
     Core['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
@@ -766,14 +761,20 @@
        */,
       'get_bootstrap_nodes': function(){
         return Array.from(this._bootstrap_nodes);
-      },
-      _bootstrap: function(){
+      }
+      /**
+       * @param {!Function} callback
+       */,
+      _bootstrap: function(callback){
         var waiting_for, this$ = this;
         waiting_for = this._bootstrap_nodes.size;
         function done(){
           --waiting_for;
           if (waiting_for) {
             return;
+          }
+          if (typeof callback == 'function') {
+            callback();
           }
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
