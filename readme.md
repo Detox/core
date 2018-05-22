@@ -89,7 +89,7 @@ Generates random seed that can be later used in `detox_core.Core` constructor.
 Constructor for Core object, offers methods for connecting to and interacting with Detox network.
 
 * `dht_key_seed` - seed that corresponds to temporary user identity in DHT network
-* `bootstrap_nodes` - array of objects with keys (all of them are required) `node_id` (DHT public key of corresponding node), `host` and `port`
+* `bootstrap_nodes` - array of strings in format `address:port`
 * `ice_servers` - array of objects as in [RTCPeerConnection constructor](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/RTCPeerConnection)
 * `packets_per_second` - packets are sent at constant rate (which together with fixed packet size of 512 bytes can be used to identify bandwidth requirements for specific connection), `1` is minimal supported rate, actual rate is negotiated between 2 sides on connection
 * `bucket_size` - size of the bucket used in DHT internals (directly affects number of active WebRTC connections)

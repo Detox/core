@@ -234,13 +234,13 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, array2hex, hex2array, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
+    var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
+    string2array = detoxUtils['string2array'];
+    array2string = detoxUtils['array2string'];
     random_bytes = detoxUtils['random_bytes'];
     random_int = detoxUtils['random_int'];
     pull_random_item_from_array = detoxUtils['pull_random_item_from_array'];
     are_arrays_equal = detoxUtils['are_arrays_equal'];
-    array2hex = detoxUtils['array2hex'];
-    hex2array = detoxUtils['hex2array'];
     concat_arrays = detoxUtils['concat_arrays'];
     timeoutSet = detoxUtils['timeoutSet'];
     intervalSet = detoxUtils['intervalSet'];
@@ -266,7 +266,7 @@
      * @constructor
      *
      * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
-     * @param {!Array<!Object>}	bootstrap_nodes
+     * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `address:port`
      * @param {!Array<!Object>}	ice_servers
      * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
@@ -291,6 +291,8 @@
       this._dht_keypair = create_keypair(dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._max_compressed_data_size = detoxTransport['MAX_COMPRESSED_DATA_SIZE'];
+      this._bootstrap_nodes = new Set(bootstrap_nodes);
+      this._bootstrap_nodes_ids = ArraySet();
       this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
@@ -369,6 +371,12 @@
         this$._aware_of_nodes['delete'](peer_id);
         this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
+        if (this$._bootstrap_node) {
+          this$._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(this$._http_server_address));
+        }
+        if (this$._more_aware_of_nodes_needed()) {
+          this$._get_more_nodes_from(peer_id);
+        }
       })['on']('disconnected', function(peer_id){
         this$._dht['del_node'](peer_id);
         this$._connected_nodes['delete'](peer_id);
@@ -732,18 +740,19 @@
         });
         x$ = this._http_server;
         x$.listen(port, ip, function(){
-          this$._http_server_address = [public_address, public_port];
+          this$._http_server_address = public_address + ":public_port";
         });
         x$.on('error', error_handler);
         this._bootstrap_node = true;
+        this._destroy_router();
       }
       /**
        * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
        *
-       * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
+       * @return {!Array<string>}
        */,
       'get_bootstrap_nodes': function(){
-        return [];
+        return Array.from(this._bootstrap_nodes);
       }
       /**
        * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
@@ -1010,15 +1019,23 @@
         }));
       },
       'destroy': function(){
-        var this$ = this;
         if (this._destroyed) {
           return;
         }
         this._destroyed = true;
+        if (!this._bootstrap_node) {
+          this._destroy_router();
+        } else if (this._http_server) {
+          this._http_server.close();
+        }
+        this._transport['destroy']();
+        this._dht['destroy']();
+      },
+      _destroy_router: function(){
+        var this$ = this;
         clearInterval(this._cleanup_interval);
         clearInterval(this._keep_announce_routes_interval);
         clearInterval(this._get_more_nodes_interval);
-        this._transport['destroy']();
         this._routing_paths.forEach(function(arg$){
           var node_id, route_id;
           node_id = arg$[0], route_id = arg$[1];
@@ -1030,10 +1047,6 @@
           clearTimeout(connection_timeout);
         });
         this._router['destroy']();
-        this._dht['destroy']();
-        if (this._http_server) {
-          this._http_server.close();
-        }
       }
       /**
        * @return {boolean}
@@ -1114,7 +1127,7 @@
        * @return {Array<!Uint8Array>} `null` if there is no nodes to return
        */,
       _pick_random_connected_nodes: function(up_to_number_of_nodes, exclude_nodes){
-        var connected_nodes, i$, ref$, len$, bootstrap_node, exclude_nodes_set, i, results$ = [];
+        var connected_nodes, exclude_nodes_set, i$, i, results$ = [];
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
@@ -1122,11 +1135,7 @@
           return null;
         }
         connected_nodes = Array.from(this._connected_nodes.values());
-        for (i$ = 0, len$ = (ref$ = this['get_bootstrap_nodes']()).length; i$ < len$; ++i$) {
-          bootstrap_node = ref$[i$];
-          exclude_nodes.push(hex2array(bootstrap_node['node_id']));
-        }
-        exclude_nodes_set = ArraySet(exclude_nodes);
+        exclude_nodes_set = ArraySet(exclude_nodes.concat(Array.from(this._bootstrap_nodes_ids)));
         connected_nodes = connected_nodes.filter(function(node){
           return !exclude_nodes_set.has(node);
         });
@@ -1374,6 +1383,8 @@
           }
           break;
         case UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE:
+          this._bootstrap_nodes.add(array2string(command_data));
+          this._bootstrap_nodes_ids.add(peer_id);
         }
       }
       /**

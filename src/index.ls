@@ -215,12 +215,12 @@ function parse_introduce_to_data (message)
 	[target_id, introduction_message]
 
 function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer)
+	string2array				= detox-utils['string2array']
+	array2string				= detox-utils['array2string']
 	random_bytes				= detox-utils['random_bytes']
 	random_int					= detox-utils['random_int']
 	pull_random_item_from_array	= detox-utils['pull_random_item_from_array']
 	are_arrays_equal			= detox-utils['are_arrays_equal']
-	array2hex					= detox-utils['array2hex']
-	hex2array					= detox-utils['hex2array']
 	concat_arrays				= detox-utils['concat_arrays']
 	timeoutSet					= detox-utils['timeoutSet']
 	intervalSet					= detox-utils['intervalSet']
@@ -244,7 +244,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	 * @constructor
 	 *
 	 * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
-	 * @param {!Array<!Object>}	bootstrap_nodes
+	 * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `address:port`
 	 * @param {!Array<!Object>}	ice_servers
 	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
@@ -256,7 +256,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	 * @throws {Error}
 	 */
 	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10, other_dht_options = {})
-		# TODO: Bootstrap nodes are not implemented for updated components yet
 		if !(@ instanceof Core)
 			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options)
 		async-eventer.call(@)
@@ -266,6 +265,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_max_data_size				= detox-transport['MAX_DATA_SIZE']
 		@_max_compressed_data_size	= detox-transport['MAX_COMPRESSED_DATA_SIZE']
 
+		# TODO: Bootstrap nodes are not fully implemented for updated components yet
+		@_bootstrap_nodes			= new Set(bootstrap_nodes)
+		@_bootstrap_nodes_ids		= ArraySet()
 		@_used_first_nodes			= ArraySet()
 		@_connections_in_progress	= ArrayMap()
 		@_connected_nodes			= ArraySet()
@@ -335,13 +337,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_aware_of_nodes.delete(peer_id)
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
-				# TODO: Bootstrap nodes are not fully implemented for updated components yet
-#				peer_id_hex	= array2hex(peer_id)
-#				if @_more_aware_of_nodes_needed()
-#					bootstrap_nodes	= @'get_bootstrap_nodes'().map (bootstrap_node) ->
-#						bootstrap_node['peer_id']
-#					if !(peer_id_hex in bootstrap_nodes)
-#						@_get_more_nodes_from(peer_id)
+				if @_bootstrap_node
+					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(@_http_server_address))
+				if @_more_aware_of_nodes_needed()
+					@_get_more_nodes_from(peer_id)
 			)
 			.'on'('disconnected', (peer_id) !~>
 				@_dht['del_node'](peer_id)
@@ -696,19 +695,19 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					)
 			@_http_server
 				..listen(port, ip, !~>
-					@_http_server_address	= [public_address, public_port]
+					@_http_server_address	= "#public_address:public_port"
 				)
 				..on('error', error_handler)
 			@_bootstrap_node	= true
+			# Stop doing any routing tasks immediately
+			@_destroy_router()
 		/**
 		 * Get an array of bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor
 		 *
-		 * @return {!Array<!Object>} Each element is an object with keys `host`, `port` and `node_id`
+		 * @return {!Array<string>}
 		 */
 		'get_bootstrap_nodes' : ->
-			# TODO: Bootstrap nodes are not implemented for updated components yet
-#			@_dht['get_bootstrap_nodes']()
-			[]
+			Array.from(@_bootstrap_nodes)
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {number}		number_of_introduction_nodes
@@ -969,18 +968,22 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				return
 			# TODO: Probably check this in more places
 			@_destroyed	= true
+			# Bootstrap node immediately destroys router, no need to do it again
+			if !@_bootstrap_node
+				@_destroy_router()
+			else if @_http_server
+				@_http_server.close()
+			@_transport['destroy']()
+			@_dht['destroy']()
+		_destroy_router : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
 			clearInterval(@_get_more_nodes_interval)
-			@_transport['destroy']()
 			@_routing_paths.forEach ([node_id, route_id]) !~>
 				@_unregister_routing_path(node_id, route_id)
 			@_pending_connections.forEach ([, , , connection_timeout]) !~>
 				clearTimeout(connection_timeout)
 			@_router['destroy']()
-			@_dht['destroy']()
-			if @_http_server
-				@_http_server.close()
 		/**
 		 * @return {boolean}
 		 */
@@ -1047,11 +1050,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				# Make random lookup in order to fill DHT with known nodes
 				@_random_lookup()
 				return null
-			connected_nodes	= Array.from(@_connected_nodes.values())
-			# TODO: Bootstrap nodes are not implemented for updated components yet
-			for bootstrap_node in @'get_bootstrap_nodes'()
-				exclude_nodes.push(hex2array(bootstrap_node['node_id']))
-			exclude_nodes_set	= ArraySet(exclude_nodes)
+			connected_nodes		= Array.from(@_connected_nodes.values())
+			exclude_nodes_set	= ArraySet(exclude_nodes.concat(Array.from(@_bootstrap_nodes_ids)))
 			connected_nodes		= connected_nodes.filter (node) ->
 				!exclude_nodes_set.has(node)
 			if !connected_nodes.length
@@ -1252,7 +1252,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						else
 							break
 				case UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
-					void
+					@_bootstrap_nodes.add(array2string(command_data))
+					@_bootstrap_nodes_ids.add(peer_id)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
