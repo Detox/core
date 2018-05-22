@@ -387,7 +387,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							@_waiting_for_signal.add(waiting_for_signal_key, (sdp) !~>
+							@_waiting_for_signal.set(waiting_for_signal_key, (sdp) !~>
 								@_transport['signal'](peer_peer_id, sdp)
 							)
 						)
@@ -672,10 +672,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								return
 							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
 							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							@_waiting_for_signal.add(waiting_for_signal_key, (sdp, signature, command_data) !~>
+							@_waiting_for_signal.set(waiting_for_signal_key, (sdp, signature, command_data) !~>
 								clearTimeout(timeout)
 								if detox-crypto['verify'](signature, sdp, random_connected_node)
-									response.write(command_data)
+									response.write(Buffer.from(command_data))
 									response.end()
 								else
 									response.writeHead(502)
@@ -693,18 +693,18 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								response.end()
 								return
 							connection
-								..'signal'(sdp)
-								..'once'('signal', (sdp) !~>
+								.'once'('signal', (sdp) !~>
 									signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-									response.write(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature))
+									response.write(Buffer.from(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)))
 									response.end()
 								)
+								.'signal'(sdp)
 					)
 			@_http_server
-				..listen(port, ip, !~>
+				.on('error', error_handler)
+				.listen(port, ip, !~>
 					@_http_server_address	= "#public_address:public_port"
 				)
-				..on('error', error_handler)
 			@_bootstrap_node	= true
 			# Stop doing any routing tasks immediately
 			@_destroy_router()
@@ -735,7 +735,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 						init		=
 							method	: 'POST'
-							body	: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature)
+							# TODO: When https://github.com/bitinn/node-fetch/pull/457 is merged and released, remove `.buffer` as unnecessary
+							body	: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
 						fetch("https://#bootstrap_node", init)
 							.catch (e) ->
@@ -749,8 +750,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								response['arrayBuffer']()
 							.then (buffer) ->
 								new Uint8Array(buffer)
-							.then (command_data) !->
-								[source_id, target_id, sdp, signature]	= parse_signal(body)
+							.then (command_data) !~>
+								[source_id, target_id, sdp, signature]	= parse_signal(command_data)
 								if !(
 									detox-crypto['verify'](signature, sdp, source_id) &&
 									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
@@ -1261,12 +1262,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					if !connection
 						return
 					connection
-						..'signal'(sdp)
-						..'once'('signal', (sdp) !~>
+						.'once'('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						)
+						.'signal'(sdp)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9

@@ -426,7 +426,7 @@
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            this$._waiting_for_signal.add(waiting_for_signal_key, function(sdp){
+            this$._waiting_for_signal.set(waiting_for_signal_key, function(sdp){
               this$._transport['signal'](peer_peer_id, sdp);
             });
           })['once']('connected', function(){
@@ -679,7 +679,7 @@
        * @param {number}	public_port		Publicly available port on `address`
        */
       'start_bootstrap_node': function(ip, port, public_address, public_port){
-        var x$, this$ = this;
+        var this$ = this;
         public_address == null && (public_address = ip);
         public_port == null && (public_port = port);
         this._http_server = require('http').createServer(function(request, response){
@@ -695,7 +695,7 @@
           request.on('data', function(chunk){
             body.push(chunk);
           }).on('end', function(){
-            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, timeout, connection, x$;
+            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, timeout, connection;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, null_id))) {
@@ -713,10 +713,10 @@
               }
               command_data = compose_signal(source_id, random_connected_node, sdp, signature);
               this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-              this$._waiting_for_signal.add(waiting_for_signal_key, function(sdp, signature, command_data){
+              this$._waiting_for_signal.set(waiting_for_signal_key, function(sdp, signature, command_data){
                 clearTimeout(timeout);
                 if (detoxCrypto['verify'](signature, sdp, random_connected_node)) {
-                  response.write(command_data);
+                  response.write(Buffer.from(command_data));
                   response.end();
                 } else {
                   response.writeHead(502);
@@ -735,22 +735,18 @@
                 response.end();
                 return;
               }
-              x$ = connection;
-              x$['signal'](sdp);
-              x$['once']('signal', function(sdp){
+              connection['once']('signal', function(sdp){
                 var signature;
                 signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-                response.write(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature));
+                response.write(Buffer.from(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature)));
                 response.end();
-              });
+              })['signal'](sdp);
             }
           });
         });
-        x$ = this._http_server;
-        x$.listen(port, ip, function(){
+        this._http_server.on('error', error_handler).listen(port, ip, function(){
           this$._http_server_address = public_address + ":public_port";
         });
-        x$.on('error', error_handler);
         this._bootstrap_node = true;
         this._destroy_router();
       }
@@ -789,7 +785,7 @@
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             init = {
               method: 'POST',
-              body: compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature)
+              body: compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
             };
             fetch("https://" + bootstrap_node, init)['catch'](function(e){
               if (typeof location === 'undefined' || location.protocol === 'http:') {
@@ -806,11 +802,11 @@
               return new Uint8Array(buffer);
             }).then(function(command_data){
               var ref$, source_id, target_id, sdp, signature;
-              ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
-              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this._dht_keypair['ed25519']['public']))) {
+              ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']))) {
                 throw 'Bad response';
               }
-              this._transport['update_peer_id'](random_id, source_id);
+              this$._transport['update_peer_id'](random_id, source_id);
               connection['signal'](sdp);
             })['catch'](function(e){
               error_handler(e);
@@ -1366,7 +1362,7 @@
        * @param {!Uint8Array}	command_data
        */,
       _handle_compressed_core_command: function(peer_id, command, command_data){
-        var ref$, source_id, target_id, sdp, signature, waiting_for_signal_key, waiting_for_signal_callback, connection, x$, this$ = this;
+        var ref$, source_id, target_id, sdp, signature, waiting_for_signal_key, waiting_for_signal_callback, connection, this$ = this;
         switch (command) {
         case COMPRESSED_CORE_COMMAND_SIGNAL:
           ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
@@ -1392,14 +1388,12 @@
           if (!connection) {
             return;
           }
-          x$ = connection;
-          x$['signal'](sdp);
-          x$['once']('signal', function(sdp){
+          connection['once']('signal', function(sdp){
             var signature, command_data;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-          });
+          })['signal'](sdp);
         }
       }
       /**
