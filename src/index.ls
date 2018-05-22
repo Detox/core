@@ -333,7 +333,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 
 		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)
 			.'on'('connected', (peer_id) !~>
-				@_dht['add_node'](peer_id)
+				@_dht['add_peer'](peer_id)
 				@_connected_nodes.add(peer_id)
 				@_aware_of_nodes.delete(peer_id)
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
@@ -344,7 +344,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					@_get_more_nodes_from(peer_id)
 			)
 			.'on'('disconnected', (peer_id) !~>
-				@_dht['del_node'](peer_id)
+				@_dht['del_peer'](peer_id)
 				@_connected_nodes.delete(peer_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				@_get_nodes_requested.delete(peer_id)
@@ -1457,7 +1457,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					introduction_nodes.push(introduction_nodes_bulk.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH))
 				introduction_nodes
 		_peer_error : (peer_id) !->
-			@_dht['del_node'](peer_id)
+			@_dht['del_peer'](peer_id)
 			# TODO
 		_peer_warning : (peer_id) !->
 			# TODO

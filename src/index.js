@@ -368,7 +368,7 @@
         }
       });
       this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)['on']('connected', function(peer_id){
-        this$._dht['add_node'](peer_id);
+        this$._dht['add_peer'](peer_id);
         this$._connected_nodes.add(peer_id);
         this$._aware_of_nodes['delete'](peer_id);
         this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
@@ -380,7 +380,7 @@
           this$._get_more_nodes_from(peer_id);
         }
       })['on']('disconnected', function(peer_id){
-        this$._dht['del_node'](peer_id);
+        this$._dht['del_peer'](peer_id);
         this$._connected_nodes['delete'](peer_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](peer_id);
@@ -1627,7 +1627,7 @@
         });
       },
       _peer_error: function(peer_id){
-        this._dht['del_node'](peer_id);
+        this._dht['del_peer'](peer_id);
       },
       _peer_warning: function(peer_id){}
     };
