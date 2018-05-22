@@ -417,6 +417,10 @@
             return;
           }
           waiting_for_signal_key = concat_arrays([this$._dht_keypair['ed25519']['public'], peer_peer_id]);
+          if (this$._waiting_for_signal.has(waiting_for_signal_key)) {
+            reject();
+            return;
+          }
           connection['once']('signal', function(sdp){
             var signature, command_data;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
@@ -696,7 +700,7 @@
           request.on('data', function(chunk){
             body.push(chunk);
           }).on('end', function(){
-            var ref$, source_id, target_id, sdp, signature, random_connected_node, command_data, waiting_for_signal_key, timeout, connection, x$;
+            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, timeout, connection, x$;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, null_id))) {
@@ -706,9 +710,14 @@
             }
             random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
             if (random_connected_node) {
+              waiting_for_signal_key = concat_arrays([source_id, random_connected_node]);
+              if (this$._waiting_for_signal.has(waiting_for_signal_key)) {
+                response.writeHead(503);
+                response.end();
+                return;
+              }
               command_data = compose_signal(source_id, random_connected_node, sdp, signature);
               this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-              waiting_for_signal_key = concat_arrays([source_id, random_connected_node]);
               this$._waiting_for_signal.add(waiting_for_signal_key, function(sdp, signature, command_data){
                 clearTimeout(timeout);
                 if (detoxCrypto['verify'](signature, sdp, random_connected_node)) {
@@ -727,6 +736,8 @@
             } else {
               connection = this$._transport['create_connection'](false, source_id);
               if (!connection) {
+                response.writeHead(503);
+                response.end();
                 return;
               }
               x$ = connection;

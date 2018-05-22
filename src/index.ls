@@ -381,12 +381,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						reject()
 						return
 					waiting_for_signal_key	= concat_arrays([@_dht_keypair['ed25519']['public'], peer_peer_id])
+					if @_waiting_for_signal.has(waiting_for_signal_key)
+						reject()
+						return
 					connection
 						.'once'('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							# TODO: Check for duplicated additions
 							@_waiting_for_signal.add(waiting_for_signal_key, (sdp) !~>
 								@_transport['signal'](peer_peer_id, sdp)
 							)
@@ -666,10 +668,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							return
 						random_connected_node	= @_pick_random_connected_nodes(1)?[0]
 						if random_connected_node
+							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
+							if @_waiting_for_signal.has(waiting_for_signal_key)
+								response.writeHead(503)
+								response.end()
+								return
 							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
 							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
-							# TODO: Check for duplicated additions
 							@_waiting_for_signal.add(waiting_for_signal_key, (sdp, signature, command_data) !~>
 								clearTimeout(timeout)
 								if detox-crypto['verify'](signature, sdp, random_connected_node)
@@ -687,6 +692,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						else
 							connection	= @_transport['create_connection'](false, source_id)
 							if !connection
+								response.writeHead(503)
+								response.end()
 								return
 							connection
 								..'signal'(sdp)
