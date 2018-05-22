@@ -639,7 +639,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
 			@_http_server = require('http').createServer (request, response) !~>
 				response.setHeader('Access-Control-Allow-Origin', '*')
-				content_length	= request.getHeader('Content-Length')
+				content_length	= request.headers['content-length']
 				if !(
 					request.method == 'POST' &&
 					content_length &&

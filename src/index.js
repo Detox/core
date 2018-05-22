@@ -685,7 +685,7 @@
         this._http_server = require('http').createServer(function(request, response){
           var content_length, body;
           response.setHeader('Access-Control-Allow-Origin', '*');
-          content_length = request.getHeader('Content-Length');
+          content_length = request.headers['content-length'];
           if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
             response.writeHead(400);
             response.end();
