@@ -73,7 +73,7 @@ const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
  * @return {!Uint8Array}
  */
 function compose_signal (source_id, target_id, sdp, signature)
-	new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length)
+	new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length + SIGNATURE_LENGTH)
 		..set(source_id)
 		..set(target_id, PUBLIC_KEY_LENGTH)
 		..set(sdp, PUBLIC_KEY_LENGTH * 2)

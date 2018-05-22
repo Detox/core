@@ -60,7 +60,7 @@
    */
   function compose_signal(source_id, target_id, sdp, signature){
     var x$;
-    x$ = new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length);
+    x$ = new Uint8Array(PUBLIC_KEY_LENGTH * 2 + sdp.length + SIGNATURE_LENGTH);
     x$.set(source_id);
     x$.set(target_id, PUBLIC_KEY_LENGTH);
     x$.set(sdp, PUBLIC_KEY_LENGTH * 2);
