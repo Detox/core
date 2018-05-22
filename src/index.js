@@ -234,7 +234,7 @@
     return [target_id, introduction_message];
   }
   function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer){
-    var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, null_array;
+    var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, empty_array, null_id;
     string2array = detoxUtils['string2array'];
     array2string = detoxUtils['array2string'];
     random_bytes = detoxUtils['random_bytes'];
@@ -247,7 +247,8 @@
     error_handler = detoxUtils['error_handler'];
     ArrayMap = detoxUtils['ArrayMap'];
     ArraySet = detoxUtils['ArraySet'];
-    null_array = new Uint8Array(0);
+    empty_array = new Uint8Array(0);
+    null_id = new Uint8Array(PUBLIC_KEY_LENGTH);
     /**
      * @param {Uint8Array} seed
      *
@@ -678,10 +679,9 @@
        * @param {number}	public_port		Publicly available port on `address`
        */
       'start_bootstrap_node': function(ip, port, public_address, public_port){
-        var zero_id, x$, this$ = this;
+        var x$, this$ = this;
         public_address == null && (public_address = ip);
         public_port == null && (public_port = port);
-        zero_id = new Uint8Array(PUBLIC_KEY_LENGTH);
         this._http_server = require('http').createServer(function(request, response){
           var content_length, body;
           response.setHeader('Access-Control-Allow-Origin', '*');
@@ -698,7 +698,7 @@
             var ref$, source_id, target_id, sdp, signature, random_connected_node, command_data, waiting_for_signal_key, timeout, connection, x$;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
-            if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, zero_id))) {
+            if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, null_id))) {
               response.writeHead(400);
               response.end();
               return;
@@ -758,7 +758,31 @@
       _bootstrap: function(){
         var waiting_for, this$ = this;
         waiting_for = this._bootstrap_nodes.size;
-        this._bootstrap_nodes.forEach(function(bootstrap_node){});
+        function done(){
+          --waiting_for;
+          if (waiting_for) {
+            return;
+          }
+        }
+        this._bootstrap_nodes.forEach(function(bootstrap_node){
+          var random_id, connection;
+          random_id = random_bytes(PUBLIC_KEY_LENGTH);
+          connection = this$._transport['create_connection'](true, random_id);
+          if (!connection) {
+            return;
+          }
+          connection['once']('signal', function(sdp){
+            var signature, command_data;
+            signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+            command_data = compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature);
+          })['once']('connected', function(){
+            connection['off']('disconnected', disconnected);
+            done();
+          })['once']('disconnected', disconnected);
+          function disconnected(){
+            done();
+          }
+        });
       }
       /**
        * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
@@ -1100,7 +1124,7 @@
        */,
       _get_more_nodes_from: function(peer_id){
         this._get_nodes_requested.add(peer_id);
-        this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, null_array);
+        this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, empty_array);
       }
       /**
        * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
@@ -1490,7 +1514,7 @@
         if (this._pending_pings.has(source_id) || !this._routing_paths.has(source_id)) {
           return false;
         }
-        this._send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, null_array);
+        this._send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, empty_array);
         return true;
       }
       /**

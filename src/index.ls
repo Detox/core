@@ -227,7 +227,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	error_handler				= detox-utils['error_handler']
 	ArrayMap					= detox-utils['ArrayMap']
 	ArraySet					= detox-utils['ArraySet']
-	null_array					= new Uint8Array(0)
+	empty_array					= new Uint8Array(0)
+	null_id						= new Uint8Array(PUBLIC_KEY_LENGTH)
 	/**
 	 * @param {Uint8Array} seed
 	 *
@@ -636,7 +637,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {number}	public_port		Publicly available port on `address`
 		 */
 		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
-			zero_id	= new Uint8Array(PUBLIC_KEY_LENGTH)
 			@_http_server = require('http').createServer (request, response) !~>
 				response.setHeader('Access-Control-Allow-Origin', '*')
 				content_length	= request.getHeader('Content-Length')
@@ -654,11 +654,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						body.push(chunk)
 					)
 					.on('end', !~>
-						body	:= concat_arrays(body)
+						body									:= concat_arrays(body)
 						[source_id, target_id, sdp, signature]	= parse_signal(body)
 						if !(
 							detox-crypto['verify'](signature, sdp, source_id) &&
-							are_arrays_equal(target_id, zero_id)
+							are_arrays_equal(target_id, null_id)
 						)
 							response.writeHead(400)
 							response.end()
@@ -712,8 +712,29 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			Array.from(@_bootstrap_nodes)
 		_bootstrap : !->
 			waiting_for	= @_bootstrap_nodes.size
+			!~function done
+				--waiting_for
+				if waiting_for
+					return
+				# TODO: Finish bootstrap, whatever that means
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
-				# TODO: Connect to all of bootstrap nodes
+				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
+				connection	= @_transport['create_connection'](true, random_id)
+				if !connection
+					return
+				connection
+					.'once'('signal', (sdp) !~>
+						signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+						command_data	= compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature)
+						# TODO: fetch and the rest
+					)
+					.'once'('connected', !~>
+						connection['off']('disconnected', disconnected)
+						done()
+					)
+					.'once'('disconnected', disconnected)
+				!~function disconnected
+					done()
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {number}		number_of_introduction_nodes
@@ -1024,7 +1045,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_get_more_nodes_from : (peer_id) !->
 			@_get_nodes_requested.add(peer_id)
-			@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, null_array)
+			@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, empty_array)
 		/**
 		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
 		 *
@@ -1342,7 +1363,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			source_id	= concat_arrays([node_id, route_id])
 			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
-			@_send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, null_array)
+			@_send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, empty_array)
 			true
 		/**
 		 * @param {!Uint8Array} node_id
