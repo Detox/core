@@ -266,7 +266,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_max_data_size				= detox-transport['MAX_DATA_SIZE']
 		@_max_compressed_data_size	= detox-transport['MAX_COMPRESSED_DATA_SIZE']
 
-		# TODO: Bootstrap nodes are not fully implemented for updated components yet
 		@_bootstrap_nodes			= new Set(bootstrap_nodes)
 		@_bootstrap_nodes_ids		= ArraySet()
 		@_used_first_nodes			= ArraySet()
@@ -350,7 +349,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_nodes_requested.delete(peer_id)
 			)
 			.'on'('data', (peer_id, command, command_data) !~>
-				# TODO: Only actively interact with other nodes when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure
 				if command >= UNCOMPRESSED_CORE_COMMANDS_OFFSET
 					if @_bootstrap_node && command != UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
 						return
@@ -613,6 +611,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_random_lookup()
 			@_random_lookup()
 			@_random_lookup()
+			# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
 			@'fire'('ready')
 		)
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
