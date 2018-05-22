@@ -605,7 +605,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
 		# TODO: This should probably be called when a lot of nodes are disconnected too, not just once during start
-		@_bootstrap(
+		@_bootstrap !~>
 			# Make 3 random lookups on start in order to connect to some nodes
 			# TODO: Think about regular lookups
 			@_random_lookup()
@@ -613,7 +613,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_random_lookup()
 			# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
 			@'fire'('ready')
-		)
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -684,7 +683,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 								response.writeHead(504)
 								response.end()
-								@_waiting_for_signal.delete(waiting_for_signal_callback)
+								@_waiting_for_signal.delete(waiting_for_signal_key)
 							)
 						else
 							connection	= @_transport['create_connection'](false, source_id)
@@ -720,11 +719,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_bootstrap : (callback) !->
 			waiting_for	= @_bootstrap_nodes.size
+			if !waiting_for
+				setTimeout(callback)
+				return
 			!~function done
 				--waiting_for
 				if waiting_for
 					return
-				callback?()
+				callback()
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
 				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
 				connection	= @_transport['create_connection'](true, random_id)
@@ -1255,7 +1257,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					waiting_for_signal_callback	= @_waiting_for_signal.get(waiting_for_signal_key)
 					if waiting_for_signal_callback
 						waiting_for_signal_callback(sdp, signature, command_data)
-						@_waiting_for_signal.delete(waiting_for_signal_callback)
+						@_waiting_for_signal.delete(waiting_for_signal_key)
 						return
 					# Otherwise create connection as responder, consume signal and send another answer signal back
 					connection	= @_transport['create_connection'](false, source_id)

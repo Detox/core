@@ -656,7 +656,12 @@
         }
       });
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
-      this._bootstrap(this._random_lookup(), this._random_lookup(), this._random_lookup(), this['fire']('ready'));
+      this._bootstrap(function(){
+        this$._random_lookup();
+        this$._random_lookup();
+        this$._random_lookup();
+        this$['fire']('ready');
+      });
     }
     Core['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
     Core['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
@@ -726,7 +731,7 @@
               timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
                 response.writeHead(504);
                 response.end();
-                this$._waiting_for_signal['delete'](waiting_for_signal_callback);
+                this$._waiting_for_signal['delete'](waiting_for_signal_key);
               });
             } else {
               connection = this$._transport['create_connection'](false, source_id);
@@ -764,14 +769,16 @@
       _bootstrap: function(callback){
         var waiting_for, this$ = this;
         waiting_for = this._bootstrap_nodes.size;
+        if (!waiting_for) {
+          setTimeout(callback);
+          return;
+        }
         function done(){
           --waiting_for;
           if (waiting_for) {
             return;
           }
-          if (typeof callback == 'function') {
-            callback();
-          }
+          callback();
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
           var random_id, connection;
@@ -1381,7 +1388,7 @@
           waiting_for_signal_callback = this._waiting_for_signal.get(waiting_for_signal_key);
           if (waiting_for_signal_callback) {
             waiting_for_signal_callback(sdp, signature, command_data);
-            this._waiting_for_signal['delete'](waiting_for_signal_callback);
+            this._waiting_for_signal['delete'](waiting_for_signal_key);
             return;
           }
           connection = this._transport['create_connection'](false, source_id);
