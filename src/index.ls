@@ -349,6 +349,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_nodes_requested.delete(peer_id)
 			)
 			.'on'('data', (peer_id, command, command_data) !~>
+				# TODO: Only actively interact with other nodes when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure
 				if command >= UNCOMPRESSED_CORE_COMMANDS_OFFSET
 					if @_bootstrap_node && command != UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
 						return
@@ -611,6 +612,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
+		@_bootstrap()
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -708,6 +710,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		'get_bootstrap_nodes' : ->
 			Array.from(@_bootstrap_nodes)
+		_bootstrap : !->
+			waiting_for	= @_bootstrap_nodes.size
+			@_bootstrap_nodes.forEach (bootstrap_node) !~>
+				# TODO: Connect to all of bootstrap nodes
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {number}		number_of_introduction_nodes
