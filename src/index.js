@@ -233,6 +233,9 @@
     introduction_message = message.subarray(PUBLIC_KEY_LENGTH);
     return [target_id, introduction_message];
   }
+  /**
+   * @param {!Function=} fetch
+   */
   function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer, fetch){
     var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, empty_array, null_id;
     fetch == null && (fetch = window['fetch']);
@@ -394,7 +397,7 @@
           if (this$._bootstrap_node) {
             return;
           }
-          this$._router['process_packet'](node_id, command_data);
+          this$._router['process_packet'](peer_id, command_data);
         } else if (command >= DHT_COMMANDS_OFFSET) {
           this$._dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data);
         } else {
@@ -687,33 +690,33 @@
         var this$ = this;
         public_address == null && (public_address = ip);
         public_port == null && (public_port = port);
-        this._http_server = require('http').createServer(function(request, response){
+        this._http_server = require('http')['createServer'](function(request, response){
           var content_length, body;
-          response.setHeader('Access-Control-Allow-Origin', '*');
+          response['setHeader']('Access-Control-Allow-Origin', '*');
           content_length = request.headers['content-length'];
           if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
-            response.writeHead(400);
-            response.end();
+            response['writeHead'](400);
+            response['end']();
             return;
           }
           body = [];
-          request.on('data', function(chunk){
+          request['on']('data', function(chunk){
             body.push(chunk);
-          }).on('end', function(){
+          })['on']('end', function(){
             var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, timeout, connection;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, null_id))) {
-              response.writeHead(400);
-              response.end();
+              response['writeHead'](400);
+              response['end']();
               return;
             }
             random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
             if (random_connected_node) {
               waiting_for_signal_key = concat_arrays([source_id, random_connected_node]);
               if (this$._waiting_for_signal.has(waiting_for_signal_key)) {
-                response.writeHead(503);
-                response.end();
+                response['writeHead'](503);
+                response['end']();
                 return;
               }
               command_data = compose_signal(source_id, random_connected_node, sdp, signature);
@@ -721,35 +724,35 @@
               this$._waiting_for_signal.set(waiting_for_signal_key, function(sdp, signature, command_data){
                 clearTimeout(timeout);
                 if (detoxCrypto['verify'](signature, sdp, random_connected_node)) {
-                  response.write(Buffer.from(command_data));
-                  response.end();
+                  response['write'](Buffer.from(command_data));
+                  response['end']();
                 } else {
-                  response.writeHead(502);
-                  response.end();
+                  response['writeHead'](502);
+                  response['end']();
                 }
               });
               timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
-                response.writeHead(504);
-                response.end();
+                response['writeHead'](504);
+                response['end']();
                 this$._waiting_for_signal['delete'](waiting_for_signal_key);
               });
             } else {
               connection = this$._transport['create_connection'](false, source_id);
               if (!connection) {
-                response.writeHead(503);
-                response.end();
+                response['writeHead'](503);
+                response['end']();
                 return;
               }
               connection['once']('signal', function(sdp){
                 var signature;
                 signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-                response.write(Buffer.from(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature)));
-                response.end();
+                response['write'](Buffer.from(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature)));
+                response['end']();
               })['signal'](sdp);
             }
           });
         });
-        this._http_server.on('error', error_handler).listen(port, ip, function(){
+        this._http_server['on']('error', error_handler)['listen'](port, ip, function(){
           this$._http_server_address = public_address + ":public_port";
         });
         this._bootstrap_node = true;
@@ -1491,7 +1494,7 @@
         this._send(peer_id, command + UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data);
       }
       /**
-       * @param {!Uint8Array}	peer_id
+       * @param {!Uint8Array}	node_id
        * @param {number}		command			0..255
        * @param {!Uint8Array}	command_data
        */,
@@ -1576,7 +1579,7 @@
        */,
       _generate_announcement_message: function(real_public_key, real_private_key, introduction_nodes){
         var time;
-        time = parseInt(+new Date / 1000);
+        time = parseInt(+new Date / 1000, 10);
         return concat_arrays(this._dht['make_mutable_value'](real_public_key, real_private_key, time, concat_arrays(introduction_nodes)));
       }
       /**

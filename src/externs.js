@@ -21,3 +21,8 @@ module.exports	= {};
  * @return {!Uint8Array}
  */
 crypto.randomBytes = function(size) {};
+var Buffer = {};
+/**
+ * @param {!Uint8Array} source
+ */
+Buffer.from = function (source) {};

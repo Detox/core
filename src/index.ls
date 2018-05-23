@@ -214,6 +214,9 @@ function parse_introduce_to_data (message)
 	introduction_message	= message.subarray(PUBLIC_KEY_LENGTH)
 	[target_id, introduction_message]
 
+/**
+ * @param {!Function=} fetch
+ */
 function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer, fetch = window['fetch'])
 	string2array				= detox-utils['string2array']
 	array2string				= detox-utils['array2string']
@@ -356,7 +359,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				else if command == ROUTING_COMMANDS
 					if @_bootstrap_node
 						return
-					@_router['process_packet'](node_id, command_data)
+					@_router['process_packet'](peer_id, command_data)
 				else if command >= DHT_COMMANDS_OFFSET
 					@_dht['receive'](peer_id, command - DHT_COMMANDS_OFFSET, command_data)
 				else
@@ -636,72 +639,72 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {number}	public_port		Publicly available port on `address`
 		 */
 		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
-			@_http_server = require('http').createServer (request, response) !~>
-				response.setHeader('Access-Control-Allow-Origin', '*')
+			@_http_server = require('http')['createServer'] (request, response) !~>
+				response['setHeader']('Access-Control-Allow-Origin', '*')
 				content_length	= request.headers['content-length']
 				if !(
 					request.method == 'POST' &&
 					content_length &&
 					content_length <= @_max_compressed_data_size
 				)
-					response.writeHead(400)
-					response.end()
+					response['writeHead'](400)
+					response['end']()
 					return
 				body	= []
 				request
-					.on('data', (chunk) !->
+					.'on'('data', (chunk) !->
 						body.push(chunk)
 					)
-					.on('end', !~>
+					.'on'('end', !~>
 						body									:= concat_arrays(body)
 						[source_id, target_id, sdp, signature]	= parse_signal(body)
 						if !(
 							detox-crypto['verify'](signature, sdp, source_id) &&
 							are_arrays_equal(target_id, null_id)
 						)
-							response.writeHead(400)
-							response.end()
+							response['writeHead'](400)
+							response['end']()
 							return
 						random_connected_node	= @_pick_random_connected_nodes(1)?[0]
 						if random_connected_node
 							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
 							if @_waiting_for_signal.has(waiting_for_signal_key)
-								response.writeHead(503)
-								response.end()
+								response['writeHead'](503)
+								response['end']()
 								return
 							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
 							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 							@_waiting_for_signal.set(waiting_for_signal_key, (sdp, signature, command_data) !~>
 								clearTimeout(timeout)
 								if detox-crypto['verify'](signature, sdp, random_connected_node)
-									response.write(Buffer.from(command_data))
-									response.end()
+									response['write'](Buffer.from(command_data))
+									response['end']()
 								else
-									response.writeHead(502)
-									response.end()
+									response['writeHead'](502)
+									response['end']()
 							)
 							timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
-								response.writeHead(504)
-								response.end()
+								response['writeHead'](504)
+								response['end']()
 								@_waiting_for_signal.delete(waiting_for_signal_key)
 							)
 						else
 							connection	= @_transport['create_connection'](false, source_id)
 							if !connection
-								response.writeHead(503)
-								response.end()
+								response['writeHead'](503)
+								response['end']()
 								return
 							connection
 								.'once'('signal', (sdp) !~>
 									signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-									response.write(Buffer.from(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)))
-									response.end()
+									response['write'](Buffer.from(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)))
+									response['end']()
 								)
 								.'signal'(sdp)
 					)
 			@_http_server
-				.on('error', error_handler)
-				.listen(port, ip, !~>
+				.'on'('error', error_handler)
+				.'listen'(port, ip, !~>
 					@_http_server_address	= "#public_address:public_port"
 				)
 			@_bootstrap_node	= true
@@ -1347,7 +1350,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_send_uncompressed_core_command : (peer_id, command, command_data) !->
 			@_send(peer_id, command + UNCOMPRESSED_CORE_COMMANDS_OFFSET, command_data)
 		/**
-		 * @param {!Uint8Array}	peer_id
+		 * @param {!Uint8Array}	node_id
 		 * @param {number}		command			0..255
 		 * @param {!Uint8Array}	command_data
 		 */
@@ -1367,7 +1370,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			connected_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 				@_transport['off']('connected', connected)
 			)
-				# TODO: Make this parameter configurable
+			# TODO: Make this parameter configurable
 			@_dht['lookup'](node_id, 5)
 		/**
 		 * @param {!Uint8Array}	real_public_key
@@ -1420,7 +1423,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {!Uint8Array}
 		 */
 		_generate_announcement_message : (real_public_key, real_private_key, introduction_nodes) ->
-			time	= parseInt(+(new Date) / 1000) # In seconds, should be enough if kept as unsigned 32-bit integer which we actually do
+			time	= parseInt(+(new Date) / 1000, 10) # In seconds, should be enough if kept as unsigned 32-bit integer which we actually do
 			concat_arrays(@_dht['make_mutable_value'](real_public_key, real_private_key, time, concat_arrays(introduction_nodes)))
 		/**
 		 * @param {!Uint8Array} message
