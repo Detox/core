@@ -1144,7 +1144,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
 		_random_lookup : !->
-			@_dht['lookup'](fake_node_id())
+			# TODO: Make this parameter configurable
+			@_dht['lookup'](fake_node_id(), 5)
 		/**
 		 * @param {!Array<!Uint8Array>} nodes
 		 *
@@ -1288,7 +1289,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					nodes			= @_pick_random_connected_nodes(7) || []
 					nodes			= nodes.concat(@_pick_random_aware_of_nodes(10 - nodes.length) || [])
 					command_data	= concat_arrays(nodes)
-					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, data)
+					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, command_data)
 				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE
 					if !@_get_nodes_requested.has(peer_id)
 						return
@@ -1366,7 +1367,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			connected_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 				@_transport['off']('connected', connected)
 			)
-			@_dht['lookup'](node_id)
+				# TODO: Make this parameter configurable
+			@_dht['lookup'](node_id, 5)
 		/**
 		 * @param {!Uint8Array}	real_public_key
 		 * @param {!Uint8Array}	target_id

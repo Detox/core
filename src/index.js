@@ -1254,7 +1254,7 @@
         return results$;
       },
       _random_lookup: function(){
-        this._dht['lookup'](fake_node_id());
+        this._dht['lookup'](fake_node_id(), 5);
       }
       /**
        * @param {!Array<!Uint8Array>} nodes
@@ -1423,7 +1423,7 @@
           nodes = this._pick_random_connected_nodes(7) || [];
           nodes = nodes.concat(this._pick_random_aware_of_nodes(10 - nodes.length) || []);
           command_data = concat_arrays(nodes);
-          this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, data);
+          this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, command_data);
           break;
         case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE:
           if (!this._get_nodes_requested.has(peer_id)) {
@@ -1515,7 +1515,7 @@
         connected_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
           this$._transport['off']('connected', connected);
         });
-        this._dht['lookup'](node_id);
+        this._dht['lookup'](node_id, 5);
       }
       /**
        * @param {!Uint8Array}	real_public_key
