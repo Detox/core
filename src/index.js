@@ -298,7 +298,8 @@
         'lookup_number': Math.max(bucket_size, 5),
         'timeouts': DEFAULT_TIMEOUTS,
         'max_pending_segments': 10,
-        'aware_of_nodes_limit': 1000
+        'aware_of_nodes_limit': 1000,
+        'min_number_of_peers_for_ready': bucket_size
       }, options);
       this._real_keypairs = ArrayMap();
       this._dht_keypair = create_keypair(dht_key_seed);
@@ -414,7 +415,7 @@
           }
           this$._handle_compressed_core_command(peer_id, command, command_data);
         }
-      });
+      })['on']('peer_updated', function(peer_id, peer_peers){});
       this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, this._options['state_history_size'], this._options['values_cache_size'], this._options['fraction_of_nodes_from_same_peer'], this._options['timeouts'])['on']('peer_error', function(peer_id){
         this$._peer_error(peer_id);
       })['on']('peer_warning', function(peer_id){

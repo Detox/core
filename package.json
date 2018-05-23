@@ -24,7 +24,7 @@
 	},
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.7.0",
-		"@detox/dht"             : "^0.16.1",
+		"@detox/dht"             : "^0.16.2",
 		"@detox/routing"         : "^0.3.0",
 		"@detox/transport"       : "^0.36.4",
 		"@detox/utils"           : "^1.6.0",

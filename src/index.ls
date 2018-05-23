@@ -270,6 +270,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			'timeouts'							: DEFAULT_TIMEOUTS
 			'max_pending_segments'				: 10
 			'aware_of_nodes_limit'				: 1000
+			'min_number_of_peers_for_ready'		: bucket_size # TODO: Use this option
 		}, options)
 
 		@_real_keypairs				= ArrayMap()
@@ -374,6 +375,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					if @_bootstrap_node && command != COMPRESSED_CORE_COMMAND_SIGNAL
 						return
 					@_handle_compressed_core_command(peer_id, command, command_data)
+			)
+			.'on'('peer_updated', (peer_id, peer_peers) !~>
+				# TODO: Store peer's peers for potential future deletion and add peer's peers to aware of nodes
 			)
 		@_dht		= detox-dht['DHT'](
 			@_dht_keypair['ed25519']['public']

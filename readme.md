@@ -112,6 +112,7 @@ Constructor for Core object, offers methods for connecting to and interacting wi
     * `GET_MORE_AWARE_OF_NODES_INTERVAL` (used by Core)
   * `max_pending_segments` - how any routing segments can be in pending state per one address
   * `aware_of_nodes_limit` - how many aware of nodes should be kept in memory
+  * `min_number_of_peers_for_ready` - how many peers should be connected in order to consider instance ready for use and fire `ready` event
 
 ### detox_core.Core.start_bootstrap_node(ip : string, port : number, public_address = ip : string, public_port = port : number)
 Start bootstrap server (HTTP) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
