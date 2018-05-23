@@ -8,7 +8,7 @@
   /*
    * Implements version ? of the specification
    */
-  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, CONNECTION_TIMEOUT, LAST_USED_TIMEOUT, ANNOUNCE_INTERVAL, STALE_AWARE_OF_NODE_TIMEOUT, AWARE_OF_NODES_LIMIT, GET_MORE_NODES_INTERVAL, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, DEFAULT_TIMEOUTS, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
   DHT_COMMANDS_OFFSET = 10;
   ROUTING_COMMANDS = 20;
   UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS;
@@ -32,12 +32,13 @@
   HANDSHAKE_MESSAGE_LENGTH = 48;
   MAC_LENGTH = 16;
   APPLICATION_LENGTH = 64;
-  CONNECTION_TIMEOUT = 10;
-  LAST_USED_TIMEOUT = 60;
-  ANNOUNCE_INTERVAL = 10 * 60;
-  STALE_AWARE_OF_NODE_TIMEOUT = 5 * 60;
-  AWARE_OF_NODES_LIMIT = 1000;
-  GET_MORE_NODES_INTERVAL = 30;
+  DEFAULT_TIMEOUTS = {
+    'CONNECTION_TIMEOUT': 10,
+    'LAST_USED_TIMEOUT': 60,
+    'ANNOUNCE_INTERVAL': 10 * 60,
+    'STALE_AWARE_OF_NODE_TIMEOUT': 5 * 60,
+    'GET_MORE_AWARE_OF_NODES_INTERVAL': 30
+  };
   CONNECTION_OK = 0;
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
   CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES = 2;
@@ -275,7 +276,6 @@
      * @param {!Array<!Object>}	ice_servers
      * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
-     * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
      * @param {Object=}			options					More options that are less frequently used
      *
      * @return {!Core}
@@ -295,9 +295,10 @@
         'state_history_size': 1000,
         'values_cache_size': 1000,
         'fraction_of_nodes_from_same_peer': 0.2,
-        'lookup_number': Math.max(bucket_size, 10),
-        'timeouts': {},
-        'max_pending_segments': 10
+        'lookup_number': Math.max(bucket_size, 5),
+        'timeouts': DEFAULT_TIMEOUTS,
+        'max_pending_segments': 10,
+        'aware_of_nodes_limit': 1000
       }, options);
       this._real_keypairs = ArrayMap();
       this._dht_keypair = create_keypair(dht_key_seed);
@@ -325,9 +326,9 @@
       this._demultiplexers = ArrayMap();
       this._pending_sending = ArrayMap();
       this._application_connections = ArraySet();
-      this._cleanup_interval = intervalSet(LAST_USED_TIMEOUT, function(){
+      this._cleanup_interval = intervalSet(this._options['timeouts']['LAST_USED_TIMEOUT'], function(){
         var unused_older_than, super_stale_older_than;
-        unused_older_than = +new Date - LAST_USED_TIMEOUT * 1000;
+        unused_older_than = +new Date - this$._options['timeouts']['LAST_USED_TIMEOUT'] * 1000;
         this$._routes_timeouts.forEach(function(last_updated, source_id){
           var ref$, node_id, route_id;
           if (last_updated < unused_older_than) {
@@ -344,19 +345,19 @@
             this$._transport['destroy_connection'](node_id);
           }
         });
-        super_stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000;
+        super_stale_older_than = +new Date - this$._options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 2 * 1000;
         this$._aware_of_nodes.forEach(function(date, node_id){
           if (date < super_stale_older_than) {
             this$._aware_of_nodes['delete'](node_id);
           }
         });
       });
-      this._keep_announce_routes_interval = intervalSet(LAST_USED_TIMEOUT / 5 * 4, function(){
+      this._keep_announce_routes_interval = intervalSet(this._options['timeouts']['LAST_USED_TIMEOUT'] / 5 * 4, function(){
         this$._real_keypairs.forEach(function(arg$, real_public_key){
           var real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement, reannounce_if_older_than;
           real_keypair = arg$[0], number_of_introduction_nodes = arg$[1], number_of_intermediate_nodes = arg$[2], announced_to = arg$[3], last_announcement = arg$[4];
           if (announced_to.size < number_of_introduction_nodes && last_announcement) {
-            reannounce_if_older_than = +new Date - CONNECTION_TIMEOUT * 3;
+            reannounce_if_older_than = +new Date - this$._options['timeouts']['CONNECTION_TIMEOUT'] * 3;
             if (last_announcement < reannounce_if_older_than) {
               this$._announce(real_public_key);
             }
@@ -372,12 +373,12 @@
           });
         });
       });
-      this._get_more_nodes_interval = intervalSet(GET_MORE_NODES_INTERVAL, function(){
+      this._get_more_nodes_interval = intervalSet(this._options['timeouts']['GET_MORE_AWARE_OF_NODES_INTERVAL'], function(){
         if (this$._more_aware_of_nodes_needed()) {
           this$._get_more_aware_of_nodes();
         }
       });
-      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)['on']('connected', function(peer_id){
+      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
         this$._dht['add_peer'](peer_id);
         this$._connected_nodes.add(peer_id);
         this$._aware_of_nodes['delete'](peer_id);
@@ -472,7 +473,7 @@
           if (this$._announcements_from.has(public_key)) {
             clearInterval(this$._announcements_from.get(public_key)[2]);
           }
-          announce_interval = intervalSet(ANNOUNCE_INTERVAL, function(){
+          announce_interval = intervalSet(this$._options['timeouts']['ANNOUNCE_INTERVAL'], function(){
             if (!this$._routing_paths.has(source_id)) {
               return;
             }
@@ -510,7 +511,7 @@
           if (this$._pending_connections.has(rendezvous_token)) {
             return;
           }
-          connection_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+          connection_timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
             this$._pending_connections['delete'](rendezvous_token);
           });
           this$._pending_connections.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout]);
@@ -738,7 +739,7 @@
                   response['end']();
                 }
               });
-              timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+              timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
                 response['writeHead'](504);
                 response['end']();
                 this$._waiting_for_signal['delete'](waiting_for_signal_key);
@@ -1044,7 +1045,7 @@
               this$._router['on']('data', path_confirmation);
               this$._send_to_routing_path(first_node, route_id, ROUTING_COMMAND_INITIALIZE_CONNECTION, compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted));
               this$['fire']('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT);
-              path_confirmation_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+              path_confirmation_timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
                 this$._router['off']('data', path_confirmation);
                 encryptor_instance['destroy']();
                 try_to_introduce();
@@ -1054,7 +1055,7 @@
           }
           this$._router['on']('data', found_introduction_nodes);
           this$._send_to_routing_path(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
-          find_introduction_nodes_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+          find_introduction_nodes_timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
             this$._router['off']('data', found_introduction_nodes);
             connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
           });
@@ -1136,7 +1137,7 @@
        * @return {boolean}
        */,
       _more_aware_of_nodes_needed: function(){
-        return !this._bootstrap_node && !!(this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT || this._get_stale_aware_of_nodes(true).length);
+        return !this._bootstrap_node && !!(this._aware_of_nodes.size < this._options['aware_of_nodes_limit'] || this._get_stale_aware_of_nodes(true).length);
       }
       /**
        * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
@@ -1147,7 +1148,7 @@
         var stale_aware_of_nodes, stale_older_than, exited;
         early_exit == null && (early_exit = false);
         stale_aware_of_nodes = [];
-        stale_older_than = +new Date - STALE_AWARE_OF_NODE_TIMEOUT * 1000;
+        stale_older_than = +new Date - this._options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 1000;
         exited = false;
         this._aware_of_nodes.forEach(function(date, node_id){
           if (!exited && date < stale_older_than) {
@@ -1451,7 +1452,7 @@
             if (are_arrays_equal(new_node_id, this._dht_keypair['ed25519']['public']) || this._connected_nodes.has(new_node_id)) {
               continue;
             }
-            if (this._aware_of_nodes.has(new_node_id) || this._aware_of_nodes.size < AWARE_OF_NODES_LIMIT) {
+            if (this._aware_of_nodes.has(new_node_id) || this._aware_of_nodes.size < this._options['aware_of_nodes_limit']) {
               this._aware_of_nodes.set(new_node_id, +new Date);
               this['fire']('aware_of_nodes_count', this._aware_of_nodes.size);
             } else if (stale_aware_of_nodes.length) {
@@ -1522,7 +1523,7 @@
           this$._transport['send'](node_id, command, command_data);
         }
         this._transport['on']('connected', connected);
-        connected_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
+        connected_timeout = timeoutSet(this._options['timeouts']['CONNECTION_TIMEOUT'], function(){
           this$._transport['off']('connected', connected);
         });
         this._dht['lookup'](node_id, this._options['lookup_number']);

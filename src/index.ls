@@ -28,26 +28,25 @@ const ROUTING_COMMAND_CONNECTED							= 6
 const ROUTING_COMMAND_DATA								= 7
 const ROUTING_COMMAND_PING								= 8
 
-const PUBLIC_KEY_LENGTH				= 32
-const SIGNATURE_LENGTH				= 64
+const PUBLIC_KEY_LENGTH			= 32
+const SIGNATURE_LENGTH			= 64
 # Handshake message length for Noise_NK_25519_ChaChaPoly_BLAKE2b
-const HANDSHAKE_MESSAGE_LENGTH		= 48
+const HANDSHAKE_MESSAGE_LENGTH	= 48
 # ChaChaPoly+BLAKE2b
-const MAC_LENGTH					= 16
+const MAC_LENGTH				= 16
 # Length of the application name used during introduction
-const APPLICATION_LENGTH			= 64
-# How long node should wait for rendezvous node to receive incoming connection from intended responder
-const CONNECTION_TIMEOUT			= 10
-# After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
-const LAST_USED_TIMEOUT				= 60
-# Re-announce each 5 minutes
-const ANNOUNCE_INTERVAL				= 10 * 60
-# After 5 minutes aware of node is considered stale and needs refreshing or replacing with a new one
-const STALE_AWARE_OF_NODE_TIMEOUT	= 5 * 60
-# Keep at most 1000 nodes as aware of nodes
-const AWARE_OF_NODES_LIMIT			= 1000
-# New aware of nodes will be fetched and old refreshed each 30 seconds
-const GET_MORE_NODES_INTERVAL		= 30
+const APPLICATION_LENGTH		= 64
+const DEFAULT_TIMEOUTS			=
+	# How long node should wait for rendezvous node to receive incoming connection from intended responder
+	'CONNECTION_TIMEOUT'				: 10
+	# After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
+	'LAST_USED_TIMEOUT'					: 60
+	# Re-announce each 5 minutes
+	'ANNOUNCE_INTERVAL'					: 10 * 60
+	# After 5 minutes aware of node is considered stale and needs refreshing or replacing with a new one
+	'STALE_AWARE_OF_NODE_TIMEOUT'		: 5 * 60
+	# New aware of nodes will be fetched and old refreshed each 30 seconds
+	'GET_MORE_AWARE_OF_NODES_INTERVAL'	: 30
 
 const CONNECTION_OK										= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
@@ -252,7 +251,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	 * @param {!Array<!Object>}	ice_servers
 	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
-	 * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
 	 * @param {Object=}			options					More options that are less frequently used
 	 *
 	 * @return {!Core}
@@ -268,9 +266,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			'state_history_size'				: 1000
 			'values_cache_size'					: 1000
 			'fraction_of_nodes_from_same_peer'	: 0.2
-			'lookup_number'						: Math.max(bucket_size, 10)
-			'timeouts'							: {} # TODO: Move the rest of timeouts from constants here
+			'lookup_number'						: Math.max(bucket_size, 5)
+			'timeouts'							: DEFAULT_TIMEOUTS
 			'max_pending_segments'				: 10
+			'aware_of_nodes_limit'				: 1000
 		}, options)
 
 		@_real_keypairs				= ArrayMap()
@@ -302,9 +301,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_pending_sending			= ArrayMap()
 		@_application_connections	= ArraySet()
 
-		@_cleanup_interval				= intervalSet(LAST_USED_TIMEOUT, !~>
+		@_cleanup_interval				= intervalSet(@_options['timeouts']['LAST_USED_TIMEOUT'], !~>
 			# Unregister unused routing paths
-			unused_older_than	= +(new Date) - LAST_USED_TIMEOUT * 1000
+			unused_older_than	= +(new Date) - @_options['timeouts']['LAST_USED_TIMEOUT'] * 1000
 			@_routes_timeouts.forEach (last_updated, source_id) !~>
 				if last_updated < unused_older_than
 					if @_routing_paths.has(source_id)
@@ -317,17 +316,17 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					@_connections_timeouts.delete(node_id)
 					@_transport['destroy_connection'](node_id)
 			# Remove aware of nodes that are stale for more that double of regular timeout
-			super_stale_older_than	= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 2 * 1000
+			super_stale_older_than	= +(new Date) - @_options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 2 * 1000
 			@_aware_of_nodes.forEach (date, node_id) !~>
 				if date < super_stale_older_than
 					@_aware_of_nodes.delete(node_id)
 		)
 		# On 4/5 of the way to dropping connection
-		@_keep_announce_routes_interval	= intervalSet(LAST_USED_TIMEOUT / 5 * 4, !~>
+		@_keep_announce_routes_interval	= intervalSet(@_options['timeouts']['LAST_USED_TIMEOUT'] / 5 * 4, !~>
 			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node
-					reannounce_if_older_than	= +(new Date) - CONNECTION_TIMEOUT * 3
+					reannounce_if_older_than	= +(new Date) - @_options['timeouts']['CONNECTION_TIMEOUT'] * 3
 					if last_announcement < reannounce_if_older_than
 						@_announce(real_public_key)
 				announced_to.forEach (introduction_node) !~>
@@ -337,12 +336,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						source_id	= concat_arrays([node_id, route_id])
 						@_pending_pings.add(source_id)
 		)
-		@_get_more_nodes_interval		= intervalSet(GET_MORE_NODES_INTERVAL, !~>
+		@_get_more_nodes_interval		= intervalSet(@_options['timeouts']['GET_MORE_AWARE_OF_NODES_INTERVAL'], !~>
 			if @_more_aware_of_nodes_needed()
 				@_get_more_aware_of_nodes()
 		)
 
-		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, CONNECTION_TIMEOUT)
+		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, @_options['timeouts']['CONNECTION_TIMEOUT'])
 			.'on'('connected', (peer_id) !~>
 				@_dht['add_peer'](peer_id)
 				@_connected_nodes.add(peer_id)
@@ -441,7 +440,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						# If re-announcement, make sure to stop old interval
 						if @_announcements_from.has(public_key)
 							clearInterval(@_announcements_from.get(public_key)[2])
-						announce_interval	= intervalSet(ANNOUNCE_INTERVAL, !~>
+						announce_interval	= intervalSet(@_options['timeouts']['ANNOUNCE_INTERVAL'], !~>
 							if !@_routing_paths.has(source_id)
 								return
 							@_publish_announcement_message(data)
@@ -472,7 +471,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						if @_pending_connections.has(rendezvous_token)
 							# Ignore subsequent usages of the same rendezvous token
 							return
-						connection_timeout														= timeoutSet(CONNECTION_TIMEOUT, !~>
+						connection_timeout														= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 							@_pending_connections.delete(rendezvous_token)
 						)
 						@_pending_connections.set(rendezvous_token, [node_id, route_id, target_id, connection_timeout])
@@ -698,7 +697,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									response['writeHead'](502)
 									response['end']()
 							)
-							timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
+							timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 								response['writeHead'](504)
 								response['end']()
 								@_waiting_for_signal.delete(waiting_for_signal_key)
@@ -995,7 +994,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								compose_initialize_connection_data(rendezvous_token, introduction_node, target_id, introduction_message_encrypted)
 							)
 							@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_INTRODUCTION_SENT)
-							path_confirmation_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
+							path_confirmation_timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 								@_router['off']('data', path_confirmation)
 								encryptor_instance['destroy']()
 								try_to_introduce()
@@ -1003,7 +1002,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						try_to_introduce()
 					@_router['on']('data', found_introduction_nodes)
 					@_send_to_routing_path(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
-					find_introduction_nodes_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
+					find_introduction_nodes_timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 						@_router['off']('data', found_introduction_nodes)
 						connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
 					)
@@ -1070,7 +1069,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {boolean}
 		 */
 		_more_aware_of_nodes_needed : ->
-			!@_bootstrap_node && !!(@_aware_of_nodes.size < AWARE_OF_NODES_LIMIT || @_get_stale_aware_of_nodes(true).length)
+			!@_bootstrap_node && !!(@_aware_of_nodes.size < @_options['aware_of_nodes_limit'] || @_get_stale_aware_of_nodes(true).length)
 		/**
 		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
 		 *
@@ -1078,7 +1077,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_get_stale_aware_of_nodes : (early_exit = false) ->
 			stale_aware_of_nodes	= []
-			stale_older_than		= +(new Date) - STALE_AWARE_OF_NODE_TIMEOUT * 1000
+			stale_older_than		= +(new Date) - @_options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 1000
 			exited					= false
 			@_aware_of_nodes.forEach (date, node_id) !->
 				if !exited && date < stale_older_than
@@ -1323,7 +1322,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@_connected_nodes.has(new_node_id)
 						)
 							continue
-						if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < AWARE_OF_NODES_LIMIT
+						if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < @_options['aware_of_nodes_limit']
 							@_aware_of_nodes.set(new_node_id, +(new Date))
 							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 						else if stale_aware_of_nodes.length
@@ -1381,7 +1380,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_update_connection_timeout(node_id)
 				@_transport['send'](node_id, command, command_data)
 			@_transport['on']('connected', connected)
-			connected_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
+			connected_timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 				@_transport['off']('connected', connected)
 			)
 			@_dht['lookup'](node_id, @_options['lookup_number'])

@@ -85,7 +85,7 @@ requirejs(['@detox/core'], function (detox_core) {
 ### detox_core.generate_seed() : Uint8Array
 Generates random seed that can be later used in `detox_core.Core` constructor.
 
-### detox_core.Core(dht_key_seed : Uint8Array, bootstrap_nodes : Object[], ice_servers : Object[], packets_per_second = 1 : number, bucket_size = 2 : number, max_pending_segments = 10 : number, other_dht_options = {} : Object) : detox_core.Core
+### detox_core.Core(dht_key_seed : Uint8Array, bootstrap_nodes : Object[], ice_servers : Object[], packets_per_second = 1 : number, bucket_size = 2 : number, options = {} : Object) : detox_core.Core
 Constructor for Core object, offers methods for connecting to and interacting with Detox network.
 
 * `dht_key_seed` - seed that corresponds to temporary user identity in DHT network
@@ -93,8 +93,25 @@ Constructor for Core object, offers methods for connecting to and interacting wi
 * `ice_servers` - array of objects as in [RTCPeerConnection constructor](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/RTCPeerConnection)
 * `packets_per_second` - packets are sent at constant rate (which together with fixed packet size of 512 bytes can be used to identify bandwidth requirements for specific connection), `1` is minimal supported rate, actual rate is negotiated between 2 sides on connection
 * `bucket_size` - size of the bucket used in DHT internals (directly affects number of active WebRTC connections)
-* `max_pending_segments` - How much segments can be in pending state per one address in router
-* `other_dht_options` - Other internal options supported by underlying DHT implementation `webtorrent-dht`
+* `max_pending_segments` - row much segments can be in pending state per one address in router
+* `options` - more options that are less frequently used (see source code for defaults):
+  * `state_history_size` - how many DHT versions of local history will be kept
+  * `values_cache_size` - how many DHT values will be kept in cache
+  * `fraction_of_nodes_from_same_peer` - max fraction of nodes originated from single peer allowed on lookup start
+  * `lookup_number` - number of nodes to be returned if exact match was not found
+  * `timeouts` - various timeouts and intervals used internally, refer to source code and corresponding components for details and default values:
+    * `GET_PROOF_REQUEST_TIMEOUT` (used in DHT)
+    * `GET_STATE_REQUEST_TIMEOUT` (used in DHT)
+    * `GET_VALUE_TIMEOUT` (used in DHT)
+    * `PUT_VALUE_TIMEOUT` (used in DHT)
+    * `STATE_UPDATE_INTERVAL` (used in DHT)
+    * `CONNECTION_TIMEOUT` (used by Core and Transport)
+    * `LAST_USED_TIMEOUT` (used by Core)
+    * `ANNOUNCE_INTERVAL` (used by Core)
+    * `STALE_AWARE_OF_NODE_TIMEOUT` (used by Core)
+    * `GET_MORE_AWARE_OF_NODES_INTERVAL` (used by Core)
+  * `max_pending_segments` - how any routing segments can be in pending state per one address
+  * `aware_of_nodes_limit` - how many aware of nodes should be kept in memory
 
 ### detox_core.Core.start_bootstrap_node(ip : string, port : number, public_address = ip : string, public_port = port : number)
 Start bootstrap server (HTTP) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
