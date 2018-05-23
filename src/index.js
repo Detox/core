@@ -276,22 +276,29 @@
      * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
      * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
-     * @param {!Object}			other_dht_options		Other internal options supported by underlying DHT implementation `webtorrent-dht`
+     * @param {Object=}			options					More options that are less frequently used
      *
      * @return {!Core}
      *
      * @throws {Error}
      */
-    function Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options){
+    function Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options){
       var this$ = this;
       packets_per_second == null && (packets_per_second = 1);
       bucket_size == null && (bucket_size = 2);
-      max_pending_segments == null && (max_pending_segments = 10);
-      other_dht_options == null && (other_dht_options = {});
+      options == null && (options = {});
       if (!(this instanceof Core)) {
-        return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options);
+        return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options);
       }
       asyncEventer.call(this);
+      this._options = Object.assign({}, {
+        'state_history_size': 1000,
+        'values_cache_size': 1000,
+        'fraction_of_nodes_from_same_peer': 0.2,
+        'lookup_number': Math.max(bucket_size, 10),
+        'timeouts': {},
+        'max_pending_segments': 10
+      }, options);
       this._real_keypairs = ArrayMap();
       this._dht_keypair = create_keypair(dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
@@ -407,7 +414,7 @@
           this$._handle_compressed_core_command(peer_id, command, command_data);
         }
       });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})['on']('peer_error', function(peer_id){
+      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, this._options['state_history_size'], this._options['values_cache_size'], this._options['fraction_of_nodes_from_same_peer'], this._options['timeouts'])['on']('peer_error', function(peer_id){
         this$._peer_error(peer_id);
       })['on']('peer_warning', function(peer_id){
         this$._peer_warning(peer_id);
@@ -444,7 +451,7 @@
       })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
       });
-      this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], max_pending_segments)['on']('activity', function(node_id, route_id){
+      this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], this._options['max_pending_segments'])['on']('activity', function(node_id, route_id){
         var source_id;
         source_id = concat_arrays([node_id, route_id]);
         if (!this$._routing_paths.has(source_id)) {
@@ -781,7 +788,7 @@
           if (waiting_for) {
             return;
           }
-          callback();
+          setTimeout(callback);
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
           var random_id, connection;
@@ -1257,7 +1264,7 @@
         return results$;
       },
       _random_lookup: function(){
-        this._dht['lookup'](fake_node_id(), 5);
+        this._dht['lookup'](fake_node_id(), this._options['lookup_number']);
       }
       /**
        * @param {!Array<!Uint8Array>} nodes
@@ -1518,7 +1525,7 @@
         connected_timeout = timeoutSet(CONNECTION_TIMEOUT, function(){
           this$._transport['off']('connected', connected);
         });
-        this._dht['lookup'](node_id, 5);
+        this._dht['lookup'](node_id, this._options['lookup_number']);
       }
       /**
        * @param {!Uint8Array}	real_public_key

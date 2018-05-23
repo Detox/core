@@ -253,16 +253,25 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
 	 * @param {number}			max_pending_segments	How much routing segments can be in pending state per one address
-	 * @param {!Object}			other_dht_options		Other internal options supported by underlying DHT implementation `webtorrent-dht`
+	 * @param {Object=}			options					More options that are less frequently used
 	 *
 	 * @return {!Core}
 	 *
 	 * @throws {Error}
 	 */
-	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, max_pending_segments = 10, other_dht_options = {})
+	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, options = {})
 		if !(@ instanceof Core)
-			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, max_pending_segments, other_dht_options)
+			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options)
 		async-eventer.call(@)
+
+		@_options	= Object.assign({}, {
+			'state_history_size'				: 1000
+			'values_cache_size'					: 1000
+			'fraction_of_nodes_from_same_peer'	: 0.2
+			'lookup_number'						: Math.max(bucket_size, 10)
+			'timeouts'							: {} # TODO: Move the rest of timeouts from constants here
+			'max_pending_segments'				: 10
+		}, options)
 
 		@_real_keypairs				= ArrayMap()
 		@_dht_keypair				= create_keypair(dht_key_seed)
@@ -367,8 +376,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						return
 					@_handle_compressed_core_command(peer_id, command, command_data)
 			)
-		# TODO: Constant options below should be configurable
-		@_dht		= detox-dht['DHT'](@_dht_keypair['ed25519']['public'], bucket_size, 1000, 1000, 0.2, {})
+		@_dht		= detox-dht['DHT'](
+			@_dht_keypair['ed25519']['public']
+			bucket_size
+			@_options['state_history_size']
+			@_options['values_cache_size']
+			@_options['fraction_of_nodes_from_same_peer']
+			@_options['timeouts']
+		)
 			.'on'('peer_error', (peer_id) !~>
 				@_peer_error(peer_id)
 			)
@@ -406,7 +421,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.'on'('send', (peer_id, command, command_data) !~>
 				@_send_dht_command(peer_id, command, command_data)
 			)
-		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], max_pending_segments)
+		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'])
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= concat_arrays([node_id, route_id])
 				if !@_routing_paths.has(source_id)
@@ -729,7 +744,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				--waiting_for
 				if waiting_for
 					return
-				callback()
+				setTimeout(callback)
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
 				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
 				connection	= @_transport['create_connection'](true, random_id)
@@ -1147,8 +1162,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
 		_random_lookup : !->
-			# TODO: Make this parameter configurable
-			@_dht['lookup'](fake_node_id(), 5)
+			@_dht['lookup'](fake_node_id(), @_options['lookup_number'])
 		/**
 		 * @param {!Array<!Uint8Array>} nodes
 		 *
@@ -1370,8 +1384,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			connected_timeout	= timeoutSet(CONNECTION_TIMEOUT, !~>
 				@_transport['off']('connected', connected)
 			)
-			# TODO: Make this parameter configurable
-			@_dht['lookup'](node_id, 5)
+			@_dht['lookup'](node_id, @_options['lookup_number'])
 		/**
 		 * @param {!Uint8Array}	real_public_key
 		 * @param {!Uint8Array}	target_id
