@@ -423,14 +423,9 @@
         this$._peer_warning(peer_id);
       })['on']('connect_to', function(peer_peer_id, peer_id){
         return new Promise(function(resolve, reject){
-          var connection, waiting_for_signal_key;
+          var connection;
           connection = this$._transport['create_connection'](true, peer_peer_id);
           if (!connection) {
-            reject();
-            return;
-          }
-          waiting_for_signal_key = concat_arrays([this$._dht_keypair['ed25519']['public'], peer_peer_id]);
-          if (this$._waiting_for_signal.has(waiting_for_signal_key)) {
             reject();
             return;
           }
@@ -439,16 +434,12 @@
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            this$._waiting_for_signal.set(waiting_for_signal_key, function(sdp){
-              this$._transport['signal'](peer_peer_id, sdp);
-            });
+            return false;
           })['once']('connected', function(){
-            connection['off']('signal');
             connection['off']('disconnected', disconnected);
             resolve();
           })['once']('disconnected', disconnected);
           function disconnected(){
-            this$._waiting_for_signal['delete'](waiting_for_signal_key);
             reject();
           }
         });
@@ -768,6 +759,7 @@
                 signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
                 response['write'](Buffer.from(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature)));
                 response['end']();
+                return false;
               })['signal'](sdp);
             }
           });
@@ -787,22 +779,31 @@
         return Array.from(this._bootstrap_nodes);
       }
       /**
-       * @param {!Function} callback
+       * @param {Function=} callback
        */,
       _bootstrap: function(callback){
         var waiting_for, this$ = this;
         waiting_for = this._bootstrap_nodes.size;
         if (!waiting_for) {
-          callback();
+          if (typeof callback == 'function') {
+            callback();
+          }
           return;
         }
         function done(){
+          var pending_update;
           --waiting_for;
           if (waiting_for) {
             return;
           }
+          pending_update = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
+            this$._bootstrap();
+          });
           this$._dht['once']('peer_updated', function(){
-            callback();
+            clearTimeout(pending_update);
+            if (typeof callback == 'function') {
+              callback();
+            }
           });
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
@@ -845,7 +846,6 @@
               connection['destroy']();
             });
           })['once']('connected', function(){
-            connection['off']('signal');
             connection['off']('disconnected', disconnected);
             done();
           })['once']('disconnected', disconnected);
@@ -1403,18 +1403,18 @@
             this._peer_error(peer_id);
             return;
           }
-          if (this._connected_nodes.has(target_id) && are_arrays_equal(peer_id, source_id)) {
-            this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            return;
-          }
-          if (!are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
-            return;
-          }
           waiting_for_signal_key = concat_arrays([target_id, source_id]);
           waiting_for_signal_callback = this._waiting_for_signal.get(waiting_for_signal_key);
           if (waiting_for_signal_callback) {
             this._waiting_for_signal['delete'](waiting_for_signal_key);
             waiting_for_signal_callback(sdp, signature, command_data);
+            return;
+          }
+          if (this._connected_nodes.has(target_id) && are_arrays_equal(peer_id, source_id)) {
+            this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            return;
+          }
+          if (!are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
             return;
           }
           connection = this._transport['create_connection'](false, source_id);
@@ -1426,8 +1426,7 @@
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-          })['once']('connected', function(){
-            connection['off']('signal');
+            return false;
           })['signal'](sdp);
         }
       }
