@@ -291,16 +291,17 @@
         return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options);
       }
       asyncEventer.call(this);
-      this._options = Object.assign({}, {
+      this._options = Object.assign({
         'state_history_size': 1000,
         'values_cache_size': 1000,
         'fraction_of_nodes_from_same_peer': 0.2,
         'lookup_number': Math.max(bucket_size, 5),
-        'timeouts': DEFAULT_TIMEOUTS,
         'max_pending_segments': 10,
         'aware_of_nodes_limit': 1000,
         'min_number_of_peers_for_ready': bucket_size
-      }, options);
+      }, options, {
+        'timeouts': Object.assign({}, DEFAULT_TIMEOUTS, options['timeouts'] || {})
+      });
       this._real_keypairs = ArrayMap();
       this._dht_keypair = create_keypair(dht_key_seed);
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
@@ -415,7 +416,7 @@
           }
           this$._handle_compressed_core_command(peer_id, command, command_data);
         }
-      })['on']('peer_updated', function(peer_id, peer_peers){});
+      });
       this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, this._options['state_history_size'], this._options['values_cache_size'], this._options['fraction_of_nodes_from_same_peer'], this._options['timeouts'])['on']('peer_error', function(peer_id){
         this$._peer_error(peer_id);
       })['on']('peer_warning', function(peer_id){
@@ -452,7 +453,7 @@
         });
       })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
-      });
+      })['on']('peer_updated', function(peer_id, peer_peers){});
       this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], this._options['max_pending_segments'])['on']('activity', function(node_id, route_id){
         var source_id;
         source_id = concat_arrays([node_id, route_id]);
@@ -668,12 +669,21 @@
         }
       });
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
-      this._bootstrap(function(){
-        this$._random_lookup();
-        this$._random_lookup();
-        this$._random_lookup();
-        this$['fire']('ready');
-      });
+      if (!this._bootstrap_nodes.size) {
+        setTimeout(function(){
+          this$['fire']('ready');
+        });
+      } else {
+        this._bootstrap(function(){
+          this$._random_lookup().then(function(){
+            return this$._random_lookup();
+          }).then(function(){
+            return this$._random_lookup();
+          }).then(function(){
+            return this$['fire']('ready');
+          });
+        });
+      }
     }
     Core['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
     Core['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
@@ -762,7 +772,7 @@
           });
         });
         this._http_server['on']('error', error_handler)['listen'](port, ip, function(){
-          this$._http_server_address = public_address + ":public_port";
+          this$._http_server_address = public_address + ":" + public_port;
         });
         this._bootstrap_node = true;
         this._destroy_router();
@@ -782,7 +792,7 @@
         var waiting_for, this$ = this;
         waiting_for = this._bootstrap_nodes.size;
         if (!waiting_for) {
-          setTimeout(callback);
+          callback();
           return;
         }
         function done(){
@@ -790,7 +800,9 @@
           if (waiting_for) {
             return;
           }
-          setTimeout(callback);
+          this$._dht['once']('peer_updated', function(){
+            callback();
+          });
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
           var random_id, connection;
@@ -1266,7 +1278,7 @@
         return results$;
       },
       _random_lookup: function(){
-        this._dht['lookup'](fake_node_id(), this._options['lookup_number']);
+        return this._dht['lookup'](fake_node_id(), this._options['lookup_number']);
       }
       /**
        * @param {!Array<!Uint8Array>} nodes
@@ -1389,7 +1401,7 @@
             this._peer_error(peer_id);
             return;
           }
-          if (this._connected_nodes.has(target_id)) {
+          if (this._connected_nodes.has(target_id) && are_arrays_equal(peer_id, source_id)) {
             this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             return;
           }

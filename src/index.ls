@@ -262,16 +262,21 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options)
 		async-eventer.call(@)
 
-		@_options	= Object.assign({}, {
-			'state_history_size'				: 1000
-			'values_cache_size'					: 1000
-			'fraction_of_nodes_from_same_peer'	: 0.2
-			'lookup_number'						: Math.max(bucket_size, 5)
-			'timeouts'							: DEFAULT_TIMEOUTS
-			'max_pending_segments'				: 10
-			'aware_of_nodes_limit'				: 1000
-			'min_number_of_peers_for_ready'		: bucket_size # TODO: Use this option
-		}, options)
+		@_options	= Object.assign(
+			{
+				'state_history_size'				: 1000
+				'values_cache_size'					: 1000
+				'fraction_of_nodes_from_same_peer'	: 0.2
+				'lookup_number'						: Math.max(bucket_size, 5)
+				'max_pending_segments'				: 10
+				'aware_of_nodes_limit'				: 1000
+				'min_number_of_peers_for_ready'		: bucket_size # TODO: Use this option
+			}
+			options
+			{
+				'timeouts'	: Object.assign({}, DEFAULT_TIMEOUTS, options['timeouts'] || {})
+			}
+		)
 
 		@_real_keypairs				= ArrayMap()
 		@_dht_keypair				= create_keypair(dht_key_seed)
@@ -376,9 +381,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						return
 					@_handle_compressed_core_command(peer_id, command, command_data)
 			)
-			.'on'('peer_updated', (peer_id, peer_peers) !~>
-				# TODO: Store peer's peers for potential future deletion and add peer's peers to aware of nodes
-			)
 		@_dht		= detox-dht['DHT'](
 			@_dht_keypair['ed25519']['public']
 			bucket_size
@@ -423,6 +425,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 			.'on'('send', (peer_id, command, command_data) !~>
 				@_send_dht_command(peer_id, command, command_data)
+			)
+			.'on'('peer_updated', (peer_id, peer_peers) !~>
+				# TODO: Store peer's peers for potential future deletion and add peer's peers to aware of nodes
 			)
 		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'])
 			.'on'('activity', (node_id, route_id) !~>
@@ -626,14 +631,21 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
 		# TODO: This should probably be called when a lot of nodes are disconnected too, not just once during start
-		@_bootstrap !~>
-			# Make 3 random lookups on start in order to connect to some nodes
-			# TODO: Think about regular lookups
-			@_random_lookup()
-			@_random_lookup()
-			@_random_lookup()
-			# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
-			@'fire'('ready')
+		if !@_bootstrap_nodes.size
+			setTimeout !~>
+				@'fire'('ready')
+		else
+			@_bootstrap !~>
+				# Make 3 random lookups on start in order to connect to some nodes
+				# TODO: Think about regular lookups
+				@_random_lookup()
+					.then ~>
+						@_random_lookup()
+					.then ~>
+						@_random_lookup()
+					.then ~>
+						# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
+						@'fire'('ready')
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -723,7 +735,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_http_server
 				.'on'('error', error_handler)
 				.'listen'(port, ip, !~>
-					@_http_server_address	= "#public_address:public_port"
+					@_http_server_address	= "#public_address:#public_port"
 				)
 			@_bootstrap_node	= true
 			# Stop doing any routing tasks immediately
@@ -741,13 +753,15 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_bootstrap : (callback) !->
 			waiting_for	= @_bootstrap_nodes.size
 			if !waiting_for
-				setTimeout(callback)
+				callback()
 				return
 			!~function done
 				--waiting_for
 				if waiting_for
 					return
-				setTimeout(callback)
+				@_dht['once']('peer_updated', !~>
+					callback()
+				)
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
 				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
 				connection	= @_transport['create_connection'](true, random_id)
@@ -1164,7 +1178,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				return null
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
-		_random_lookup : !->
+		_random_lookup : ->
 			@_dht['lookup'](fake_node_id(), @_options['lookup_number'])
 		/**
 		 * @param {!Array<!Uint8Array>} nodes
@@ -1267,7 +1281,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						@_peer_error(peer_id)
 						return
 					# If command targets our peer, forward it
-					if @_connected_nodes.has(target_id)
+					if @_connected_nodes.has(target_id) && are_arrays_equal(peer_id, source_id)
 						@_send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						return
 					# If command doesn't target ourselves - exit
