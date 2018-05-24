@@ -380,7 +380,7 @@
           this$._get_more_aware_of_nodes();
         }
       });
-      this._transport = detoxTransport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
+      this._transport = detoxTransport['Transport'](this._dht_keypair['ed25519']['public'], ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
         this$._dht['add_peer'](peer_id);
         this$._connected_nodes.add(peer_id);
         this$._aware_of_nodes['delete'](peer_id);
@@ -434,7 +434,7 @@
             reject();
             return;
           }
-          connection['once']('signal', function(sdp){
+          connection['on']('signal', function(sdp){
             var signature, command_data;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
@@ -443,6 +443,7 @@
               this$._transport['signal'](peer_peer_id, sdp);
             });
           })['once']('connected', function(){
+            connection['off']('signal');
             connection['off']('disconnected', disconnected);
             resolve();
           })['once']('disconnected', disconnected);
@@ -811,7 +812,7 @@
           if (!connection) {
             return;
           }
-          connection['once']('signal', function(sdp){
+          connection['on']('signal', function(sdp){
             var signature, init;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             init = {
@@ -844,6 +845,7 @@
               connection['destroy']();
             });
           })['once']('connected', function(){
+            connection['off']('signal');
             connection['off']('disconnected', disconnected);
             done();
           })['once']('disconnected', disconnected);
@@ -1419,11 +1421,13 @@
           if (!connection) {
             return;
           }
-          connection['once']('signal', function(sdp){
+          connection['on']('signal', function(sdp){
             var signature, command_data;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
             this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+          })['once']('connected', function(){
+            connection['off']('signal');
           })['signal'](sdp);
         }
       }

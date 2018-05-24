@@ -347,7 +347,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_more_aware_of_nodes()
 		)
 
-		@_transport	= detox-transport['Transport'](ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, @_options['timeouts']['CONNECTION_TIMEOUT'])
+		@_transport	= detox-transport['Transport'](@_dht_keypair['ed25519']['public'], ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, @_options['timeouts']['CONNECTION_TIMEOUT'])
 			.'on'('connected', (peer_id) !~>
 				@_dht['add_peer'](peer_id)
 				@_connected_nodes.add(peer_id)
@@ -406,7 +406,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						reject()
 						return
 					connection
-						.'once'('signal', (sdp) !~>
+						.'on'('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
@@ -414,7 +414,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								@_transport['signal'](peer_peer_id, sdp)
 							)
 						)
-						.'once'('connected', !~>
+						.'once'('connected', !->
+							connection['off']('signal')
 							connection['off']('disconnected', disconnected)
 							resolve()
 						)
@@ -768,7 +769,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if !connection
 					return
 				connection
-					.'once'('signal', (sdp) !~>
+					.'on'('signal', (sdp) !~>
 						signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 						init		=
 							method	: 'POST'
@@ -796,16 +797,17 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									throw 'Bad response'
 								@_transport['update_peer_id'](random_id, source_id)
 								connection['signal'](sdp)
-							.catch (e) !~>
+							.catch (e) !->
 								error_handler(e)
 								connection['destroy']()
 					)
-					.'once'('connected', !~>
+					.'once'('connected', !->
+						connection['off']('signal')
 						connection['off']('disconnected', disconnected)
 						done()
 					)
 					.'once'('disconnected', disconnected)
-				!~function disconnected
+				!function disconnected
 					done()
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
@@ -1299,10 +1301,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					if !connection
 						return
 					connection
-						.'once'('signal', (sdp) !~>
+						.'on'('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+						)
+						.'once'('connected', !->
+							connection['off']('signal')
 						)
 						.'signal'(sdp)
 		/**
