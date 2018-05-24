@@ -751,9 +751,9 @@
                 }
               });
               timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
+                this$._waiting_for_signal['delete'](waiting_for_signal_key);
                 response['writeHead'](504);
                 response['end']();
-                this$._waiting_for_signal['delete'](waiting_for_signal_key);
               });
             } else {
               connection = this$._transport['create_connection'](false, source_id);
@@ -1411,8 +1411,8 @@
           waiting_for_signal_key = concat_arrays([target_id, source_id]);
           waiting_for_signal_callback = this._waiting_for_signal.get(waiting_for_signal_key);
           if (waiting_for_signal_callback) {
-            waiting_for_signal_callback(sdp, signature, command_data);
             this._waiting_for_signal['delete'](waiting_for_signal_key);
+            waiting_for_signal_callback(sdp, signature, command_data);
             return;
           }
           connection = this._transport['create_connection'](false, source_id);

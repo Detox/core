@@ -714,9 +714,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									response['end']()
 							)
 							timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
+								@_waiting_for_signal.delete(waiting_for_signal_key)
 								response['writeHead'](504)
 								response['end']()
-								@_waiting_for_signal.delete(waiting_for_signal_key)
 							)
 						else
 							connection	= @_transport['create_connection'](false, source_id)
@@ -1291,8 +1291,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					waiting_for_signal_key		= concat_arrays([target_id, source_id])
 					waiting_for_signal_callback	= @_waiting_for_signal.get(waiting_for_signal_key)
 					if waiting_for_signal_callback
-						waiting_for_signal_callback(sdp, signature, command_data)
 						@_waiting_for_signal.delete(waiting_for_signal_key)
+						waiting_for_signal_callback(sdp, signature, command_data)
 						return
 					# Otherwise create connection as responder, consume signal and send another answer signal back
 					connection	= @_transport['create_connection'](false, source_id)
