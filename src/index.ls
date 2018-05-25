@@ -273,6 +273,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				'max_pending_segments'				: 10
 				'aware_of_nodes_limit'				: 1000
 				'min_number_of_peers_for_ready'		: bucket_size # TODO: Use this option
+				'connected_nodes_limit'				: 100
 			}
 			options
 			{
@@ -361,7 +362,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if @_more_aware_of_nodes_needed()
 					# TODO: Think about requesting aware of nodes from peers only
 					@_get_more_nodes_from(peer_id)
-				# TODO: Limit for connected nodes, drop suspicious nodes first
+				# TODO: Drop suspicious and less useful nodes first
+				if @_connected_nodes.size > @_options['connected_nodes_limit']
+					random_connected_node = @_pick_random_connected_nodes(1, [peer_id])[0]
+					@_transport['destroy_connection'](peer_id)
 			)
 			.'on'('disconnected', (peer_id) !~>
 				@_dht['del_peer'](peer_id)
@@ -474,7 +478,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 								else
 									send_response(CONNECTION_OK, introduction_nodes)
-							.catch !->
+							.catch (error) !->
+								error_handler(error)
 								send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, [])
 					case ROUTING_COMMAND_INITIALIZE_CONNECTION
 						[rendezvous_token, introduction_node, target_id, introduction_message]	= parse_initialize_connection_data(data)
@@ -780,11 +785,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							body	: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
 						fetch("https://#bootstrap_node", init)
-							.catch (e) ->
+							.catch (error) ->
 								if typeof location == 'undefined' || location.protocol == 'http:'
 									fetch("http://#bootstrap_node", init)
 								else
-									throw e
+									throw error
 							.then (response) ->
 								if !response['ok']
 									throw 'Request failed'
@@ -801,8 +806,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									throw 'Bad response'
 								@_transport['update_peer_id'](random_id, source_id)
 								connection['signal'](sdp)
-							.catch (e) !->
-								error_handler(e)
+							.catch (error) !->
+								error_handler(error)
 								connection['destroy']()
 					)
 					.'once'('connected', !~>
@@ -1195,7 +1200,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			# Store first node as used, so that we don't use it for building other routing paths
 			@_used_first_nodes.add(first_node)
 			@_router['construct_routing_path'](nodes)
-				..catch !->
+				..catch (error) !->
+					error_handler(error)
 					@_used_first_nodes.delete(first_node)
 		/**
 		 * @param {!Uint8Array} real_public_key
@@ -1501,6 +1507,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				introduction_nodes
 		_peer_error : (peer_id) !->
 			@_dht['del_peer'](peer_id)
+			@_transport['destroy_connection'](peer_id)
 			# TODO
 		_peer_warning : (peer_id) !->
 			# TODO

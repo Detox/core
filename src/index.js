@@ -299,7 +299,8 @@
         'lookup_number': Math.max(bucket_size, 5),
         'max_pending_segments': 10,
         'aware_of_nodes_limit': 1000,
-        'min_number_of_peers_for_ready': bucket_size
+        'min_number_of_peers_for_ready': bucket_size,
+        'connected_nodes_limit': 100
       }, options, {
         'timeouts': Object.assign({}, DEFAULT_TIMEOUTS, options['timeouts'] || {})
       });
@@ -382,6 +383,7 @@
         }
       });
       this._transport = detoxTransport['Transport'](this._dht_keypair['ed25519']['public'], ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
+        var random_connected_node;
         this$._dht['add_peer'](peer_id);
         this$._connected_nodes.add(peer_id);
         this$._aware_of_nodes['delete'](peer_id);
@@ -392,6 +394,10 @@
         }
         if (this$._more_aware_of_nodes_needed()) {
           this$._get_more_nodes_from(peer_id);
+        }
+        if (this$._connected_nodes.size > this$._options['connected_nodes_limit']) {
+          random_connected_node = this$._pick_random_connected_nodes(1, [peer_id])[0];
+          this$._transport['destroy_connection'](peer_id);
         }
       })['on']('disconnected', function(peer_id){
         this$._dht['del_peer'](peer_id);
@@ -504,7 +510,8 @@
             } else {
               send_response(CONNECTION_OK, introduction_nodes);
             }
-          })['catch'](function(){
+          })['catch'](function(error){
+            error_handler(error);
             send_response(CONNECTION_ERROR_NO_INTRODUCTION_NODES, []);
           });
           break;
@@ -828,11 +835,11 @@
               method: 'POST',
               body: compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
             };
-            fetch("https://" + bootstrap_node, init)['catch'](function(e){
+            fetch("https://" + bootstrap_node, init)['catch'](function(error){
               if (typeof location === 'undefined' || location.protocol === 'http:') {
                 return fetch("http://" + bootstrap_node, init);
               } else {
-                throw e;
+                throw error;
               }
             }).then(function(response){
               if (!response['ok']) {
@@ -849,8 +856,8 @@
               }
               this$._transport['update_peer_id'](random_id, source_id);
               connection['signal'](sdp);
-            })['catch'](function(e){
-              error_handler(e);
+            })['catch'](function(error){
+              error_handler(error);
               connection['destroy']();
             });
           })['once']('connected', function(){
@@ -1300,7 +1307,8 @@
         first_node = nodes[0];
         this._used_first_nodes.add(first_node);
         x$ = this._router['construct_routing_path'](nodes);
-        x$['catch'](function(){
+        x$['catch'](function(error){
+          error_handler(error);
           this._used_first_nodes['delete'](first_node);
         });
         return x$;
@@ -1667,6 +1675,7 @@
       },
       _peer_error: function(peer_id){
         this._dht['del_peer'](peer_id);
+        this._transport['destroy_connection'](peer_id);
       },
       _peer_warning: function(peer_id){}
     };
