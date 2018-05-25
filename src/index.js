@@ -459,7 +459,15 @@
         });
       })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
-      })['on']('peer_updated', function(peer_id, peer_peers){});
+      })['on']('peer_updated', function(peer_id, peer_peers){
+        var i$, len$, peer_peer_id;
+        for (i$ = 0, len$ = peer_peers.length; i$ < len$; ++i$) {
+          peer_peer_id = peer_peers[i$];
+          if (!this$._connected_nodes.has(peer_peer_id)) {
+            this$._aware_of_nodes.set(peer_peer_id, +new Date);
+          }
+        }
+      });
       this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], this._options['max_pending_segments'], this._options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])['on']('activity', function(node_id, route_id){
         var source_id;
         source_id = concat_arrays([node_id, route_id]);

@@ -432,7 +432,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_send_dht_command(peer_id, command, command_data)
 			)
 			.'on'('peer_updated', (peer_id, peer_peers) !~>
-				# TODO: Store peer's peers for potential future deletion and add peer's peers to aware of nodes
+				for peer_peer_id in peer_peers
+					if !@_connected_nodes.has(peer_peer_id)
+						@_aware_of_nodes.set(peer_peer_id, +(new Date))
+				# TODO: Store peer's peers for potential future deletion from aware of nodes
 			)
 		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'], @_options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])
 			.'on'('activity', (node_id, route_id) !~>
