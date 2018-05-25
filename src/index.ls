@@ -694,8 +694,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							response['writeHead'](400)
 							response['end']()
 							return
-						# TODO: Random connected node or itself
-						random_connected_node	= @_pick_random_connected_nodes(1)?[0]
+						if !@_connected_nodes.size || !random_int(0, @_connected_nodes.size)
+							random_connected_node	= null
+						else
+							random_connected_node	= @_pick_random_connected_nodes(1)?[0]
 						if random_connected_node
 							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
 							if @_waiting_for_signal.has(waiting_for_signal_key)

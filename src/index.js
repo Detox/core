@@ -729,7 +729,11 @@
               response['end']();
               return;
             }
-            random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
+            if (!this$._connected_nodes.size || !random_int(0, this$._connected_nodes.size)) {
+              random_connected_node = null;
+            } else {
+              random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
+            }
             if (random_connected_node) {
               waiting_for_signal_key = concat_arrays([source_id, random_connected_node]);
               if (this$._waiting_for_signal.has(waiting_for_signal_key)) {
