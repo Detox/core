@@ -1311,13 +1311,13 @@
        * @return {!Promise}
        */,
       _construct_routing_path: function(nodes){
-        var first_node, x$;
+        var first_node, x$, this$ = this;
         first_node = nodes[0];
         this._used_first_nodes.add(first_node);
         x$ = this._router['construct_routing_path'](nodes);
         x$['catch'](function(error){
           error_handler(error);
-          this._used_first_nodes['delete'](first_node);
+          this$._used_first_nodes['delete'](first_node);
         });
         return x$;
       }

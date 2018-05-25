@@ -1203,7 +1203,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			# Store first node as used, so that we don't use it for building other routing paths
 			@_used_first_nodes.add(first_node)
 			@_router['construct_routing_path'](nodes)
-				..catch (error) !->
+				..catch (error) !~>
 					error_handler(error)
 					@_used_first_nodes.delete(first_node)
 		/**
