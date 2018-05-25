@@ -359,6 +359,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if @_more_aware_of_nodes_needed()
 					# TODO: Think about requesting aware of nodes from peers only
 					@_get_more_nodes_from(peer_id)
+				# TODO: Limit for connected nodes, drop suspicious nodes first
 			)
 			.'on'('disconnected', (peer_id) !~>
 				@_dht['del_peer'](peer_id)
