@@ -383,7 +383,7 @@
         }
       });
       this._transport = detoxTransport['Transport'](this._dht_keypair['ed25519']['public'], ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
-        var random_connected_node;
+        var candidates_for_removal, nodes_used_in_forwarding, random_connected_node;
         this$._dht['add_peer'](peer_id);
         this$._connected_nodes.add(peer_id);
         this$._aware_of_nodes['delete'](peer_id);
@@ -396,8 +396,23 @@
           this$._get_more_nodes_from(peer_id);
         }
         if (this$._connected_nodes.size > this$._options['connected_nodes_limit']) {
-          random_connected_node = this$._pick_random_connected_nodes(1, [peer_id])[0];
-          this$._transport['destroy_connection'](peer_id);
+          candidates_for_removal = [];
+          nodes_used_in_forwarding = ArraySet();
+          this$._forwarding_mapping.forEach(function(arg$){
+            var node_id;
+            node_id = arg$[0];
+            nodes_used_in_forwarding.add(node_id);
+          });
+          console.log(nodes_used_in_forwarding.size);
+          this$._connected_nodes.forEach(function(node_id){
+            if (!(are_arrays_equal(peer_id, node_id) || this$._used_first_nodes.has(node_id) || nodes_used_in_forwarding.has(node_id))) {
+              candidates_for_removal.push(node_id);
+            }
+          });
+          if (candidates_for_removal.length) {
+            random_connected_node = pull_random_item_from_array(candidates_for_removal);
+            this$._transport['destroy_connection'](random_connected_node);
+          }
         }
       })['on']('disconnected', function(peer_id){
         this$._dht['del_peer'](peer_id);

@@ -362,10 +362,26 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if @_more_aware_of_nodes_needed()
 					# TODO: Think about requesting aware of nodes from peers only
 					@_get_more_nodes_from(peer_id)
-				# TODO: Drop suspicious and less useful nodes first
 				if @_connected_nodes.size > @_options['connected_nodes_limit']
-					random_connected_node = @_pick_random_connected_nodes(1, [peer_id])[0]
-					@_transport['destroy_connection'](peer_id)
+					# TODO: This should be greatly improved, should also take into account peer warnings
+					candidates_for_removal		= []
+					nodes_used_in_forwarding	= ArraySet()
+					@_forwarding_mapping.forEach ([node_id]) !->
+						nodes_used_in_forwarding.add(node_id)
+					console.log nodes_used_in_forwarding.size
+					@_connected_nodes.forEach (node_id) !~>
+						if !(
+							# Don't remove last added node
+							are_arrays_equal(peer_id, node_id) ||
+							# Don't remove node that act as first node in routing path
+							@_used_first_nodes.has(node_id) ||
+							# Don't remove node that is used as a middle node in someone's routing path
+							nodes_used_in_forwarding.has(node_id)
+						)
+							candidates_for_removal.push(node_id)
+					if candidates_for_removal.length
+						random_connected_node = pull_random_item_from_array(candidates_for_removal)
+						@_transport['destroy_connection'](random_connected_node)
 			)
 			.'on'('disconnected', (peer_id) !~>
 				@_dht['del_peer'](peer_id)
