@@ -47,6 +47,8 @@ const DEFAULT_TIMEOUTS			=
 	'STALE_AWARE_OF_NODE_TIMEOUT'		: 5 * 60
 	# New aware of nodes will be fetched and old refreshed each 30 seconds
 	'GET_MORE_AWARE_OF_NODES_INTERVAL'	: 30
+	# Max time in seconds allowed for routing path segment creation after which creation is considered failed
+	'ROUTING_PATH_SEGMENT_TIMEOUT'		: 10
 
 const CONNECTION_OK										= 0
 const CONNECTION_ERROR_NO_INTRODUCTION_NODES			= 1
@@ -428,7 +430,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.'on'('peer_updated', (peer_id, peer_peers) !~>
 				# TODO: Store peer's peers for potential future deletion and add peer's peers to aware of nodes
 			)
-		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'])
+		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'], @_options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= concat_arrays([node_id, route_id])
 				if !@_routing_paths.has(source_id)
@@ -637,14 +639,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_bootstrap !~>
 				# Make 3 random lookups on start in order to connect to some nodes
 				# TODO: Think about regular lookups
-				@_random_lookup()
-					.then ~>
-						@_random_lookup()
-					.then ~>
-						@_random_lookup()
-					.then ~>
-						# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
-						@'fire'('ready')
+				@_random_lookup().then ~>
+					# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
+					@'fire'('ready')
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES

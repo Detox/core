@@ -37,7 +37,8 @@
     'LAST_USED_TIMEOUT': 60,
     'ANNOUNCE_INTERVAL': 10 * 60,
     'STALE_AWARE_OF_NODE_TIMEOUT': 5 * 60,
-    'GET_MORE_AWARE_OF_NODES_INTERVAL': 30
+    'GET_MORE_AWARE_OF_NODES_INTERVAL': 30,
+    'ROUTING_PATH_SEGMENT_TIMEOUT': 10
   };
   CONNECTION_OK = 0;
   CONNECTION_ERROR_NO_INTRODUCTION_NODES = 1;
@@ -453,7 +454,7 @@
       })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
       })['on']('peer_updated', function(peer_id, peer_peers){});
-      this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], this._options['max_pending_segments'])['on']('activity', function(node_id, route_id){
+      this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], this._options['max_pending_segments'], this._options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])['on']('activity', function(node_id, route_id){
         var source_id;
         source_id = concat_arrays([node_id, route_id]);
         if (!this$._routing_paths.has(source_id)) {
@@ -675,10 +676,6 @@
       } else {
         this._bootstrap(function(){
           this$._random_lookup().then(function(){
-            return this$._random_lookup();
-          }).then(function(){
-            return this$._random_lookup();
-          }).then(function(){
             return this$['fire']('ready');
           });
         });
