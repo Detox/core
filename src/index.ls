@@ -368,7 +368,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					nodes_used_in_forwarding	= ArraySet()
 					@_forwarding_mapping.forEach ([node_id]) !->
 						nodes_used_in_forwarding.add(node_id)
-					console.log nodes_used_in_forwarding.size
 					@_connected_nodes.forEach (node_id) !~>
 						if !(
 							# Don't remove last added node

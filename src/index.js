@@ -403,7 +403,6 @@
             node_id = arg$[0];
             nodes_used_in_forwarding.add(node_id);
           });
-          console.log(nodes_used_in_forwarding.size);
           this$._connected_nodes.forEach(function(node_id){
             if (!(are_arrays_equal(peer_id, node_id) || this$._used_first_nodes.has(node_id) || nodes_used_in_forwarding.has(node_id))) {
               candidates_for_removal.push(node_id);
