@@ -424,18 +424,25 @@
       })['on']('connect_to', function(peer_peer_id, peer_id){
         return new Promise(function(resolve, reject){
           var connection;
-          connection = this$._transport['create_connection'](true, peer_peer_id);
-          if (!connection) {
-            reject();
+          if (this$._connected_nodes.has(peer_peer_id)) {
+            resolve();
             return;
           }
-          connection['on']('signal', function(sdp){
-            var signature, command_data;
-            signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-            command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
-            this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            return false;
-          })['once']('connected', function(){
+          connection = this$._transport['get_connection'](peer_peer_id);
+          if (!connection) {
+            connection = this$._transport['create_connection'](true, peer_peer_id);
+            if (!connection) {
+              reject();
+              return;
+            }
+            connection['on']('signal', function(sdp){
+              var signature, command_data;
+              signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+              command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
+              this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            });
+          }
+          connection['once']('connected', function(){
             connection['off']('disconnected', disconnected);
             resolve();
           })['once']('disconnected', disconnected);
@@ -836,7 +843,7 @@
             }).then(function(command_data){
               var ref$, source_id, target_id, sdp, signature;
               ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
-              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']))) {
+              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']) && !this$._transport['get_connection'](source_id))) {
                 throw 'Bad response';
               }
               this$._transport['update_peer_id'](random_id, source_id);
@@ -1417,17 +1424,20 @@
           if (!are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
             return;
           }
-          connection = this._transport['create_connection'](false, source_id);
+          connection = this._transport['get_connection'](source_id);
           if (!connection) {
-            return;
+            connection = this._transport['create_connection'](false, source_id);
+            if (!connection) {
+              return;
+            }
+            connection['on']('signal', function(sdp){
+              var signature, command_data;
+              signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+              command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
+              this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
+            });
           }
-          connection['on']('signal', function(sdp){
-            var signature, command_data;
-            signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-            command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
-            this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
-            return false;
-          })['signal'](sdp);
+          connection['signal'](sdp);
         }
       }
       /**

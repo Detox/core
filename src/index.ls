@@ -397,17 +397,21 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 			.'on'('connect_to', (peer_peer_id, peer_id) ~>
 				new Promise (resolve, reject) !~>
-					connection	= @_transport['create_connection'](true, peer_peer_id)
-					if !connection
-						reject()
+					if @_connected_nodes.has(peer_peer_id)
+						resolve()
 						return
-					connection
-						.'on'('signal', (sdp) ~>
+					connection	= @_transport['get_connection'](peer_peer_id)
+					if !connection
+						connection	= @_transport['create_connection'](true, peer_peer_id)
+						if !connection
+							reject()
+							return
+						connection['on']('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							false
 						)
+					connection
 						.'once'('connected', !->
 							connection['off']('disconnected', disconnected)
 							resolve()
@@ -789,7 +793,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								[source_id, target_id, sdp, signature]	= parse_signal(command_data)
 								if !(
 									detox-crypto['verify'](signature, sdp, source_id) &&
-									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public']) &&
+									!@_transport['get_connection'](source_id)
 								)
 									throw 'Bad response'
 								@_transport['update_peer_id'](random_id, source_id)
@@ -798,7 +803,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								error_handler(e)
 								connection['destroy']()
 					)
-					.'once'('connected', !->
+					.'once'('connected', !~>
 						connection['off']('disconnected', disconnected)
 						done()
 					)
@@ -1292,18 +1297,18 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					# If command doesn't target ourselves - exit
 					if !are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
 						return
-					# Otherwise create connection as responder, consume signal and send another answer signal back
-					connection	= @_transport['create_connection'](false, source_id)
+					# Otherwise consume signal
+					connection	= @_transport['get_connection'](source_id)
 					if !connection
-						return
-					connection
-						.'on'('signal', (sdp) ~>
+						connection	= @_transport['create_connection'](false, source_id)
+						if !connection
+							return
+						connection['on']('signal', (sdp) !~>
 							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							false
 						)
-						.'signal'(sdp)
+					connection['signal'](sdp)
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
