@@ -9,7 +9,7 @@
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 15;
+  NUMBER_OF_NODES = 25;
   bootstrap_ip = '127.0.0.1';
   bootstrap_address = 'localhost';
   bootstrap_port = 16882;
@@ -18,7 +18,7 @@
   application = Buffer.from('Detox test');
   lib.ready(function(){
     test('Core', function(t){
-      var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, wait_for, i$, to$;
+      var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, wait_for, options, promise, i$, to$;
       t.plan(NUMBER_OF_NODES + 10);
       generated_seed = lib.generate_seed();
       t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array');
@@ -33,6 +33,14 @@
       node_3_real_public_key = detoxCrypto.create_keypair(node_3_real_seed).ed25519['public'];
       nodes = [];
       wait_for = NUMBER_OF_NODES;
+      options = {
+        timeouts: {
+          STATE_UPDATE_INTERVAL: 1,
+          GET_MORE_AWARE_OF_NODES_INTERVAL: 1,
+          CONNECTION_TIMEOUT: 5
+        }
+      };
+      promise = Promise.resolve();
       for (i$ = 0, to$ = NUMBER_OF_NODES; i$ < to$; ++i$) {
         (fn$.call(this, i$));
       }
@@ -86,27 +94,34 @@
         }, 2000);
       }
       function fn$(i){
-        var x$, dht_seed, instance;
-        x$ = dht_seed = new Uint8Array(32);
-        x$.set([i]);
-        if (i === 0) {
-          instance = lib.Core(dht_seed, [], [], 5, 1);
-          instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address);
-        } else {
-          instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1);
-        }
-        instance.once('ready', function(){
-          t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
-          if (wait_for === NUMBER_OF_NODES - 2) {
-            t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly');
-            t.equal(instance.get_max_data_size(), Math.pow(2, 16) - 2, 'Max data size returned correctly');
-          }
-          --wait_for;
-          if (!wait_for) {
-            ready_callback();
-          }
+        promise = promise.then(function(){
+          return new Promise(function(resolve){
+            var x$, dht_seed, instance;
+            x$ = dht_seed = new Uint8Array(32);
+            x$.set([i]);
+            if (i === 0) {
+              instance = lib.Core(dht_seed, [], [], 5, 1, options);
+              instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address);
+              instance._dht._bootstrap_node = true;
+              instance._dht._dht._bootstrap_node = true;
+            } else {
+              instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1, options);
+            }
+            instance.once('ready', function(){
+              t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
+              if (wait_for === NUMBER_OF_NODES - 2) {
+                t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly');
+                t.equal(instance.get_max_data_size(), Math.pow(2, 16) - 2, 'Max data size returned correctly');
+              }
+              --wait_for;
+              if (!wait_for) {
+                ready_callback();
+              }
+            });
+            nodes.push(instance);
+            setTimeout(resolve, 1000);
+          });
         });
-        nodes.push(instance);
       }
     });
   });

@@ -7,7 +7,7 @@ detox-crypto	= require('@detox/crypto')
 lib				= require('..')
 test			= require('tape')
 
-const NUMBER_OF_NODES = 15
+const NUMBER_OF_NODES = 25
 
 bootstrap_ip		= '127.0.0.1'
 bootstrap_address	= 'localhost'
@@ -41,28 +41,39 @@ test('Core', (t) !->
 	nodes	= []
 
 	wait_for	= NUMBER_OF_NODES
+	options		=
+		timeouts	:
+			STATE_UPDATE_INTERVAL				: 1
+			GET_MORE_AWARE_OF_NODES_INTERVAL	: 1
+			CONNECTION_TIMEOUT					: 5
+	promise		= Promise.resolve()
 	for let i from 0 til NUMBER_OF_NODES
-		dht_seed	= new Uint8Array(32)
-			..set([i])
-		if i == 0
-			instance	= lib.Core(dht_seed, [], [], 5, 1) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
-			instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address)
-		else
-			instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
-		instance.once('ready', !->
-			t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES)
+		promise		:= promise.then ->
+			new Promise (resolve) !->
+				dht_seed	= new Uint8Array(32)
+					..set([i])
+				if i == 0
+					instance	= lib.Core(dht_seed, [], [], 5, 1, options) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
+					instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address)
+					instance._dht._bootstrap_node = true
+					instance._dht._dht._bootstrap_node = true
+				else
+					instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1, options) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
+				instance.once('ready', !->
+					t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES)
 
-			if wait_for == (NUMBER_OF_NODES - 2)
-				# Only check the first node after bootstrap
-				t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly')
+					if wait_for == (NUMBER_OF_NODES - 2)
+						# Only check the first node after bootstrap
+						t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly')
 
-				t.equal(instance.get_max_data_size(), 2 ** 16 - 2, 'Max data size returned correctly')
+						t.equal(instance.get_max_data_size(), 2 ** 16 - 2, 'Max data size returned correctly')
 
-			--wait_for
-			if !wait_for
-				ready_callback()
-		)
-		nodes.push(instance)
+					--wait_for
+					if !wait_for
+						ready_callback()
+				)
+				nodes.push(instance)
+				setTimeout(resolve, 1000)
 
 	!function destroy_nodes
 		console.log 'Destroying nodes...'

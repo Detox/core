@@ -357,6 +357,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if @_bootstrap_node
 					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(@_http_server_address))
 				if @_more_aware_of_nodes_needed()
+					# TODO: Think about requesting aware of nodes from peers only
 					@_get_more_nodes_from(peer_id)
 			)
 			.'on'('disconnected', (peer_id) !~>
@@ -692,6 +693,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							response['writeHead'](400)
 							response['end']()
 							return
+						# TODO: Random connected node or itself
 						random_connected_node	= @_pick_random_connected_nodes(1)?[0]
 						if random_connected_node
 							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
