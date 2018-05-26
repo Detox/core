@@ -273,7 +273,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				'max_pending_segments'				: 10
 				'aware_of_nodes_limit'				: 1000
 				'min_number_of_peers_for_ready'		: bucket_size # TODO: Use this option
-				'connected_nodes_limit'				: 100
+				'connected_nodes_limit'				: 50
 			}
 			options
 			{
@@ -1423,15 +1423,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			!~function connected (new_node_id)
 				if !are_arrays_equal(node_id, new_node_id)
 					return
-				clearTimeout(connected_timeout)
-				@_transport['off']('connected', connected)
 				@_update_connection_timeout(node_id)
 				@_transport['send'](node_id, command, command_data)
 			@_transport['on']('connected', connected)
-			connected_timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
-				@_transport['off']('connected', connected)
-			)
 			@_dht['lookup'](node_id, @_options['lookup_number'])
+				.then !~>
+					@_transport['off']('connected', connected)
+				.catch !~>
+					@_transport['off']('connected', connected)
 		/**
 		 * @param {!Uint8Array}	real_public_key
 		 * @param {!Uint8Array}	target_id

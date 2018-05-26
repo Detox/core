@@ -300,7 +300,7 @@
         'max_pending_segments': 10,
         'aware_of_nodes_limit': 1000,
         'min_number_of_peers_for_ready': bucket_size,
-        'connected_nodes_limit': 100
+        'connected_nodes_limit': 50
       }, options, {
         'timeouts': Object.assign({}, DEFAULT_TIMEOUTS, options['timeouts'] || {})
       });
@@ -1564,7 +1564,7 @@
        * @param {!Uint8Array}	command_data
        */,
       _send: function(node_id, command, command_data){
-        var connected_timeout, this$ = this;
+        var this$ = this;
         if (this._connected_nodes.has(node_id)) {
           this._update_connection_timeout(node_id);
           this._transport['send'](node_id, command, command_data);
@@ -1574,16 +1574,15 @@
           if (!are_arrays_equal(node_id, new_node_id)) {
             return;
           }
-          clearTimeout(connected_timeout);
-          this$._transport['off']('connected', connected);
           this$._update_connection_timeout(node_id);
           this$._transport['send'](node_id, command, command_data);
         }
         this._transport['on']('connected', connected);
-        connected_timeout = timeoutSet(this._options['timeouts']['CONNECTION_TIMEOUT'], function(){
+        this._dht['lookup'](node_id, this._options['lookup_number']).then(function(){
+          this$._transport['off']('connected', connected);
+        })['catch'](function(){
           this$._transport['off']('connected', connected);
         });
-        this._dht['lookup'](node_id, this._options['lookup_number']);
       }
       /**
        * @param {!Uint8Array}	real_public_key
