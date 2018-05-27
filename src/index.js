@@ -420,6 +420,7 @@
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](peer_id);
       })['on']('data', function(peer_id, command, command_data){
+        this$._update_connection_timeout(peer_id, false);
         if (command >= UNCOMPRESSED_CORE_COMMANDS_OFFSET) {
           if (this$._bootstrap_node && command !== UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE) {
             return;
@@ -1587,7 +1588,7 @@
       _send: function(node_id, command, command_data){
         var this$ = this;
         if (this._connected_nodes.has(node_id)) {
-          this._update_connection_timeout(node_id);
+          this._update_connection_timeout(node_id, true);
           this._transport['send'](node_id, command, command_data);
           return;
         }
@@ -1595,7 +1596,7 @@
           if (!are_arrays_equal(node_id, new_node_id)) {
             return;
           }
-          this$._update_connection_timeout(node_id);
+          this$._update_connection_timeout(node_id, true);
           this$._transport['send'](node_id, command, command_data);
         }
         this._transport['on']('connected', connected);
@@ -1648,9 +1649,10 @@
         return true;
       }
       /**
-       * @param {!Uint8Array} node_id
+       * @param {!Uint8Array}	node_id
+       * @param {boolean}		send
        */,
-      _update_connection_timeout: function(node_id){
+      _update_connection_timeout: function(node_id, send){
         this._connections_timeouts.set(node_id, +new Date);
       }
       /**

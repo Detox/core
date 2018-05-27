@@ -323,7 +323,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						[node_id, route_id]	= @_routing_paths.get(source_id)
 						@_unregister_routing_path(node_id, route_id)
 					@_routes_timeouts.delete(source_id)
-			# Un-tag connections that are no longer used
+			# Destroy connections that are no longer used
 			@_connections_timeouts.forEach (last_updated, node_id) !~>
 				if last_updated < unused_older_than
 					@_connections_timeouts.delete(node_id)
@@ -354,7 +354,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_more_aware_of_nodes()
 		)
 
-		@_transport	= detox-transport['Transport'](@_dht_keypair['ed25519']['public'], ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, @_options['timeouts']['CONNECTION_TIMEOUT'])
+		@_transport	= detox-transport['Transport'](
+			@_dht_keypair['ed25519']['public']
+			ice_servers
+			packets_per_second
+			UNCOMPRESSED_COMMANDS_OFFSET
+			@_options['timeouts']['CONNECTION_TIMEOUT']
+		)
 			.'on'('connected', (peer_id) !~>
 				@_dht['add_peer'](peer_id)
 				@_connected_nodes.add(peer_id)
@@ -393,6 +399,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_nodes_requested.delete(peer_id)
 			)
 			.'on'('data', (peer_id, command, command_data) !~>
+				@_update_connection_timeout(peer_id, false)
 				if command >= UNCOMPRESSED_CORE_COMMANDS_OFFSET
 					if @_bootstrap_node && command != UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
 						return
@@ -597,7 +604,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 										# TODO: Support direct connections here?
 									nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, [rendezvous_node])
 									if !nodes
-										# TODO: Retry?
 										return
 									nodes.push(rendezvous_node)
 									first_node	= nodes[0]
@@ -619,7 +625,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 											)
 										.catch (error) !~>
 											error_handler(error)
-											# TODO: Retry?
 											@_connections_in_progress.delete(full_target_id)
 											if connection_in_progress.initiator && connection_in_progress.discarded
 												@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE)
@@ -665,7 +670,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@'fire'('ready')
 		else
 			@_dht['once']('peer_updated', !~>
-				# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
 				@'fire'('ready')
 			)
 		@_do_random_lookup()
@@ -1437,13 +1441,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_send : (node_id, command, command_data) !->
 			if @_connected_nodes.has(node_id)
-				@_update_connection_timeout(node_id)
+				@_update_connection_timeout(node_id, true)
 				@_transport['send'](node_id, command, command_data)
 				return
 			!~function connected (new_node_id)
 				if !are_arrays_equal(node_id, new_node_id)
 					return
-				@_update_connection_timeout(node_id)
+				@_update_connection_timeout(node_id, true)
 				@_transport['send'](node_id, command, command_data)
 			@_transport['on']('connected', connected)
 			@_dht['lookup'](node_id, @_options['lookup_number'])
@@ -1487,10 +1491,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, empty_array)
 			true
 		/**
-		 * @param {!Uint8Array} node_id
+		 * @param {!Uint8Array}	node_id
+		 * @param {boolean}		send
 		 */
-		_update_connection_timeout : (node_id) !->
-			# TODO: Probably track incoming and outgoing requests separately so that we can drop less important connections if needed
+		_update_connection_timeout : (node_id, send) !->
+			# TODO: Check `send == true` separately from `send == false`
 			@_connections_timeouts.set(node_id, +(new Date))
 		/**
 		 * Generate message with introduction nodes that can later be published by any node connected to DHT (typically other node than this for anonymity)
