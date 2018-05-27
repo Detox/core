@@ -47,6 +47,8 @@ const DEFAULT_TIMEOUTS			=
 	'STALE_AWARE_OF_NODE_TIMEOUT'		: 5 * 60
 	# New aware of nodes will be fetched and old refreshed each 30 seconds
 	'GET_MORE_AWARE_OF_NODES_INTERVAL'	: 30
+	# Do random lookups about each 60 seconds
+	'RANDOM_LOOKUPS_INTERVAL'			: 60
 	# Max time in seconds allowed for routing path segment creation after which creation is considered failed
 	'ROUTING_PATH_SEGMENT_TIMEOUT'		: 10
 
@@ -231,6 +233,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	error_handler				= detox-utils['error_handler']
 	ArrayMap					= detox-utils['ArrayMap']
 	ArraySet					= detox-utils['ArraySet']
+	sample						= detox-utils['sample']
 	empty_array					= new Uint8Array(0)
 	null_id						= new Uint8Array(PUBLIC_KEY_LENGTH)
 	/**
@@ -591,6 +594,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@'fire'('introduction', data)
 								.then !~>
 									number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
+									if number_of_intermediate_nodes == null
+										throw 'No event handler for introduction'
 									if !number_of_intermediate_nodes
 										throw new Error('Direct connections are not yet supported')
 										# TODO: Support direct connections here?
@@ -659,17 +664,15 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
-		# TODO: This should probably be called when a lot of nodes are disconnected too, not just once during start
 		if !@_bootstrap_nodes.size
 			setTimeout !~>
 				@'fire'('ready')
 		else
-			@_bootstrap !~>
-				# Make 3 random lookups on start in order to connect to some nodes
-				# TODO: Think about regular lookups
-				@_random_lookup().then ~>
-					# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
-					@'fire'('ready')
+			@_dht['once']('peer_updated', !~>
+				# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
+				@'fire'('ready')
+			)
+			@_do_random_lookup()
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -787,13 +790,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				--waiting_for
 				if waiting_for
 					return
-				pending_update	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
-					@_bootstrap()
-				)
-				@_dht['once']('peer_updated', !~>
-					clearTimeout(pending_update)
-					callback?()
-				)
+				callback?()
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
 				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
 				connection	= @_transport['create_connection'](true, random_id)
@@ -1105,6 +1102,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_destroy_router()
 			else if @_http_server
 				@_http_server.close()
+			clearTimeout(@_random_lookup_timeout)
 			@_transport['destroy']()
 			@_dht['destroy']()
 		_destroy_router : !->
@@ -1179,8 +1177,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_pick_random_connected_nodes : (up_to_number_of_nodes = 1, exclude_nodes = []) ->
 			# TODO: Some trust model, only return trusted nodes
 			if !@_connected_nodes.size
-				# Make random lookup in order to fill DHT with known nodes
-				@_random_lookup()
 				return null
 			connected_nodes		= Array.from(@_connected_nodes.values())
 			exclude_nodes_set	= ArraySet(exclude_nodes.concat(Array.from(@_bootstrap_nodes_ids)))
@@ -1211,8 +1207,23 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				return null
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
-		_random_lookup : ->
-			@_dht['lookup'](fake_node_id(), @_options['lookup_number'])
+		_do_random_lookup : !->
+			# TODO: Selective disconnect from the network by an active attacker is dangerous
+			# Bootstrap if disconnected from the network
+			if @_dht['get_peers'].length < @_bootstrap_nodes.size && @_bootstrap_nodes.size
+				@_bootstrap !~>
+					@_do_random_lookup()
+				return
+			# Instead of fixed interval we use exponential distribution sampling
+			timeout					= sample(@_options['timeouts']['RANDOM_LOOKUPS_INTERVAL'])
+			# Start first lookup immediately
+			@_random_lookup_timeout	= timeoutSet(if @_random_lookup_timeout then timeout else 0, !~>
+				@_dht['lookup'](fake_node_id(), @_options['lookup_number'])
+					.then !~>
+						@_do_random_lookup()
+					.catch !~>
+						@_do_random_lookup()
+			)
 		/**
 		 * @param {!Array<!Uint8Array>} nodes
 		 *
@@ -1511,7 +1522,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_publish_announcement_message : (message) !->
 			real_public_key	= message.subarray(0, PUBLIC_KEY_LENGTH)
 			data			= message.subarray(PUBLIC_KEY_LENGTH)
-			@_dht['put_value'](real_public_key, data)
+			@_dht['put_value'](real_public_key, data, @_options['lookup_number'])
 		/**
 		 * Find nodes in DHT that are acting as introduction points for specified public key
 		 *
@@ -1520,7 +1531,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {!Promise} Resolves with `!Array<!Uint8Array>`
 		 */
 		_find_introduction_nodes : (target_public_key) ->
-			@_dht['get_value'](target_public_key).then (introduction_nodes_bulk) ->
+			@_dht['get_value'](target_public_key, @_options['lookup_number']).then (introduction_nodes_bulk) ->
 				if introduction_nodes_bulk.length % PUBLIC_KEY_LENGTH != 0
 					throw ''
 				introduction_nodes	= []

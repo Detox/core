@@ -110,6 +110,7 @@ Constructor for Core object, offers methods for connecting to and interacting wi
     * `ANNOUNCE_INTERVAL` (used by Core)
     * `STALE_AWARE_OF_NODE_TIMEOUT` (used by Core)
     * `GET_MORE_AWARE_OF_NODES_INTERVAL` (used by Core)
+    * `RANDOM_LOOKUPS_INTERVAL` (used by Core)
     * `ROUTING_PATH_SEGMENT_TIMEOUT` (used by Router)
   * `max_pending_segments` - how any routing segments can be in pending state per one address
   * `aware_of_nodes_limit` - how many aware of nodes should be kept in memory

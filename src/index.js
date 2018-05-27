@@ -38,6 +38,7 @@
     'ANNOUNCE_INTERVAL': 5 * 60,
     'STALE_AWARE_OF_NODE_TIMEOUT': 5 * 60,
     'GET_MORE_AWARE_OF_NODES_INTERVAL': 30,
+    'RANDOM_LOOKUPS_INTERVAL': 60,
     'ROUTING_PATH_SEGMENT_TIMEOUT': 10
   };
   CONNECTION_OK = 0;
@@ -239,7 +240,7 @@
    * @param {!Function=} fetch
    */
   function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer, fetch){
-    var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, empty_array, null_id;
+    var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, sample, empty_array, null_id;
     fetch == null && (fetch = window['fetch']);
     string2array = detoxUtils['string2array'];
     array2string = detoxUtils['array2string'];
@@ -253,6 +254,7 @@
     error_handler = detoxUtils['error_handler'];
     ArrayMap = detoxUtils['ArrayMap'];
     ArraySet = detoxUtils['ArraySet'];
+    sample = detoxUtils['sample'];
     empty_array = new Uint8Array(0);
     null_id = new Uint8Array(PUBLIC_KEY_LENGTH);
     /**
@@ -627,6 +629,9 @@
             this$['fire']('introduction', data).then(function(){
               var number_of_intermediate_nodes, nodes, first_node;
               number_of_intermediate_nodes = data['number_of_intermediate_nodes'];
+              if (number_of_intermediate_nodes === null) {
+                throw 'No event handler for introduction';
+              }
               if (!number_of_intermediate_nodes) {
                 throw new Error('Direct connections are not yet supported');
               }
@@ -706,11 +711,10 @@
           this$['fire']('ready');
         });
       } else {
-        this._bootstrap(function(){
-          this$._random_lookup().then(function(){
-            return this$['fire']('ready');
-          });
+        this._dht['once']('peer_updated', function(){
+          this$['fire']('ready');
         });
+        this._do_random_lookup();
       }
     }
     Core['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
@@ -831,20 +835,13 @@
           return;
         }
         function done(){
-          var pending_update;
           --waiting_for;
           if (waiting_for) {
             return;
           }
-          pending_update = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
-            this$._bootstrap();
-          });
-          this$._dht['once']('peer_updated', function(){
-            clearTimeout(pending_update);
-            if (typeof callback == 'function') {
-              callback();
-            }
-          });
+          if (typeof callback == 'function') {
+            callback();
+          }
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
           var random_id, connection;
@@ -1168,6 +1165,7 @@
         } else if (this._http_server) {
           this._http_server.close();
         }
+        clearTimeout(this._random_lookup_timeout);
         this._transport['destroy']();
         this._dht['destroy']();
       },
@@ -1271,7 +1269,6 @@
         up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
         exclude_nodes == null && (exclude_nodes = []);
         if (!this._connected_nodes.size) {
-          this._random_lookup();
           return null;
         }
         connected_nodes = Array.from(this._connected_nodes.values());
@@ -1319,8 +1316,22 @@
         }
         return results$;
       },
-      _random_lookup: function(){
-        return this._dht['lookup'](fake_node_id(), this._options['lookup_number']);
+      _do_random_lookup: function(){
+        var timeout, this$ = this;
+        if (this._dht['get_peers'].length < this._bootstrap_nodes.size && this._bootstrap_nodes.size) {
+          this._bootstrap(function(){
+            this$._do_random_lookup();
+          });
+          return;
+        }
+        timeout = sample(this._options['timeouts']['RANDOM_LOOKUPS_INTERVAL']);
+        this._random_lookup_timeout = timeoutSet(this._random_lookup_timeout ? timeout : 0, function(){
+          this$._dht['lookup'](fake_node_id(), this$._options['lookup_number']).then(function(){
+            this$._do_random_lookup();
+          })['catch'](function(){
+            this$._do_random_lookup();
+          });
+        });
       }
       /**
        * @param {!Array<!Uint8Array>} nodes
@@ -1674,7 +1685,7 @@
         var real_public_key, data;
         real_public_key = message.subarray(0, PUBLIC_KEY_LENGTH);
         data = message.subarray(PUBLIC_KEY_LENGTH);
-        this._dht['put_value'](real_public_key, data);
+        this._dht['put_value'](real_public_key, data, this._options['lookup_number']);
       }
       /**
        * Find nodes in DHT that are acting as introduction points for specified public key
@@ -1684,7 +1695,7 @@
        * @return {!Promise} Resolves with `!Array<!Uint8Array>`
        */,
       _find_introduction_nodes: function(target_public_key){
-        return this._dht['get_value'](target_public_key).then(function(introduction_nodes_bulk){
+        return this._dht['get_value'](target_public_key, this._options['lookup_number']).then(function(introduction_nodes_bulk){
           var introduction_nodes, i$, to$, i;
           if (introduction_nodes_bulk.length % PUBLIC_KEY_LENGTH !== 0) {
             throw '';
