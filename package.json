@@ -33,7 +33,8 @@
 		"node-fetch"             : "^2.1.2"
 	},
 	"devDependencies" : {
-		"build-gc" : "^0.1.1",
-		"tape"     : "^4.9.0"
+		"@detox/simple-peer-mock" : "github:Detox/simple-peer-mock",
+		"build-gc"                : "^0.1.1",
+		"tape"                    : "^4.9.0"
 	}
 }

@@ -5,76 +5,12 @@
  * @license 0BSD
  */
 (function(){
-  var simplePeerInstances, asyncEventer, module, original_require, detoxCrypto, lib, test, NUMBER_OF_NODES, bootstrap_ip, bootstrap_address, bootstrap_port, command, data, application;
-  simplePeerInstances = [];
-  asyncEventer = require('async-eventer');
-  function simplePeerMock(options){
-    var this$ = this;
-    if (!(this instanceof simplePeerMock)) {
-      return new simplePeerMock(options);
-    }
-    asyncEventer.call(this);
-    this._initiator = options.initiator;
-    this._own_id = simplePeerInstances.length;
-    simplePeerInstances.push(this);
-    if (options.initiator) {
-      setTimeout(function(){
-        this$.fire('signal', {
-          type: 'offer',
-          sdp: String(this$._own_id)
-        });
-      });
-    }
-  }
-  simplePeerMock.prototype = {
-    signal: function(signal){
-      if (this._initiator && signal['type'] !== 'answer') {
-        this.destroy();
-        return;
-      }
-      if (!this._initiator && signal['type'] !== 'offer') {
-        this.destroy();
-        return;
-      }
-      this._target_id = +signal['sdp'];
-      if ('_target_id' in simplePeerInstances[this._target_id]) {
-        this.fire('connect');
-        simplePeerInstances[this._target_id].fire('connect');
-      } else if (!this._initiator) {
-        this.fire('signal', {
-          type: 'answer',
-          sdp: String(this._own_id)
-        });
-      }
-    },
-    send: function(data){
-      simplePeerInstances[this._target_id].fire('data', data);
-    },
-    destroy: function(){
-      if (this._destroyed) {
-        return;
-      }
-      this._destroyed = true;
-      return this.fire('close');
-    }
-  };
-  simplePeerMock.prototype = Object.assign(Object.create(asyncEventer.prototype), simplePeerMock.prototype);
-  Object.defineProperty(simplePeerMock.prototype, 'constructor', {
-    value: simplePeerMock
-  });
-  module = require('module');
-  original_require = module.prototype.require;
-  module.prototype.require = function(module_name){
-    if (module_name === '@detox/simple-peer') {
-      return simplePeerMock;
-    } else {
-      return original_require.apply(this, arguments);
-    }
-  };
+  var detoxCrypto, lib, test, NUMBER_OF_NODES, bootstrap_ip, bootstrap_address, bootstrap_port, command, data, application;
+  require('@detox/simple-peer-mock').register();
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 80;
+  NUMBER_OF_NODES = 50;
   bootstrap_ip = '127.0.0.1';
   bootstrap_address = 'localhost';
   bootstrap_port = 16882;
@@ -106,7 +42,7 @@
           ANNOUNCE_INTERVAL: 5,
           RANDOM_LOOKUPS_INTERVAL: 100
         },
-        connected_nodes_limit: 50,
+        connected_nodes_limit: 30,
         lookup_number: 3
       };
       promise = Promise.resolve();
