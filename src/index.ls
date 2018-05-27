@@ -42,7 +42,7 @@ const DEFAULT_TIMEOUTS			=
 	# After specified number of seconds since last data sending or receiving connection or route is considered unused and can be closed
 	'LAST_USED_TIMEOUT'					: 60
 	# Re-announce each 5 minutes
-	'ANNOUNCE_INTERVAL'					: 10 * 60
+	'ANNOUNCE_INTERVAL'					: 5 * 60
 	# After 5 minutes aware of node is considered stale and needs refreshing or replacing with a new one
 	'STALE_AWARE_OF_NODE_TIMEOUT'		: 5 * 60
 	# New aware of nodes will be fetched and old refreshed each 30 seconds
@@ -291,6 +291,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_used_first_nodes			= ArraySet()
 		@_connections_in_progress	= ArrayMap()
 		@_connected_nodes			= ArraySet()
+		@_peers						= ArraySet()
 		@_waiting_for_signal		= ArrayMap()
 		@_aware_of_nodes			= ArrayMap()
 		@_get_nodes_requested		= ArraySet()
@@ -375,7 +376,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							# Don't remove node that act as first node in routing path
 							@_used_first_nodes.has(node_id) ||
 							# Don't remove node that is used as a middle node in someone's routing path
-							nodes_used_in_forwarding.has(node_id)
+							nodes_used_in_forwarding.has(node_id) ||
+							# Don't remove useful peers
+							@_peers.has(node_id)
 						)
 							candidates_for_removal.push(node_id)
 					if candidates_for_removal.length
@@ -385,6 +388,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			.'on'('disconnected', (peer_id) !~>
 				@_dht['del_peer'](peer_id)
 				@_connected_nodes.delete(peer_id)
+				@_peers.delete(peer_id)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				@_get_nodes_requested.delete(peer_id)
 			)
@@ -447,6 +451,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_send_dht_command(peer_id, command, command_data)
 			)
 			.'on'('peer_updated', (peer_id, peer_peers) !~>
+				@_peers.add(peer_id)
 				for peer_peer_id in peer_peers
 					if !@_connected_nodes.has(peer_peer_id)
 						@_aware_of_nodes.set(peer_peer_id, +(new Date))

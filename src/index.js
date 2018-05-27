@@ -35,7 +35,7 @@
   DEFAULT_TIMEOUTS = {
     'CONNECTION_TIMEOUT': 10,
     'LAST_USED_TIMEOUT': 60,
-    'ANNOUNCE_INTERVAL': 10 * 60,
+    'ANNOUNCE_INTERVAL': 5 * 60,
     'STALE_AWARE_OF_NODE_TIMEOUT': 5 * 60,
     'GET_MORE_AWARE_OF_NODES_INTERVAL': 30,
     'ROUTING_PATH_SEGMENT_TIMEOUT': 10
@@ -313,6 +313,7 @@
       this._used_first_nodes = ArraySet();
       this._connections_in_progress = ArrayMap();
       this._connected_nodes = ArraySet();
+      this._peers = ArraySet();
       this._waiting_for_signal = ArrayMap();
       this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
@@ -404,7 +405,7 @@
             nodes_used_in_forwarding.add(node_id);
           });
           this$._connected_nodes.forEach(function(node_id){
-            if (!(are_arrays_equal(peer_id, node_id) || this$._used_first_nodes.has(node_id) || nodes_used_in_forwarding.has(node_id))) {
+            if (!(are_arrays_equal(peer_id, node_id) || this$._used_first_nodes.has(node_id) || nodes_used_in_forwarding.has(node_id) || this$._peers.has(node_id))) {
               candidates_for_removal.push(node_id);
             }
           });
@@ -416,6 +417,7 @@
       })['on']('disconnected', function(peer_id){
         this$._dht['del_peer'](peer_id);
         this$._connected_nodes['delete'](peer_id);
+        this$._peers['delete'](peer_id);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         this$._get_nodes_requested['delete'](peer_id);
       })['on']('data', function(peer_id, command, command_data){
@@ -475,6 +477,7 @@
         this$._send_dht_command(peer_id, command, command_data);
       })['on']('peer_updated', function(peer_id, peer_peers){
         var i$, len$, peer_peer_id;
+        this$._peers.add(peer_id);
         for (i$ = 0, len$ = peer_peers.length; i$ < len$; ++i$) {
           peer_peer_id = peer_peers[i$];
           if (!this$._connected_nodes.has(peer_peer_id)) {
