@@ -363,9 +363,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				if @_bootstrap_node
 					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(@_http_server_address))
-				if @_more_aware_of_nodes_needed()
-					# TODO: Think about requesting aware of nodes from peers only
-					@_get_more_nodes_from(peer_id)
 				if @_connected_nodes.size > @_options['connected_nodes_limit']
 					# TODO: This should be greatly improved, should also take into account peer warnings
 					candidates_for_removal		= []

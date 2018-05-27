@@ -395,9 +395,6 @@
         if (this$._bootstrap_node) {
           this$._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(this$._http_server_address));
         }
-        if (this$._more_aware_of_nodes_needed()) {
-          this$._get_more_nodes_from(peer_id);
-        }
         if (this$._connected_nodes.size > this$._options['connected_nodes_limit']) {
           candidates_for_removal = [];
           nodes_used_in_forwarding = ArraySet();
