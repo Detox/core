@@ -533,7 +533,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						clearTimeout(connection_timeout)
 						@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
 						target_source_id	= concat_arrays([target_node_id, target_route_id])
-						# TODO: There is no cleanup for these
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
 						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
 					case ROUTING_COMMAND_INTRODUCTION
@@ -1274,6 +1273,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_used_first_nodes.delete(node_id)
 			@_routing_paths.delete(source_id)
 			@_router['destroy_routing_path'](node_id, route_id)
+			@_forwarding_mapping.delete(source_id)
 			@_pending_pings.delete(source_id)
 			@_announcements_from.forEach ([node_id, route_id, announce_interval], target_id) !~>
 				source_id_local	= concat_arrays([node_id, route_id])

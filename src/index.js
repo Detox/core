@@ -1390,6 +1390,7 @@
         this._used_first_nodes['delete'](node_id);
         this._routing_paths['delete'](source_id);
         this._router['destroy_routing_path'](node_id, route_id);
+        this._forwarding_mapping['delete'](source_id);
         this._pending_pings['delete'](source_id);
         this._announcements_from.forEach(function(arg$, target_id){
           var node_id, route_id, announce_interval, source_id_local;
