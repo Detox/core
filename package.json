@@ -28,7 +28,7 @@
 		"@detox/routing"         : "^0.3.1",
 		"@detox/transport"       : "^0.38.1",
 		"@detox/utils"           : "^1.6.0",
-		"async-eventer"          : "^1.1.5",
+		"async-eventer"          : "^1.1.7",
 		"fixed-size-multiplexer" : "^1.0.2",
 		"node-fetch"             : "^2.1.2"
 	},
