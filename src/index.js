@@ -714,8 +714,8 @@
         this._dht['once']('peer_updated', function(){
           this$['fire']('ready');
         });
-        this._do_random_lookup();
       }
+      this._do_random_lookup();
     }
     Core['CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'] = CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES;
     Core['CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
@@ -744,6 +744,7 @@
         this._http_server = require('http')['createServer'](function(request, response){
           var content_length, body;
           response['setHeader']('Access-Control-Allow-Origin', '*');
+          response['setHeader']('Connection', 'close');
           content_length = request.headers['content-length'];
           if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
             response['writeHead'](400);
@@ -854,8 +855,11 @@
             var signature, init;
             signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
             init = {
-              method: 'POST',
-              body: compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
+              'method': 'POST',
+              'headers': {
+                'Connection': 'close'
+              },
+              'body': compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
             };
             fetch("https://" + bootstrap_node, init)['catch'](function(error){
               if (typeof location === 'undefined' || location.protocol === 'http:') {
@@ -865,7 +869,7 @@
               }
             }).then(function(response){
               if (!response['ok']) {
-                throw 'Request failed';
+                throw 'Request failed, status code ' + response['status'];
               }
               return response['arrayBuffer']();
             }).then(function(buffer){
@@ -873,13 +877,15 @@
             }).then(function(command_data){
               var ref$, source_id, target_id, sdp, signature;
               ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
-              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']) && !this$._transport['get_connection'](source_id))) {
+              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']))) {
                 throw 'Bad response';
+              }
+              if (this$._transport['get_connection'](source_id)) {
+                throw 'Already connected';
               }
               this$._transport['update_peer_id'](random_id, source_id);
               connection['signal'](sdp);
             })['catch'](function(error){
-              error_handler(error);
               connection['destroy']();
             });
           })['once']('connected', function(){
@@ -1318,7 +1324,10 @@
       },
       _do_random_lookup: function(){
         var timeout, this$ = this;
-        if (this._dht['get_peers'].length < this._bootstrap_nodes.size && this._bootstrap_nodes.size) {
+        if (this._destroyed) {
+          return;
+        }
+        if (this._dht['get_peers']().length < this._bootstrap_nodes.size && this._bootstrap_nodes.size) {
           this._bootstrap(function(){
             this$._do_random_lookup();
           });

@@ -3,11 +3,69 @@
  * @author  Nazar Mokrynskyi <nazar@mokrynskyi.com>
  * @license 0BSD
  */
+simple-peer-instances	= []
+async-eventer			= require('async-eventer')
+
+!function simple-peer-mock (options)
+	if !(@ instanceof simple-peer-mock)
+		return new simple-peer-mock(options)
+	async-eventer.call(@)
+
+	@_initiator	= options.initiator
+	@_own_id	= simple-peer-instances.length
+	simple-peer-instances.push(@)
+
+	if options.initiator
+		setTimeout (!~>
+			@fire('signal', {
+				type	: 'offer'
+				sdp		: String(@_own_id)
+			})
+		)
+
+simple-peer-mock:: =
+	signal : (signal) !->
+		if @_initiator && signal['type'] != 'answer'
+			@destroy()
+			return
+		if !@_initiator && signal['type'] != 'offer'
+			@destroy()
+			return
+		@_target_id	= +signal['sdp']
+		if '_target_id' of simple-peer-instances[@_target_id]
+			@fire('connect')
+			simple-peer-instances[@_target_id].fire('connect')
+		else if !@_initiator
+			@fire('signal', {
+				type	: 'answer'
+				sdp		: String(@_own_id)
+			})
+
+	send : (data) !->
+		simple-peer-instances[@_target_id].fire('data', data)
+	destroy : ->
+		if @_destroyed
+			return
+		@_destroyed	= true
+		@fire('close')
+
+simple-peer-mock:: = Object.assign(Object.create(async-eventer::), simple-peer-mock::)
+Object.defineProperty(simple-peer-mock::, 'constructor', {value: simple-peer-mock})
+
+# This is brutal, but running full WebRTC implementation for testing purposes is not feasible
+module						= require('module')
+original_require			= module.prototype.require
+module.prototype.require	= (module_name) ->
+	if module_name == '@detox/simple-peer'
+		simple-peer-mock
+	else
+		original_require.apply(this, arguments)
+
 detox-crypto	= require('@detox/crypto')
 lib				= require('..')
 test			= require('tape')
 
-const NUMBER_OF_NODES = 25
+const NUMBER_OF_NODES = 80
 
 bootstrap_ip		= '127.0.0.1'
 bootstrap_address	= 'localhost'
@@ -22,8 +80,6 @@ application	= Buffer.from('Detox test')
 
 <-! lib.ready
 test('Core', (t) !->
-	t.plan(NUMBER_OF_NODES + 10)
-
 	generated_seed	= lib.generate_seed()
 	t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array')
 	t.equal(generated_seed.length, 32, 'Seed length is 32 bytes')
@@ -42,27 +98,32 @@ test('Core', (t) !->
 
 	wait_for	= NUMBER_OF_NODES
 	options		=
-		timeouts	:
-			STATE_UPDATE_INTERVAL				: 1
-			GET_MORE_AWARE_OF_NODES_INTERVAL	: 1
-			CONNECTION_TIMEOUT					: 5
+		timeouts				:
+			STATE_UPDATE_INTERVAL				: 2
+			GET_MORE_AWARE_OF_NODES_INTERVAL	: 2
+			ROUTING_PATH_SEGMENT_TIMEOUT		: 30
+			LAST_USED_TIMEOUT					: 15
+			ANNOUNCE_INTERVAL					: 5
+			RANDOM_LOOKUPS_INTERVAL				: 100
+		connected_nodes_limit	: 50
+		lookup_number			: 3
 	promise		= Promise.resolve()
 	for let i from 0 til NUMBER_OF_NODES
 		promise		:= promise.then ->
 			new Promise (resolve) !->
 				dht_seed	= new Uint8Array(32)
-					..set([i])
+					..set([i % 255, (i - i % 255) / 255])
 				if i == 0
-					instance	= lib.Core(dht_seed, [], [], 5, 1, options) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
+					instance	= lib.Core(dht_seed, [], [], 10, 20, Object.assign({}, options, {connected_nodes_limit : NUMBER_OF_NODES})) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
 					instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address)
 					instance._dht._bootstrap_node = true
 					instance._dht._dht._bootstrap_node = true
 				else
-					instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1, options) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
+					instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 10, 2, options) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
 				instance.once('ready', !->
 					t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES)
 
-					if wait_for == (NUMBER_OF_NODES - 2)
+					if i == 2
 						# Only check the first node after bootstrap
 						t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly')
 
@@ -73,27 +134,33 @@ test('Core', (t) !->
 						ready_callback()
 				)
 				nodes.push(instance)
-				setTimeout(resolve, 1000)
+				setTimeout(resolve, 100)
 
 	!function destroy_nodes
 		console.log 'Destroying nodes...'
 		for node in nodes
 			node.destroy()
 		console.log 'Destroyed'
+		t.end()
 
 	!function ready_callback
-		node_1	= nodes[1]
-		node_3	= nodes[3]
+		announcement_retry	= 3
+		connection_retry	= 5
+		node_1				= nodes[1]
+		node_3				= nodes[3]
 		node_1
 			.once('announced', !->
+				node_1.off('announcement_failed')
 				t.pass('Announced successfully')
 
-				node_1.once('introduction', (data) !->
+				node_1.on('introduction', (data) !->
 					t.equal(data.application.subarray(0, application.length).join(','), application.join(','), 'Correct application on introduction')
 					t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction')
 					data.number_of_intermediate_nodes	= 1
 				)
 				node_3.once('connected', (, target_id) !->
+					node_1.off('introduction')
+					node_3.off('connection_failed')
 					t.equal(target_id.join(','), node_1_real_public_key.join(','), 'Connected to intended node successfully')
 
 					node_1.once('data', (, , received_command, received_data) !->
@@ -106,20 +173,32 @@ test('Core', (t) !->
 					console.log 'Sending data...'
 					node_3.send_to(node_3_real_public_key, node_1_real_public_key, command, data)
 				)
-				node_3.once('connection_failed', (, , reason) !->
+				node_3.on('connection_failed', (, , reason) !->
+					if connection_retry
+						--connection_retry
+						console.log 'Connection failed with code ' + reason + ', retry in 5s...'
+						setTimeout (!->
+							console.log 'Connecting...'
+							node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 1)
+						), 5000
+						return
 					t.fail('Connection failed with code ' + reason)
 
 					destroy_nodes()
 				)
 
-				console.log 'Preparing for connection (5s)...'
+				console.log 'Preparing for connection (10s)...'
 				# Hack to make sure at least one announcement reaches corresponding DHT node at this point
 				setTimeout (!->
 					console.log 'Connecting...'
 					node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 1)
-				), 5000
+				), 10000
 			)
-			.once('announcement_failed', (, reason) !->
+			.on('announcement_failed', (, reason) !->
+				if announcement_retry
+					--announcement_retry
+					console.log 'Announcement failed with code ' + reason + ', retry...'
+					return
 				t.fail('Announcement failed with code ' + reason)
 
 				destroy_nodes()
@@ -128,6 +207,6 @@ test('Core', (t) !->
 		console.log 'Preparing for announcement (2s)...'
 		setTimeout (!->
 			console.log 'Announcing...'
-			node_1.announce(node_1_real_seed, 1, 1)
+			node_1.announce(node_1_real_seed, 3, 1)
 		), 2000
 )

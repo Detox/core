@@ -672,7 +672,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				# TODO: Only fire when there are at least `@_bootstrap_nodes.size` connected nodes in total, otherwise it is not secure?
 				@'fire'('ready')
 			)
-			@_do_random_lookup()
+		@_do_random_lookup()
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
 	Core.'CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
 	Core.'CONNECTION_ERROR_NO_INTRODUCTION_NODES'				= CONNECTION_ERROR_NO_INTRODUCTION_NODES
@@ -698,6 +698,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
 			@_http_server = require('http')['createServer'] (request, response) !~>
 				response['setHeader']('Access-Control-Allow-Origin', '*')
+				response['setHeader']('Connection', 'close')
 				content_length	= request.headers['content-length']
 				if !(
 					request.method == 'POST' &&
@@ -800,9 +801,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					.'on'('signal', (sdp) !~>
 						signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
 						init		=
-							method	: 'POST'
+							'method'	: 'POST'
+							'headers'	:
+								'Connection'	: 'close'
 							# TODO: When https://github.com/bitinn/node-fetch/pull/457 is merged and released, remove `.buffer` as unnecessary
-							body	: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
+							'body'		: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
+						# TODO: Abort fetch on destroying once https://github.com/bitinn/node-fetch/pull/437 is released
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
 						fetch("https://#bootstrap_node", init)
 							.catch (error) ->
@@ -812,7 +816,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									throw error
 							.then (response) ->
 								if !response['ok']
-									throw 'Request failed'
+									throw 'Request failed, status code ' + response['status']
 								response['arrayBuffer']()
 							.then (buffer) ->
 								new Uint8Array(buffer)
@@ -820,14 +824,15 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								[source_id, target_id, sdp, signature]	= parse_signal(command_data)
 								if !(
 									detox-crypto['verify'](signature, sdp, source_id) &&
-									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public']) &&
-									!@_transport['get_connection'](source_id)
+									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
 								)
 									throw 'Bad response'
+								if @_transport['get_connection'](source_id)
+									throw 'Already connected'
 								@_transport['update_peer_id'](random_id, source_id)
 								connection['signal'](sdp)
 							.catch (error) !->
-								error_handler(error)
+								# No error handing here, there might be too many network-related errors here that we can do nothing about
 								connection['destroy']()
 					)
 					.'once'('connected', !~>
@@ -1208,9 +1213,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			for i from 0 til number_of_nodes
 				pull_random_item_from_array(aware_of_nodes)
 		_do_random_lookup : !->
+			if @_destroyed
+				return
 			# TODO: Selective disconnect from the network by an active attacker is dangerous
 			# Bootstrap if disconnected from the network
-			if @_dht['get_peers'].length < @_bootstrap_nodes.size && @_bootstrap_nodes.size
+			if @_dht['get_peers']().length < @_bootstrap_nodes.size && @_bootstrap_nodes.size
 				@_bootstrap !~>
 					@_do_random_lookup()
 				return

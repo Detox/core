@@ -5,11 +5,76 @@
  * @license 0BSD
  */
 (function(){
-  var detoxCrypto, lib, test, NUMBER_OF_NODES, bootstrap_ip, bootstrap_address, bootstrap_port, command, data, application;
+  var simplePeerInstances, asyncEventer, module, original_require, detoxCrypto, lib, test, NUMBER_OF_NODES, bootstrap_ip, bootstrap_address, bootstrap_port, command, data, application;
+  simplePeerInstances = [];
+  asyncEventer = require('async-eventer');
+  function simplePeerMock(options){
+    var this$ = this;
+    if (!(this instanceof simplePeerMock)) {
+      return new simplePeerMock(options);
+    }
+    asyncEventer.call(this);
+    this._initiator = options.initiator;
+    this._own_id = simplePeerInstances.length;
+    simplePeerInstances.push(this);
+    if (options.initiator) {
+      setTimeout(function(){
+        this$.fire('signal', {
+          type: 'offer',
+          sdp: String(this$._own_id)
+        });
+      });
+    }
+  }
+  simplePeerMock.prototype = {
+    signal: function(signal){
+      if (this._initiator && signal['type'] !== 'answer') {
+        this.destroy();
+        return;
+      }
+      if (!this._initiator && signal['type'] !== 'offer') {
+        this.destroy();
+        return;
+      }
+      this._target_id = +signal['sdp'];
+      if ('_target_id' in simplePeerInstances[this._target_id]) {
+        this.fire('connect');
+        simplePeerInstances[this._target_id].fire('connect');
+      } else if (!this._initiator) {
+        this.fire('signal', {
+          type: 'answer',
+          sdp: String(this._own_id)
+        });
+      }
+    },
+    send: function(data){
+      simplePeerInstances[this._target_id].fire('data', data);
+    },
+    destroy: function(){
+      if (this._destroyed) {
+        return;
+      }
+      this._destroyed = true;
+      return this.fire('close');
+    }
+  };
+  simplePeerMock.prototype = Object.assign(Object.create(asyncEventer.prototype), simplePeerMock.prototype);
+  Object.defineProperty(simplePeerMock.prototype, 'constructor', {
+    value: simplePeerMock
+  });
+  module = require('module');
+  original_require = module.prototype.require;
+  module.prototype.require = function(module_name){
+    if (module_name === '@detox/simple-peer') {
+      return simplePeerMock;
+    } else {
+      return original_require.apply(this, arguments);
+    }
+  };
   detoxCrypto = require('@detox/crypto');
   lib = require('..');
   test = require('tape');
-  NUMBER_OF_NODES = 25;
+  NUMBER_OF_NODES = 80;
   bootstrap_ip = '127.0.0.1';
   bootstrap_address = 'localhost';
   bootstrap_port = 16882;
@@ -19,7 +84,6 @@
   lib.ready(function(){
     test('Core', function(t){
       var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, wait_for, options, promise, i$, to$;
-      t.plan(NUMBER_OF_NODES + 10);
       generated_seed = lib.generate_seed();
       t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array');
       t.equal(generated_seed.length, 32, 'Seed length is 32 bytes');
@@ -35,10 +99,15 @@
       wait_for = NUMBER_OF_NODES;
       options = {
         timeouts: {
-          STATE_UPDATE_INTERVAL: 1,
-          GET_MORE_AWARE_OF_NODES_INTERVAL: 1,
-          CONNECTION_TIMEOUT: 5
-        }
+          STATE_UPDATE_INTERVAL: 2,
+          GET_MORE_AWARE_OF_NODES_INTERVAL: 2,
+          ROUTING_PATH_SEGMENT_TIMEOUT: 30,
+          LAST_USED_TIMEOUT: 15,
+          ANNOUNCE_INTERVAL: 5,
+          RANDOM_LOOKUPS_INTERVAL: 100
+        },
+        connected_nodes_limit: 50,
+        lookup_number: 3
       };
       promise = Promise.resolve();
       for (i$ = 0, to$ = NUMBER_OF_NODES; i$ < to$; ++i$) {
@@ -52,19 +121,25 @@
           node.destroy();
         }
         console.log('Destroyed');
+        t.end();
       }
       function ready_callback(){
-        var node_1, node_3;
+        var announcement_retry, connection_retry, node_1, node_3;
+        announcement_retry = 3;
+        connection_retry = 5;
         node_1 = nodes[1];
         node_3 = nodes[3];
         node_1.once('announced', function(){
+          node_1.off('announcement_failed');
           t.pass('Announced successfully');
-          node_1.once('introduction', function(data){
+          node_1.on('introduction', function(data){
             t.equal(data.application.subarray(0, application.length).join(','), application.join(','), 'Correct application on introduction');
             t.equal(data.secret.subarray(0, node_1_secret.length).join(','), node_1_secret.join(','), 'Correct secret on introduction');
             data.number_of_intermediate_nodes = 1;
           });
           node_3.once('connected', function(arg$, target_id){
+            node_1.off('introduction');
+            node_3.off('connection_failed');
             t.equal(target_id.join(','), node_1_real_public_key.join(','), 'Connected to intended node successfully');
             node_1.once('data', function(arg$, arg1$, received_command, received_data){
               t.equal(received_command, command, 'Received command correctly');
@@ -74,23 +149,37 @@
             console.log('Sending data...');
             node_3.send_to(node_3_real_public_key, node_1_real_public_key, command, data);
           });
-          node_3.once('connection_failed', function(arg$, arg1$, reason){
+          node_3.on('connection_failed', function(arg$, arg1$, reason){
+            if (connection_retry) {
+              --connection_retry;
+              console.log('Connection failed with code ' + reason + ', retry in 5s...');
+              setTimeout(function(){
+                console.log('Connecting...');
+                node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 1);
+              }, 5000);
+              return;
+            }
             t.fail('Connection failed with code ' + reason);
             destroy_nodes();
           });
-          console.log('Preparing for connection (5s)...');
+          console.log('Preparing for connection (10s)...');
           setTimeout(function(){
             console.log('Connecting...');
             node_3.connect_to(node_3_real_seed, node_1_real_public_key, application, node_1_secret, 1);
-          }, 5000);
-        }).once('announcement_failed', function(arg$, reason){
+          }, 10000);
+        }).on('announcement_failed', function(arg$, reason){
+          if (announcement_retry) {
+            --announcement_retry;
+            console.log('Announcement failed with code ' + reason + ', retry...');
+            return;
+          }
           t.fail('Announcement failed with code ' + reason);
           destroy_nodes();
         });
         console.log('Preparing for announcement (2s)...');
         setTimeout(function(){
           console.log('Announcing...');
-          node_1.announce(node_1_real_seed, 1, 1);
+          node_1.announce(node_1_real_seed, 3, 1);
         }, 2000);
       }
       function fn$(i){
@@ -98,18 +187,20 @@
           return new Promise(function(resolve){
             var x$, dht_seed, instance;
             x$ = dht_seed = new Uint8Array(32);
-            x$.set([i]);
+            x$.set([i % 255, (i - i % 255) / 255]);
             if (i === 0) {
-              instance = lib.Core(dht_seed, [], [], 5, 1, options);
+              instance = lib.Core(dht_seed, [], [], 10, 20, Object.assign({}, options, {
+                connected_nodes_limit: NUMBER_OF_NODES
+              }));
               instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address);
               instance._dht._bootstrap_node = true;
               instance._dht._dht._bootstrap_node = true;
             } else {
-              instance = lib.Core(dht_seed, [bootstrap_node_info], [], 5, 1, options);
+              instance = lib.Core(dht_seed, [bootstrap_node_info], [], 10, 2, options);
             }
             instance.once('ready', function(){
               t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES);
-              if (wait_for === NUMBER_OF_NODES - 2) {
+              if (i === 2) {
                 t.same(instance.get_bootstrap_nodes(), [bootstrap_node_info], 'Bootstrap nodes are returned correctly');
                 t.equal(instance.get_max_data_size(), Math.pow(2, 16) - 2, 'Max data size returned correctly');
               }
@@ -119,7 +210,7 @@
               }
             });
             nodes.push(instance);
-            setTimeout(resolve, 1000);
+            setTimeout(resolve, 100);
           });
         });
       }
