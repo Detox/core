@@ -68,6 +68,25 @@ const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
 const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
 /**
+ * @param {!Uint8Array} signal
+ * @param {!Uint8Array} signature
+ *
+ * @return {!Uint8Array}
+ */
+function compose_bootstrap_response (signal, signature)
+	new Uint8Array(signal.length + SIGNATURE_LENGTH)
+		..set(signal)
+		..set(signature, signal.length)
+/**
+ * @param {!Uint8Array} data
+ *
+ * @return {!Array<!Uint8Array>} [signal, signature]
+ */
+function parse_bootstrap_response (data)
+	signal		= data.subarray(0, data.length - SIGNATURE_LENGTH)
+	signature	= data.subarray(data.length - SIGNATURE_LENGTH)
+	[signal, signature]
+/**
  * @param {!Uint8Array} source_id
  * @param {!Uint8Array} target_id
  * @param {!Uint8Array} sdp
@@ -84,7 +103,7 @@ function compose_signal (source_id, target_id, sdp, signature)
 /**
  * @param {!Uint8Array} data
  *
- * @return {!Array} [source_id, target_id, sdp, signature]
+ * @return {!Array<!Uint8Array>} [source_id, target_id, sdp, signature]
  */
 function parse_signal (data)
 	source_id	= data.subarray(0, PUBLIC_KEY_LENGTH)
@@ -221,6 +240,8 @@ function parse_introduce_to_data (message)
  * @param {!Function=} fetch
  */
 function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer, fetch = window['fetch'])
+	hex2array					= detox-utils['hex2array']
+	array2hex					= detox-utils['array2hex']
 	string2array				= detox-utils['string2array']
 	array2string				= detox-utils['array2string']
 	random_bytes				= detox-utils['random_bytes']
@@ -252,7 +273,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	 * @constructor
 	 *
 	 * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
-	 * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `address:port`
+	 * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `node_id:address:port`
 	 * @param {!Array<!Object>}	ice_servers
 	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
@@ -368,7 +389,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
 				@'fire'('connected_nodes_count', @_connected_nodes.size)
 				if @_bootstrap_node
-					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(@_http_server_address))
+					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(@_bootstrap_node))
 				if @_connected_nodes.size > @_options['connected_nodes_limit']
 					# TODO: This should be greatly improved, should also take into account peer warnings
 					candidates_for_removal		= []
@@ -690,13 +711,15 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		/**
 		 * Start HTTP server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
 		 *
-		 * @param {string}	ip
-		 * @param {number}	port
-		 * @param {string}	public_address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
-		 * @param {number}	public_port		Publicly available port on `address`
+		 * @param {!Uint8Array}	bootstrap_seed	Seed for generating bootstrap node's keypairs
+		 * @param {string}		ip
+		 * @param {number}		port
+		 * @param {string}		public_address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
+		 * @param {number}		public_port		Publicly available port on `public_address`
 		 */
-		'start_bootstrap_node' : (ip, port, public_address = ip, public_port = port) !->
-			@_http_server = require('http')['createServer'] (request, response) !~>
+		'start_bootstrap_node' : (bootstrap_seed, ip, port, public_address = ip, public_port = port) !->
+			keypair			= detox-crypto['create_keypair'](bootstrap_seed)['ed25519']
+			@_http_server	= require('http')['createServer'] (request, response) !~>
 				response['setHeader']('Access-Control-Allow-Origin', '*')
 				response['setHeader']('Connection', 'close')
 				content_length	= request.headers['content-length']
@@ -738,7 +761,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@_waiting_for_signal.set(waiting_for_signal_key, (sdp, signature, command_data) !~>
 								clearTimeout(timeout)
 								if detox-crypto['verify'](signature, sdp, random_connected_node)
-									response['write'](Buffer.from(command_data))
+									data	= compose_bootstrap_response(
+										command_data
+										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
+									)
+									response['write'](Buffer.from(data))
 									response['end']()
 								else
 									response['writeHead'](502)
@@ -757,8 +784,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								return
 							connection
 								.'once'('signal', (sdp) ~>
-									signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-									response['write'](Buffer.from(compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)))
+									signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+									command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
+									data			= compose_bootstrap_response(
+										command_data
+										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
+									)
+									response['write'](Buffer.from(data))
 									response['end']()
 									false
 								)
@@ -767,9 +799,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_http_server
 				.'on'('error', error_handler)
 				.'listen'(port, ip, !~>
-					@_http_server_address	= "#public_address:#public_port"
+					node_id				= array2hex(keypair['public'])
+					@_bootstrap_node	=  "#node_id:#public_address:#public_port"
 				)
-			@_bootstrap_node	= true
 			# Stop doing any routing tasks immediately
 			@_destroy_router()
 		/**
@@ -793,8 +825,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					return
 				callback?()
 			@_bootstrap_nodes.forEach (bootstrap_node) !~>
-				random_id	= random_bytes(PUBLIC_KEY_LENGTH)
-				connection	= @_transport['create_connection'](true, random_id)
+				bootstrap_node			= bootstrap_node.split(':')
+				bootstrap_node_id		= hex2array(bootstrap_node[0])
+				bootstrap_node_address	= bootstrap_node[1] + ':' + bootstrap_node[2]
+				random_id				= random_bytes(PUBLIC_KEY_LENGTH)
+				connection				= @_transport['create_connection'](true, random_id)
 				if !connection
 					return
 				connection
@@ -808,10 +843,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							'body'		: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
 						# TODO: Abort fetch on destroying once https://github.com/bitinn/node-fetch/pull/437 is released
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
-						fetch("https://#bootstrap_node", init)
+						fetch("https://#bootstrap_node_address", init)
 							.catch (error) ->
 								if typeof location == 'undefined' || location.protocol == 'http:'
-									fetch("http://#bootstrap_node", init)
+									fetch("http://#bootstrap_node_address", init)
 								else
 									throw error
 							.then (response) ->
@@ -820,8 +855,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								response['arrayBuffer']()
 							.then (buffer) ->
 								new Uint8Array(buffer)
-							.then (command_data) !~>
-								[source_id, target_id, sdp, signature]	= parse_signal(command_data)
+							.then (data) !~>
+								[signal, signature]						= parse_bootstrap_response(data)
+								if !detox-crypto['verify'](signature, signal, bootstrap_node_id)
+									throw 'Bad bootstrap node response'
+								[source_id, target_id, sdp, signature]	= parse_signal(signal)
 								if !(
 									detox-crypto['verify'](signature, sdp, source_id) &&
 									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
@@ -832,6 +870,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								@_transport['update_peer_id'](random_id, source_id)
 								connection['signal'](sdp)
 							.catch (error) !->
+								debugger
 								# No error handing here, there might be too many network-related errors here that we can do nothing about
 								connection['destroy']()
 					)

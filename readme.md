@@ -89,7 +89,7 @@ Generates random seed that can be later used in `detox_core.Core` constructor.
 Constructor for Core object, offers methods for connecting to and interacting with Detox network.
 
 * `dht_key_seed` - seed that corresponds to temporary user identity in DHT network
-* `bootstrap_nodes` - array of strings in format `address:port`
+* `bootstrap_nodes` - array of strings in format `node_id:address:port`
 * `ice_servers` - array of objects as in [RTCPeerConnection constructor](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/RTCPeerConnection)
 * `packets_per_second` - packets are sent at constant rate (which together with fixed packet size of 512 bytes can be used to identify bandwidth requirements for specific connection), `1` is minimal supported rate, actual rate is negotiated between 2 sides on connection
 * `bucket_size` - size of the bucket used in DHT internals (directly affects number of active WebRTC connections)
@@ -117,7 +117,12 @@ Constructor for Core object, offers methods for connecting to and interacting wi
   * `min_number_of_peers_for_ready` - how many peers should be connected in order to consider instance ready for use and fire `ready` event
   * `connected_nodes_limit` - keep total number of active connections under this number (soft limit)
 
-### detox_core.Core.start_bootstrap_node(ip : string, port : number, public_address = ip : string, public_port = port : number)
+### detox_core.Core.start_bootstrap_node(bootstrap_seed : Uint8Array, ip : string, port : number, public_address = ip : string, public_port = port : number)
+* `bootstrap_seed` - seed for generating bootstrap node's keypairs
+* `ip` - IP on which bootstrap server will be started
+* `port` - port on which bootstrap server will be started
+* `public_address` - publicly available address that will be returned to other node, typically domain name (instead of using IP)
+* `public_port` - publicly available port on `public_address`
 Start bootstrap server (HTTP) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
 
 ### detox_core.Core.get_bootstrap_nodes() : Object
@@ -128,11 +133,9 @@ Announce itself to the DHT network (without this it is still possible to interac
 
 Listen for events to identify when/if announcement succeeded.
 
-* `real_key_seed` - seed that corresponds to long-term user identity for connecting with friends
+* `real_key_seed` - seed that corresponds to long-term user identity for connecting with friends (from which bootstrap node's `node_id` is derived)
 * `number_of_introduction_nodes` - non-zero number of nodes that will act as introduction nodes
 * `number_of_intermediate_nodes` - non-zero number of intermediate nodes between this node and introduction node (not including it) used during routing path construction for anonymity
-
-Returns real public key or `null` in case of failure.
 
 ### detox_core.Core.connect_to(real_key_seed : Uint8Array, target_id : Uint8Array, application : Uint8Array, secret : Uint8Array, number_of_intermediate_nodes : number) : Uint8Array|null
 Connecting to a friend with `target_id` and `secret`.

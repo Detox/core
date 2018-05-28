@@ -54,6 +54,30 @@
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
   ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
   /**
+   * @param {!Uint8Array} signal
+   * @param {!Uint8Array} signature
+   *
+   * @return {!Uint8Array}
+   */
+  function compose_bootstrap_response(signal, signature){
+    var x$;
+    x$ = new Uint8Array(signal.length + SIGNATURE_LENGTH);
+    x$.set(signal);
+    x$.set(signature, signal.length);
+    return x$;
+  }
+  /**
+   * @param {!Uint8Array} data
+   *
+   * @return {!Array<!Uint8Array>} [signal, signature]
+   */
+  function parse_bootstrap_response(data){
+    var signal, signature;
+    signal = data.subarray(0, data.length - SIGNATURE_LENGTH);
+    signature = data.subarray(data.length - SIGNATURE_LENGTH);
+    return [signal, signature];
+  }
+  /**
    * @param {!Uint8Array} source_id
    * @param {!Uint8Array} target_id
    * @param {!Uint8Array} sdp
@@ -73,7 +97,7 @@
   /**
    * @param {!Uint8Array} data
    *
-   * @return {!Array} [source_id, target_id, sdp, signature]
+   * @return {!Array<!Uint8Array>} [source_id, target_id, sdp, signature]
    */
   function parse_signal(data){
     var source_id, target_id, sdp, signature;
@@ -240,8 +264,10 @@
    * @param {!Function=} fetch
    */
   function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer, fetch){
-    var string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, sample, empty_array, null_id;
+    var hex2array, array2hex, string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, sample, empty_array, null_id;
     fetch == null && (fetch = window['fetch']);
+    hex2array = detoxUtils['hex2array'];
+    array2hex = detoxUtils['array2hex'];
     string2array = detoxUtils['string2array'];
     array2string = detoxUtils['array2string'];
     random_bytes = detoxUtils['random_bytes'];
@@ -275,7 +301,7 @@
      * @constructor
      *
      * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
-     * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `address:port`
+     * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `node_id:address:port`
      * @param {!Array<!Object>}	ice_servers
      * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
@@ -393,7 +419,7 @@
         this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
         this$['fire']('connected_nodes_count', this$._connected_nodes.size);
         if (this$._bootstrap_node) {
-          this$._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(this$._http_server_address));
+          this$._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(this$._bootstrap_node));
         }
         if (this$._connected_nodes.size > this$._options['connected_nodes_limit']) {
           candidates_for_removal = [];
@@ -730,15 +756,17 @@
       /**
        * Start HTTP server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
        *
-       * @param {string}	ip
-       * @param {number}	port
-       * @param {string}	public_address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
-       * @param {number}	public_port		Publicly available port on `address`
+       * @param {!Uint8Array}	bootstrap_seed	Seed for generating bootstrap node's keypairs
+       * @param {string}		ip
+       * @param {number}		port
+       * @param {string}		public_address	Publicly available address that will be returned to other node, typically domain name (instead of using IP)
+       * @param {number}		public_port		Publicly available port on `public_address`
        */
-      'start_bootstrap_node': function(ip, port, public_address, public_port){
-        var this$ = this;
+      'start_bootstrap_node': function(bootstrap_seed, ip, port, public_address, public_port){
+        var keypair, this$ = this;
         public_address == null && (public_address = ip);
         public_port == null && (public_port = port);
+        keypair = detoxCrypto['create_keypair'](bootstrap_seed)['ed25519'];
         this._http_server = require('http')['createServer'](function(request, response){
           var content_length, body;
           response['setHeader']('Access-Control-Allow-Origin', '*');
@@ -776,9 +804,11 @@
               command_data = compose_signal(source_id, random_connected_node, sdp, signature);
               this$._send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
               this$._waiting_for_signal.set(waiting_for_signal_key, function(sdp, signature, command_data){
+                var data;
                 clearTimeout(timeout);
                 if (detoxCrypto['verify'](signature, sdp, random_connected_node)) {
-                  response['write'](Buffer.from(command_data));
+                  data = compose_bootstrap_response(command_data, detoxCrypto['sign'](command_data, keypair['public'], keypair['private']));
+                  response['write'](Buffer.from(data));
                   response['end']();
                 } else {
                   response['writeHead'](502);
@@ -798,9 +828,11 @@
                 return;
               }
               connection['once']('signal', function(sdp){
-                var signature;
+                var signature, command_data, data;
                 signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-                response['write'](Buffer.from(compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature)));
+                command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
+                data = compose_bootstrap_response(command_data, detoxCrypto['sign'](command_data, keypair['public'], keypair['private']));
+                response['write'](Buffer.from(data));
                 response['end']();
                 return false;
               })['signal'](sdp);
@@ -808,9 +840,10 @@
           });
         });
         this._http_server['on']('error', error_handler)['listen'](port, ip, function(){
-          this$._http_server_address = public_address + ":" + public_port;
+          var node_id;
+          node_id = array2hex(keypair['public']);
+          this$._bootstrap_node = node_id + ":" + public_address + ":" + public_port;
         });
-        this._bootstrap_node = true;
         this._destroy_router();
       }
       /**
@@ -843,7 +876,10 @@
           }
         }
         this._bootstrap_nodes.forEach(function(bootstrap_node){
-          var random_id, connection;
+          var bootstrap_node_id, bootstrap_node_address, random_id, connection;
+          bootstrap_node = bootstrap_node.split(':');
+          bootstrap_node_id = hex2array(bootstrap_node[0]);
+          bootstrap_node_address = bootstrap_node[1] + ':' + bootstrap_node[2];
           random_id = random_bytes(PUBLIC_KEY_LENGTH);
           connection = this$._transport['create_connection'](true, random_id);
           if (!connection) {
@@ -859,9 +895,9 @@
               },
               'body': compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
             };
-            fetch("https://" + bootstrap_node, init)['catch'](function(error){
+            fetch("https://" + bootstrap_node_address, init)['catch'](function(error){
               if (typeof location === 'undefined' || location.protocol === 'http:') {
-                return fetch("http://" + bootstrap_node, init);
+                return fetch("http://" + bootstrap_node_address, init);
               } else {
                 throw error;
               }
@@ -872,9 +908,13 @@
               return response['arrayBuffer']();
             }).then(function(buffer){
               return new Uint8Array(buffer);
-            }).then(function(command_data){
-              var ref$, source_id, target_id, sdp, signature;
-              ref$ = parse_signal(command_data), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
+            }).then(function(data){
+              var ref$, signal, signature, source_id, target_id, sdp;
+              ref$ = parse_bootstrap_response(data), signal = ref$[0], signature = ref$[1];
+              if (!detoxCrypto['verify'](signature, signal, bootstrap_node_id)) {
+                throw 'Bad bootstrap node response';
+              }
+              ref$ = parse_signal(signal), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
               if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']))) {
                 throw 'Bad response';
               }
@@ -884,6 +924,7 @@
               this$._transport['update_peer_id'](random_id, source_id);
               connection['signal'](sdp);
             })['catch'](function(error){
+              debugger;
               connection['destroy']();
             });
           })['once']('connected', function(){

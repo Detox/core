@@ -19,11 +19,13 @@
   application = Buffer.from('Detox test');
   lib.ready(function(){
     test('Core', function(t){
-      var generated_seed, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, wait_for, options, promise, i$, to$;
+      var generated_seed, bootstrap_node_seed, bootstrap_node_id, bootstrap_node_info, x$, node_1_real_seed, node_1_real_public_key, node_1_secret, y$, node_3_real_seed, node_3_real_public_key, nodes, wait_for, options, promise, i$, to$;
       generated_seed = lib.generate_seed();
       t.ok(generated_seed instanceof Uint8Array, 'Seed is Uint8Array');
       t.equal(generated_seed.length, 32, 'Seed length is 32 bytes');
-      bootstrap_node_info = bootstrap_address + ":" + bootstrap_port;
+      bootstrap_node_seed = new Uint8Array(32);
+      bootstrap_node_id = Buffer.from(detoxCrypto.create_keypair(bootstrap_node_seed).ed25519['public']).toString('hex');
+      bootstrap_node_info = bootstrap_node_id + ":" + bootstrap_address + ":" + bootstrap_port;
       x$ = node_1_real_seed = new Uint8Array(32);
       x$.set([1, 1]);
       node_1_real_public_key = detoxCrypto.create_keypair(node_1_real_seed).ed25519['public'];
@@ -128,7 +130,7 @@
               instance = lib.Core(dht_seed, [], [], 10, 20, Object.assign({}, options, {
                 connected_nodes_limit: NUMBER_OF_NODES
               }));
-              instance.start_bootstrap_node(bootstrap_ip, bootstrap_port, bootstrap_address);
+              instance.start_bootstrap_node(bootstrap_node_seed, bootstrap_ip, bootstrap_port, bootstrap_address);
               instance._dht._bootstrap_node = true;
               instance._dht._dht._bootstrap_node = true;
             } else {
