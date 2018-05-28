@@ -870,7 +870,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								@_transport['update_peer_id'](random_id, source_id)
 								connection['signal'](sdp)
 							.catch (error) !->
-								debugger
 								# No error handing here, there might be too many network-related errors here that we can do nothing about
 								connection['destroy']()
 					)

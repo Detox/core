@@ -924,7 +924,6 @@
               this$._transport['update_peer_id'](random_id, source_id);
               connection['signal'](sdp);
             })['catch'](function(error){
-              debugger;
               connection['destroy']();
             });
           })['once']('connected', function(){
