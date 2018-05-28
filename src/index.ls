@@ -845,7 +845,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
 						fetch("https://#bootstrap_node_address", init)
 							.catch (error) ->
-								if typeof location == 'undefined' || location.protocol == 'http:'
+								if typeof location == 'undefined' || location['protocol'] == 'http:'
 									fetch("http://#bootstrap_node_address", init)
 								else
 									throw error

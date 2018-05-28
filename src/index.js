@@ -896,7 +896,7 @@
               'body': compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
             };
             fetch("https://" + bootstrap_node_address, init)['catch'](function(error){
-              if (typeof location === 'undefined' || location.protocol === 'http:') {
+              if (typeof location === 'undefined' || location['protocol'] === 'http:') {
                 return fetch("http://" + bootstrap_node_address, init);
               } else {
                 throw error;
