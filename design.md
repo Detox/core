@@ -1,6 +1,6 @@
 # Detox design
 
-Complements specification version: 0.3.2
+Complements specification version: ?
 
 Author: Nazar Mokrynskyi
 
@@ -28,28 +28,43 @@ On the flip side it is only suitable for transferring small amounts of data and 
 ### Foundation
 Detox is based on DHT and anonymous (onion) routing that share the same encrypted data channel.
 
-DHT is based on [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is in turn based on BitTorrent DHT, make yourself familiar with BitTorrent DHT and WebTorrent DHT first as this document will not cover them.
+Transport layer in Detox is primarily based on WebRTC Data Channel, which is really the only P2P transport available in moder web browsers.
+There is only one direct connection between any 2 nodes and various types of traffic (DHT, Routing, internal commands) are multiplexed through this single connection.
+Constant bandwidth is used by each connection regardless of amount of useful data to be transferred. Data transfer rate is defined during node startup and doesn't change, cover traffic is sent when there is no useful data.
 
-DHT implementation in Detox differs from WebTorrent DHT in couple of minor ways:
-* WebRTC data channel used for DHT is shared with anonymous routing, so that single connection multiplexes all of the data transferred between 2 nodes
-* Bootstrap node in addition to IP and port is identified by its DHT public key and during connection signature is checked to ensure WebRTC connection was made to intended node
-* ID space is increased from 160 bits to 256 bits and Ed25519 public keys are used as node ID
-* SHA1 hashing function is replaced by Blake2b-256 to have the same size as ID space
+Transport layer is designed in a way that protects against analysis of the traffic between 2 nodes in terms of shape and rate of transferred data.
+
+DHT is based on [ES-DHT](https://github.com/nazar-pc/es-dht) framework, make yourself familiar with ES-DHT first as this document will not cover it.
+
+DHT implementation in Detox makes following choices on top of ES-DHT framework:
+* ID space is 256 bits
+* uses ed25519 public key as node ID in DHT
+* uses ed25519 signatures for mutable values stored in DHT and Blake2b truncated to 256 bits for immutable values
+* plugs into shared transport layer based on WebRTC
+* bootstrap nodes additionally run HTTP server alongside regular DHT operations, so that other nodes can connect to them directly on startup
+
+DHT is designed in a way that doesn't allow to choose IDs deliberately and facilitates lookups over fixed snapshot of DHT so that adversary can't generate fake nodes on the fly as lookup progresses
 
 Anonymous routing is based on [Ronion](https://github.com/nazar-pc/ronion) framework, make yourself familiar with Ronion first as this document will not cover it.
 
 Following choices were made for this particular implementation of Ronion:
 * `Noise_NK_25519_ChaChaPoly_BLAKE2b` from [Noise Protocol Framework](https://noiseprotocol.org/) is used for encryption
 * [AEZ block cipher](http://web.cs.ucdavis.edu/%7Erogaway/aez/) is used for re-wrapping
-* After routing path construction data are only transferred from initiator to responder and back, all messages from other nodes on routing path to initiator are ignored
+* after routing path construction data are only transferred from initiator to responder and back, all messages from other nodes on routing path to initiator are ignored
+* plugs into shared transport layer based on WebRTC
+
+Anonymous routing is designed in a way that doesn't reveal any information to nodes that provide routing tasks about initiator, responder or length of routing path, this way nodes that do routing tasks have only bare minimum of information they need to do what they are supposed to be doing.
 
 ### Types of key pairs
-There are 2 types of key pairs in Detox: temporary (DHT) and long-term.
+There are 3 types of independent key pairs in Detox: bootstrap node's key pair, DHT key pair and long-term key pair (zero or multiple).
 
-DHT key pair is used for DHT operation, it is typically temporary (might be permanent, but typically only for bootstrap nodes) and is not linked to long-term key pair in any way.
-Long-term key pair identifies the user across sessions, public key of this key pair is used by friends to find each other.
+Bootstrap node's key pair is only used by bootstrap nodes to sign their responses. It is fixed and never changes unless bootstrap node was compromised.
 
-System is designed in a way that DHT and long-term key pairs are independent and while exchanging data with friends, user's location is hidden and no one can link 2 key pairs together.
+DHT key pair is used for DHT operation, it is typically temporary and is used for anything besides DHT. New DHT key pair is typically re-generated on each startup.
+
+Long-term key pair identifies the user across sessions, public key of this key pair is used by friends to find each other. Bootstrap node will have no long-term key pairs and normal user can have any number of such key pairs for different purposes.
+
+System is designed in a way that all key pairs are independent and while exchanging data with friends, user's location is hidden and no one can easily link DHT and long-term key pairs together.
 
 ### Announcement to the network and discovery/connection
 In order for friends to find each other they need to know public key from long-term key pair of a friend and a secret.
