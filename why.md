@@ -10,10 +10,10 @@ This seems to be the first implementation of this kind, in contrast to Tor or Lo
 Besides obvious benefits, this also results in some drawbacks. For instance, only protocols available from user-space JavaScript in browsers like HTTP, WebSocket or WebRTC are available.
 Detox uses HTTP for connection to bootstrap nodes and WebRTC for all of its communications.
 
-### Resistance to traffic analysis (global passive adversary, GPA)
+### Resistance to traffic analysis
 Detox network forms a single-layer mesh of nodes, where some nodes are connected to some other nodes.
 Each such connection is encrypted and data are transmitted at constant rate.
-Basically, Detox takes brute force approach for protection against GPA.
+Basically, Detox takes brute force approach for protection against traffic analysis.
 
 This is an obvious benefit, since passive observer can't differentiate whether node is just connected to the network or actually talks to anyone.
 The drawback here is very limited bandwidth and potentially most of bandwidth being wasted.
@@ -22,22 +22,22 @@ Tor in comparison is vulnerable to traffic analysis, but is incomparably more ef
 Loopix with its cover traffic is also resistant to GPA.
 
 ### Initiator and responder anonymity and unobservability
-Each node in Detox network has one temporary keypair (which might be permanent for bootstrap nodes) used for interacting with other nodes on DHT level and the long-term keypair (potentially multiple or zero in case of bootstrap node) for end-to-end communications.
+Each node in Detox network has one temporary keypair used for interacting with other nodes on DHT level and the long-term keypair (potentially multiple or zero in case of bootstrap node) for end-to-end communications.
 
 Temporary keypair is independent from long-term keypair and is never used directly to announce long-term keypair, so that these keypairs can't be easily linked together and on next connection to the network temporary keypair will be different.
 
 Announcement to the network consists of building routing paths (onion route) to introduction nodes.
 
-In order to connect to responder several things are required: responder's public key and secret must be known to initiator and responder should announce itself to the network. How public key and secret are shared is out of scope of Detox network.
+In order to connect to responder several things are required: responder's public key and secret must be known to initiator and responder should announce itself to the network. How public key and secret are shared is out of scope of Detox network design and defined by applications.
 
 If public key and secret are shared in an anonymous way, responder will be anonymous not only to the network in general, but even to initiator.
 Initiator can generate a fresh long-term keypair for one conversation without announcing itself to the network, in which case they will also be anonymous not only to the network in general, but also to responder.
 
-It is inspired by Tor's hidden services, but there is nothing besides hidden services.
+It is inspired by Tor's hidden services, but there is nothing besides hidden services in Detox.
 Comparing to Loopix there are no providers, all nodes are equally participating in routing traffic for other nodes and any particular node can't know where on routing path it is located, who is initiator and who is responder.
 
 In contrast to both Tor and Loopix packets in Detox are fixed size and do not depend on the length of routing path, encryption/decryption on each segment is done using AEZ wide block cipher with no ciphertext expansion.
-Routing paths are stateful so packet doesn't contain information about next node in routing path and routing path of length 1 and 10 will look no different.
+Routing paths are stateful so packet doesn't contain information about next node in routing path and routing path of length 1 and 10 will look identically.
 
 ### Online state disclosure
 In order for responder to be able to receive incoming connections, it needs to announce itself to the network.
@@ -50,10 +50,14 @@ This is similar to the way Tor hidden services work.
 Loopix in contrast has concept of providers, so providers will know when user is online or offline, but not the other nodes in the network.
 
 ### Resistance to Eclipse attack
-Not implemented at this point, the plan is to use crypto-puzzles for temporary DHT keypairs, digital signatures and Loopix-like self-checks, so that public key can't be easily selected from desired range to isolate specific user.
+There is some minor protection against this by using ES-DHT that allows making lookups over snapshot of DHT and adversary can't generate fake nodes on the fly as lookup progresses.
+Also IDs are ed25519 public keys, so it is not possible to deliberately select specific node ID. 
+More work is needed in this direction, possibilities include the use of crypto-puzzles for temporary DHT keypairs, digital signatures and Loopix-like self-checks.
 
 ### Resistance to Sybil attacks
-Not implemented at this point, the plan is to use crypto-puzzles for temporary DHT keypairs, so that maintaining node that participates in DHT would require adaptive amount of computational resources.
+Not really implemented at this point. Current measures include identifying nodes that do not follow protocol and disconnecting from them.
+More work is needed in this direction. There are 3 main limited resources: CPU, RAM and network, that we need to balance carefully so that it is not too expensive for regular user, but would become unfeasible for an attacker.
+Possibilities include the use of crypto-puzzles for temporary DHT keypairs, so that maintaining node that participates in DHT would require adaptive amount of computational resources.
 
 ### Latency
 Connection from initiator to responder should take under one minute of time. Sending message with size that fits one packet should take around 1 second for each segment in routing path, but may depend on network congestion.
