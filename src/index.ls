@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version ? of the specification
+ * Implements version 0.4.0 of the specification
  */
 const DHT_COMMANDS_OFFSET				= 10				# 0..9 are reserved as Core commands
 const ROUTING_COMMANDS					= 20				# 10..19 are reserved as DHT commands
