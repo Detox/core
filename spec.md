@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.4.0
+Specification version: 0.4.1
 
 Author: Nazar Mokrynskyi
 
@@ -45,10 +45,10 @@ Compression process is described in section "Data channel compression" below.
 So each piece of data sent over data channel have at least 3 bytes overhead (4 bytes in case of compressed commands), if there is no useful data - empty data blocks (essentially just data length headers) are sent.
 
 Another way to split commands is by their purpose:
-* commands from range `0..9` are DHT commands
-* commands from range `10..19` are translated into compressed core commands from range `0..9`
-* command `20` is routing command
-* commands from range `21..255` are translated into uncompressed core commands from range `0..234`
+* commands from range `0..9` are DHT commands `DHT_COMMAND_*`
+* commands from range `10..19` are translated into compressed core commands `COMPRESSED_CORE_COMMAND_*` from range `0..9`
+* command `20` is routing command and is consumed by Router directly
+* commands from range `21..255` are translated into uncompressed core commands `UNCOMPRESSED_CORE_COMMAND_*` from range `0..234`
 
 These types of commands will be described in detail in corresponding sections below.
 

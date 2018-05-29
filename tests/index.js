@@ -131,8 +131,6 @@
                 connected_nodes_limit: NUMBER_OF_NODES
               }));
               instance.start_bootstrap_node(bootstrap_node_seed, bootstrap_ip, bootstrap_port, bootstrap_address);
-              instance._dht._bootstrap_node = true;
-              instance._dht._dht._bootstrap_node = true;
             } else {
               instance = lib.Core(dht_seed, [bootstrap_node_info], [], 10, 2, options);
             }

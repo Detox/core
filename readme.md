@@ -39,19 +39,20 @@ Higher level glue is used to select introduction nodes, announce them to DHT, th
 Anonymity is implemented on architecture level, but implementation is not anonymous yet.
 
 ### Robustness
-Code and its dependencies are fragile right not. Partially robustness is responsibility of the higher level consumer (for instance, there is no confirmation that data were received).
+Code and its dependencies are a still bit fragile. Partially robustness is responsibility of the higher level consumer (for instance, there is no confirmation that data were received).
 
-Robustness is not yet implemented yet (DHT implementation will be rewritten).
+Robustness is implemented on architecture level, but more work is needed to make it much more robust.
 
 ### Scalability
-Scalability is based on scalability of DHT implementation (currently [WebTorrent DHT](https://github.com/nazar-pc/webtorrent-dht), which is functionally identical to BitTorrent DHT).
+Scalability is based on scalability of DHT implementation (based on [ES-DHT](https://github.com/nazar-pc/es-dht)).
 
-Should be scalable already (WARNING: not proven yet, large-scale testing is needed, DHT implementation will be rewritten).
+Should be scalable already (WARNING: not proven yet, large-scale testing and mathematical proof is needed).
 
 ## Major open issues
 Major open issues in the order from more important to less important (the order is not strict):
 * Nodes selection for anonymous routing (will likely require DHT re-implementation)
 * Make AEZ implementation secure (timings attacks in particular)
+* Compute performance characteristics of ES-DHT
 * Conduct security audit for Ronion
 * Conduct security audit of a project as the whole
 
