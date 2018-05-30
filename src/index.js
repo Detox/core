@@ -1369,7 +1369,13 @@
         }
         if (this._dht['get_peers']().length < this._bootstrap_nodes.size && this._bootstrap_nodes.size) {
           this._bootstrap(function(){
-            this$._do_random_lookup();
+            if (this$._dht['get_peers']().length) {
+              this$._do_random_lookup();
+            } else {
+              timeoutSet(1, function(){
+                this$._do_random_lookup();
+              });
+            }
           });
           return;
         }

@@ -1260,7 +1260,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			# Bootstrap if disconnected from the network
 			if @_dht['get_peers']().length < @_bootstrap_nodes.size && @_bootstrap_nodes.size
 				@_bootstrap !~>
-					@_do_random_lookup()
+					if @_dht['get_peers']().length
+						@_do_random_lookup()
+					else
+						timeoutSet(1, !~>
+							@_do_random_lookup()
+						)
 				return
 			# Instead of fixed interval we use exponential distribution sampling
 			timeout					= sample(@_options['timeouts']['RANDOM_LOOKUPS_INTERVAL'])
