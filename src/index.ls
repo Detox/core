@@ -367,10 +367,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					if last_announcement < reannounce_if_older_than
 						@_announce(real_public_key)
 				announced_to.forEach (introduction_node) !~>
-					full_introduction_node_id	= concat_arrays([real_public_key, introduction_node])
+					full_introduction_node_id	= concat_arrays(real_public_key, introduction_node)
 					[node_id, route_id]			= @_id_to_routing_path.get(full_introduction_node_id)
 					if @_send_ping(node_id, route_id)
-						source_id	= concat_arrays([node_id, route_id])
+						source_id	= concat_arrays(node_id, route_id)
 						@_pending_pings.add(source_id)
 		)
 		@_get_more_nodes_interval		= intervalSet(@_options['timeouts']['GET_MORE_AWARE_OF_NODES_INTERVAL'], !~>
@@ -490,7 +490,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'], @_options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])
 			.'on'('activity', (node_id, route_id) !~>
-				source_id	= concat_arrays([node_id, route_id])
+				source_id	= concat_arrays(node_id, route_id)
 				if !@_routing_paths.has(source_id)
 					@_routing_paths.set(source_id, [node_id, route_id])
 				@_routes_timeouts.set(source_id, +(new Date))
@@ -499,7 +499,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_send_routing_command(node_id, data)
 			)
 			.'on'('data', (node_id, route_id, command, data) !~>
-				source_id	= concat_arrays([node_id, route_id])
+				source_id	= concat_arrays(node_id, route_id)
 				switch command
 					case ROUTING_COMMAND_ANNOUNCE
 						public_key	= @_verify_announcement_message(data)
@@ -560,7 +560,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						@_pending_connections.delete(rendezvous_token)
 						clearTimeout(connection_timeout)
 						@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_CONNECTED, data)
-						target_source_id	= concat_arrays([target_node_id, target_route_id])
+						target_source_id	= concat_arrays(target_node_id, target_route_id)
 						@_forwarding_mapping.set(source_id, [target_node_id, target_route_id])
 						@_forwarding_mapping.set(target_source_id, [node_id, route_id])
 					case ROUTING_COMMAND_INTRODUCTION
@@ -586,10 +586,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								application
 								secret
 							]								= parse_introduction_payload(introduction_payload)
-							for_signature					= concat_arrays([introduction_node, introduction_payload])
+							for_signature					= concat_arrays(introduction_node, introduction_payload)
 							if !detox-crypto['verify'](signature, for_signature, target_id)
 								return
-							full_target_id	= concat_arrays([real_public_key, target_id])
+							full_target_id	= concat_arrays(real_public_key, target_id)
 							if @_id_to_routing_path.has(full_target_id)
 								# If already have connection to this node - silently ignore:
 								# might be a tricky attack when DHT public key is the same as real public key
@@ -665,7 +665,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_DATA, data)
 						else if @_routing_path_to_id.has(source_id)
 							[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
-							full_target_id					= concat_arrays([real_public_key, target_id])
+							full_target_id					= concat_arrays(real_public_key, target_id)
 							encryptor_instance				= @_encryptor_instances.get(full_target_id)
 							if !encryptor_instance
 								return
@@ -754,7 +754,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						else
 							random_connected_node	= @_pick_random_connected_nodes(1)?[0]
 						if random_connected_node
-							waiting_for_signal_key	= concat_arrays([source_id, random_connected_node])
+							waiting_for_signal_key	= concat_arrays(source_id, random_connected_node)
 							if @_waiting_for_signal.has(waiting_for_signal_key)
 								response['writeHead'](503)
 								response['end']()
@@ -993,7 +993,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			# Don't connect to itself
 			if are_arrays_equal(real_public_key, target_id)
 				return null
-			full_target_id	= concat_arrays([real_public_key, target_id])
+			full_target_id	= concat_arrays(real_public_key, target_id)
 			# Don't initiate 2 concurrent connections to the same node, it will not end up well
 			if @_connections_in_progress.has(full_target_id)
 				return real_public_key
@@ -1056,9 +1056,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								application
 								secret
 							)
-							for_signature					= concat_arrays([introduction_node, introduction_payload])
+							for_signature					= concat_arrays(introduction_node, introduction_payload)
 							signature						= detox-crypto['sign'](for_signature, real_public_key, real_keypair['ed25519']['private'])
-							introduction_message			= concat_arrays([signature, introduction_payload])
+							introduction_message			= concat_arrays(signature, introduction_payload)
 							introduction_message_encrypted	= detox-crypto['one_way_encrypt'](x25519_public_key, introduction_message)
 							!~function path_confirmation (new_node_id, new_route_id, command, data)
 								if !(
@@ -1115,14 +1115,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		'send_to' : (real_public_key, target_id, command, data) !->
 			if @_bootstrap_node
 				return
-			full_target_id		= concat_arrays([real_public_key, target_id])
+			full_target_id		= concat_arrays(real_public_key, target_id)
 			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if !encryptor_instance || data.length > @_max_data_size
 				return
 			multiplexer			= @_multiplexers.get(full_target_id)
 			if !multiplexer
 				return
-			data_with_header	= concat_arrays([[command], data])
+			data_with_header	= concat_arrays([command], data)
 			multiplexer['feed'](data_with_header)
 			if @_pending_sending.has(full_target_id)
 				# Timer is already in progress
@@ -1292,11 +1292,11 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array} route_id		ID of the route on `node_id`
 		 */
 		_register_routing_path : (real_public_key, target_id, node_id, route_id) !->
-			source_id	= concat_arrays([node_id, route_id])
+			source_id	= concat_arrays(node_id, route_id)
 			if @_routing_path_to_id.has(source_id)
 				# Something went wrong, ignore
 				return
-			full_target_id	= concat_arrays([real_public_key, target_id])
+			full_target_id	= concat_arrays(real_public_key, target_id)
 			@_id_to_routing_path.set(full_target_id, [node_id, route_id])
 			@_routing_path_to_id.set(source_id, [real_public_key, target_id])
 			# Make sure each chunk after encryption will fit perfectly into DHT packet
@@ -1309,7 +1309,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array} route_id	ID of the route on `node_id`
 		 */
 		_unregister_routing_path : (node_id, route_id) !->
-			source_id	= concat_arrays([node_id, route_id])
+			source_id	= concat_arrays(node_id, route_id)
 			if !@_routing_paths.has(source_id)
 				return
 			@_used_first_nodes.delete(node_id)
@@ -1318,7 +1318,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_forwarding_mapping.delete(source_id)
 			@_pending_pings.delete(source_id)
 			@_announcements_from.forEach ([node_id, route_id, announce_interval], target_id) !~>
-				source_id_local	= concat_arrays([node_id, route_id])
+				source_id_local	= concat_arrays(node_id, route_id)
 				if !are_arrays_equal(source_id, source_id_local)
 					return
 				clearInterval(announce_interval)
@@ -1326,7 +1326,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			if !@_routing_path_to_id.has(source_id)
 				return
 			[real_public_key, target_id]	= @_routing_path_to_id.get(source_id)
-			full_target_id					= concat_arrays([real_public_key, target_id])
+			full_target_id					= concat_arrays(real_public_key, target_id)
 			@_routing_path_to_id.delete(source_id)
 			@_id_to_routing_path.delete(full_target_id)
 			if @_pending_sending.has(full_target_id)
@@ -1348,7 +1348,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
 		 */
 		_register_application_connection : (real_public_key, target_id) !->
-			full_target_id	= concat_arrays([real_public_key, target_id])
+			full_target_id	= concat_arrays(real_public_key, target_id)
 			@_application_connections.add(full_target_id)
 			@'fire'('connected', real_public_key, target_id)
 			@'fire'('application_connections_count', @_application_connections.size)
@@ -1357,7 +1357,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
 		 */
 		_unregister_application_connection : (real_public_key, target_id) !->
-			full_target_id	= concat_arrays([real_public_key, target_id])
+			full_target_id	= concat_arrays(real_public_key, target_id)
 			if @_application_connections.has(full_target_id)
 				@_application_connections.delete(full_target_id)
 				@'fire'('disconnected', real_public_key, target_id)
@@ -1375,7 +1375,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						@_peer_error(peer_id)
 						return
 					# If we are waiting for command - consume with callback
-					waiting_for_signal_key		= concat_arrays([target_id, source_id])
+					waiting_for_signal_key		= concat_arrays(target_id, source_id)
 					waiting_for_signal_callback	= @_waiting_for_signal.get(waiting_for_signal_key)
 					if waiting_for_signal_callback
 						@_waiting_for_signal.delete(waiting_for_signal_key)
@@ -1503,7 +1503,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array}	data
 		 */
 		_send_to_routing_node : (real_public_key, target_id, command, data) !->
-			full_target_id	= concat_arrays([real_public_key, target_id])
+			full_target_id	= concat_arrays(real_public_key, target_id)
 			if !@_id_to_routing_path.has(full_target_id)
 				return
 			[node_id, route_id] = @_id_to_routing_path.get(full_target_id)
@@ -1526,7 +1526,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {boolean} `true` if ping was sent (not necessary delivered)
 		 */
 		_send_ping : (node_id, route_id) ->
-			source_id	= concat_arrays([node_id, route_id])
+			source_id	= concat_arrays(node_id, route_id)
 			if @_pending_pings.has(source_id) || !@_routing_paths.has(source_id)
 				return false
 			@_send_to_routing_path(node_id, route_id, ROUTING_COMMAND_PING, empty_array)
