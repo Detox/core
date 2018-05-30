@@ -23,11 +23,11 @@
 		"test" : "tape tests/**/*.js"
 	},
 	"dependencies"    : {
-		"@detox/crypto"          : "^0.7.0",
+		"@detox/crypto"          : "^0.7.1",
 		"@detox/dht"             : "^0.16.9",
 		"@detox/routing"         : "^0.3.1",
 		"@detox/transport"       : "^0.38.1",
-		"@detox/utils"           : "^1.6.0",
+		"@detox/utils"           : "^1.9.0",
 		"async-eventer"          : "^1.1.7",
 		"fixed-size-multiplexer" : "^1.0.2",
 		"node-fetch"             : "^2.1.2"
