@@ -3,7 +3,7 @@ Core library of Detox project that provides high-level APIs used when building e
 
 This repository contains high level design overview ([design.md](https://github.com/Detox/core/blob/master/design.md)), specification for implementors ([spec.md](https://github.com/Detox/core/blob/master/spec.md)) and reference implementation.
 
-Essentially glues `@detox/crypto` and `@detox/transport` together and provides very simple API for connecting to and interacting with Detox network.
+Essentially glues `@detox/crypto`, `@detox/transport`, `@detox/dht` and `@detox/routing` together and provides very simple API for connecting to and interacting with Detox network.
 
 WARNING: INSECURE UNTIL PROVEN THE OPPOSITE!!!
 
