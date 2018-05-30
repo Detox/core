@@ -272,24 +272,24 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	/**
 	 * @constructor
 	 *
-	 * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
-	 * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `node_id:address:port`
+	 * @param {!Array<string>}	bootstrap_nodes		Array of strings in format `node_id:address:port`
 	 * @param {!Array<!Object>}	ice_servers
-	 * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
+	 * @param {number}			packets_per_second	Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
 	 * @param {number}			bucket_size
-	 * @param {Object=}			options					More options that are less frequently used
+	 * @param {Object=}			options				More options that are less frequently used
 	 *
 	 * @return {!Core}
 	 *
 	 * @throws {Error}
 	 */
-	!function Core (dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, options = {})
+	!function Core (bootstrap_nodes, ice_servers, packets_per_second = 1, bucket_size = 2, options = {})
 		if !(@ instanceof Core)
-			return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options)
+			return new Core(bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options)
 		async-eventer.call(@)
 
-		@_options	= Object.assign(
+		@_options					= Object.assign(
 			{
+				'dht_keypair_seed'					: null
 				'state_history_size'				: 1000
 				'values_cache_size'					: 1000
 				'fraction_of_nodes_from_same_peer'	: 0.2
@@ -306,7 +306,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		)
 
 		@_real_keypairs				= ArrayMap()
-		@_dht_keypair				= create_keypair(dht_key_seed)
+		@_dht_keypair				= create_keypair(@_options['dht_key_seed'])
+		# Convenient shortcuts
+		@_dht_public_key			= @_dht_keypair['ed25519']['public']
+		@_dht_private_key			= @_dht_keypair['ed25519']['private']
 		@_max_data_size				= detox-transport['MAX_DATA_SIZE']
 		@_max_compressed_data_size	= detox-transport['MAX_COMPRESSED_DATA_SIZE']
 
@@ -376,7 +379,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		)
 
 		@_transport	= detox-transport['Transport'](
-			@_dht_keypair['ed25519']['public']
+			@_dht_public_key
 			ice_servers
 			packets_per_second
 			UNCOMPRESSED_COMMANDS_OFFSET
@@ -437,7 +440,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					@_handle_compressed_core_command(peer_id, command, command_data)
 			)
 		@_dht		= detox-dht['DHT'](
-			@_dht_keypair['ed25519']['public']
+			@_dht_public_key
 			bucket_size
 			@_options['state_history_size']
 			@_options['values_cache_size']
@@ -462,8 +465,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							reject()
 							return
 						connection['on']('signal', (sdp) !~>
-							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature)
+							signature		= detox-crypto['sign'](sdp, @_dht_public_key, @_dht_private_key)
+							command_data	= compose_signal(@_dht_public_key, peer_peer_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						)
 					connection
@@ -784,8 +787,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								return
 							connection
 								.'once'('signal', (sdp) ~>
-									signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-									command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
+									signature		= detox-crypto['sign'](sdp, @_dht_public_key, @_dht_private_key)
+									command_data	= compose_signal(@_dht_public_key, source_id, sdp, signature)
 									data			= compose_bootstrap_response(
 										command_data
 										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
@@ -834,13 +837,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					return
 				connection
 					.'on'('signal', (sdp) !~>
-						signature	= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
+						signature	= detox-crypto['sign'](sdp, @_dht_public_key, @_dht_private_key)
 						init		=
 							'method'	: 'POST'
 							'headers'	:
 								'Connection'	: 'close'
 							# TODO: When https://github.com/bitinn/node-fetch/pull/457 is merged and released, remove `.buffer` as unnecessary
-							'body'		: compose_signal(@_dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
+							'body'		: compose_signal(@_dht_public_key, null_id, sdp, signature).buffer
 						# TODO: Abort fetch on destroying once https://github.com/bitinn/node-fetch/pull/437 is released
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
 						fetch("https://#bootstrap_node_address", init)
@@ -862,7 +865,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 								[source_id, target_id, sdp, signature]	= parse_signal(signal)
 								if !(
 									detox-crypto['verify'](signature, sdp, source_id) &&
-									are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+									are_arrays_equal(target_id, @_dht_public_key)
 								)
 									throw 'Bad response'
 								if @_transport['get_connection'](source_id)
@@ -1383,7 +1386,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						@_send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						return
 					# If command doesn't target ourselves - exit
-					if !are_arrays_equal(target_id, @_dht_keypair['ed25519']['public'])
+					if !are_arrays_equal(target_id, @_dht_public_key)
 						return
 					# Otherwise consume signal
 					connection	= @_transport['get_connection'](source_id)
@@ -1392,8 +1395,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						if !connection
 							return
 						connection['on']('signal', (sdp) !~>
-							signature		= detox-crypto['sign'](sdp, @_dht_keypair['ed25519']['public'], @_dht_keypair['ed25519']['private'])
-							command_data	= compose_signal(@_dht_keypair['ed25519']['public'], source_id, sdp, signature)
+							signature		= detox-crypto['sign'](sdp, @_dht_public_key, @_dht_private_key)
+							command_data	= compose_signal(@_dht_public_key, source_id, sdp, signature)
 							@_send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						)
 					connection['signal'](sdp)
@@ -1428,7 +1431,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						new_node_id	= command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH)
 						# Ignore already connected nodes and own ID or if there are enough nodes already
 						if (
-							are_arrays_equal(new_node_id, @_dht_keypair['ed25519']['public']) ||
+							are_arrays_equal(new_node_id, @_dht_public_key) ||
 							@_connected_nodes.has(new_node_id)
 						)
 							continue

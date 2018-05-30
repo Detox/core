@@ -60,10 +60,10 @@ test('Core', (t) !->
 				dht_seed	= new Uint8Array(32)
 					..set([i % 255, (i - i % 255) / 255])
 				if i == 0
-					instance	= lib.Core(dht_seed, [], [], 10, 20, Object.assign({}, options, {connected_nodes_limit : NUMBER_OF_NODES})) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
+					instance	= lib.Core([], [], 10, 20, Object.assign({}, options, {dht_keypair_seed : dht_seed, connected_nodes_limit : NUMBER_OF_NODES})) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
 					instance.start_bootstrap_node(bootstrap_node_seed, bootstrap_ip, bootstrap_port, bootstrap_address)
 				else
-					instance	= lib.Core(dht_seed, [bootstrap_node_info], [], 10, 2, options) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
+					instance	= lib.Core([bootstrap_node_info], [], 10, 2, Object.assign({dht_keypair_seed : dht_seed}, options)) # K=1 is not realistic, but we can't run large enough network within the same process for testing purposes:(
 				instance.once('ready', !->
 					t.pass('Node ' + i + ' is ready, #' + (NUMBER_OF_NODES - wait_for + 1) + '/' + NUMBER_OF_NODES)
 

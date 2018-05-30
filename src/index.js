@@ -300,27 +300,27 @@
     /**
      * @constructor
      *
-     * @param {!Uint8Array}		dht_key_seed			Seed used to generate temporary DHT keypair
-     * @param {!Array<string>}	bootstrap_nodes			Array of strings in format `node_id:address:port`
+     * @param {!Array<string>}	bootstrap_nodes		Array of strings in format `node_id:address:port`
      * @param {!Array<!Object>}	ice_servers
-     * @param {number}			packets_per_second		Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
+     * @param {number}			packets_per_second	Each packet send in each direction has exactly the same size and packets are sent at fixed rate (>= 1)
      * @param {number}			bucket_size
-     * @param {Object=}			options					More options that are less frequently used
+     * @param {Object=}			options				More options that are less frequently used
      *
      * @return {!Core}
      *
      * @throws {Error}
      */
-    function Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options){
+    function Core(bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options){
       var this$ = this;
       packets_per_second == null && (packets_per_second = 1);
       bucket_size == null && (bucket_size = 2);
       options == null && (options = {});
       if (!(this instanceof Core)) {
-        return new Core(dht_key_seed, bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options);
+        return new Core(bootstrap_nodes, ice_servers, packets_per_second, bucket_size, options);
       }
       asyncEventer.call(this);
       this._options = Object.assign({
+        'dht_keypair_seed': null,
         'state_history_size': 1000,
         'values_cache_size': 1000,
         'fraction_of_nodes_from_same_peer': 0.2,
@@ -333,7 +333,9 @@
         'timeouts': Object.assign({}, DEFAULT_TIMEOUTS, options['timeouts'] || {})
       });
       this._real_keypairs = ArrayMap();
-      this._dht_keypair = create_keypair(dht_key_seed);
+      this._dht_keypair = create_keypair(this._options['dht_key_seed']);
+      this._dht_public_key = this._dht_keypair['ed25519']['public'];
+      this._dht_private_key = this._dht_keypair['ed25519']['private'];
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._max_compressed_data_size = detoxTransport['MAX_COMPRESSED_DATA_SIZE'];
       this._bootstrap_nodes = new Set(bootstrap_nodes);
@@ -411,7 +413,7 @@
           this$._get_more_aware_of_nodes();
         }
       });
-      this._transport = detoxTransport['Transport'](this._dht_keypair['ed25519']['public'], ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
+      this._transport = detoxTransport['Transport'](this._dht_public_key, ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
         var candidates_for_removal, nodes_used_in_forwarding, random_connected_node;
         this$._dht['add_peer'](peer_id);
         this$._connected_nodes.add(peer_id);
@@ -466,7 +468,7 @@
           this$._handle_compressed_core_command(peer_id, command, command_data);
         }
       });
-      this._dht = detoxDht['DHT'](this._dht_keypair['ed25519']['public'], bucket_size, this._options['state_history_size'], this._options['values_cache_size'], this._options['fraction_of_nodes_from_same_peer'], this._options['timeouts'])['on']('peer_error', function(peer_id){
+      this._dht = detoxDht['DHT'](this._dht_public_key, bucket_size, this._options['state_history_size'], this._options['values_cache_size'], this._options['fraction_of_nodes_from_same_peer'], this._options['timeouts'])['on']('peer_error', function(peer_id){
         this$._peer_error(peer_id);
       })['on']('peer_warning', function(peer_id){
         this$._peer_warning(peer_id);
@@ -486,8 +488,8 @@
             }
             connection['on']('signal', function(sdp){
               var signature, command_data;
-              signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-              command_data = compose_signal(this$._dht_keypair['ed25519']['public'], peer_peer_id, sdp, signature);
+              signature = detoxCrypto['sign'](sdp, this$._dht_public_key, this$._dht_private_key);
+              command_data = compose_signal(this$._dht_public_key, peer_peer_id, sdp, signature);
               this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             });
           }
@@ -829,8 +831,8 @@
               }
               connection['once']('signal', function(sdp){
                 var signature, command_data, data;
-                signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-                command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
+                signature = detoxCrypto['sign'](sdp, this$._dht_public_key, this$._dht_private_key);
+                command_data = compose_signal(this$._dht_public_key, source_id, sdp, signature);
                 data = compose_bootstrap_response(command_data, detoxCrypto['sign'](command_data, keypair['public'], keypair['private']));
                 response['write'](Buffer.from(data));
                 response['end']();
@@ -887,13 +889,13 @@
           }
           connection['on']('signal', function(sdp){
             var signature, init;
-            signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
+            signature = detoxCrypto['sign'](sdp, this$._dht_public_key, this$._dht_private_key);
             init = {
               'method': 'POST',
               'headers': {
                 'Connection': 'close'
               },
-              'body': compose_signal(this$._dht_keypair['ed25519']['public'], null_id, sdp, signature).buffer
+              'body': compose_signal(this$._dht_public_key, null_id, sdp, signature).buffer
             };
             fetch("https://" + bootstrap_node_address, init)['catch'](function(error){
               if (typeof location === 'undefined' || location['protocol'] === 'http:') {
@@ -915,7 +917,7 @@
                 throw 'Bad bootstrap node response';
               }
               ref$ = parse_signal(signal), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
-              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_keypair['ed25519']['public']))) {
+              if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, this$._dht_public_key))) {
                 throw 'Bad response';
               }
               if (this$._transport['get_connection'](source_id)) {
@@ -1514,7 +1516,7 @@
             this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             return;
           }
-          if (!are_arrays_equal(target_id, this._dht_keypair['ed25519']['public'])) {
+          if (!are_arrays_equal(target_id, this._dht_public_key)) {
             return;
           }
           connection = this._transport['get_connection'](source_id);
@@ -1525,8 +1527,8 @@
             }
             connection['on']('signal', function(sdp){
               var signature, command_data;
-              signature = detoxCrypto['sign'](sdp, this$._dht_keypair['ed25519']['public'], this$._dht_keypair['ed25519']['private']);
-              command_data = compose_signal(this$._dht_keypair['ed25519']['public'], source_id, sdp, signature);
+              signature = detoxCrypto['sign'](sdp, this$._dht_public_key, this$._dht_private_key);
+              command_data = compose_signal(this$._dht_public_key, source_id, sdp, signature);
               this$._send_compressed_core_command(peer_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             });
           }
@@ -1568,7 +1570,7 @@
           for (i$ = 0; i$ < number_of_nodes; ++i$) {
             i = i$;
             new_node_id = command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH);
-            if (are_arrays_equal(new_node_id, this._dht_keypair['ed25519']['public']) || this._connected_nodes.has(new_node_id)) {
+            if (are_arrays_equal(new_node_id, this._dht_public_key) || this._connected_nodes.has(new_node_id)) {
               continue;
             }
             if (this._aware_of_nodes.has(new_node_id) || this._aware_of_nodes.size < this._options['aware_of_nodes_limit']) {
