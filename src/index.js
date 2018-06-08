@@ -1014,6 +1014,7 @@
           nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
           if (!nodes) {
             this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
+            announced();
             return;
           }
           nodes.push(introduction_node);
