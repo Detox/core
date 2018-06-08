@@ -725,16 +725,28 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			@_http_server	= require('http')['createServer'] (request, response) !~>
 				response['setHeader']('Access-Control-Allow-Origin', '*')
 				response['setHeader']('Connection', 'close')
+				/**
+				 * @param {number}		status
+				 * @param {!Uint8Array}	data
+				 */
+				!function exit (status, data)
+					if closed
+						return
+					response['writeHead'](status)
+					if data
+						response['write'](Buffer.from(data))
+					response['end']()
 				content_length	= request.headers['content-length']
 				if !(
 					request.method == 'POST' &&
 					content_length &&
 					content_length <= @_max_compressed_data_size
 				)
-					response['writeHead'](400)
-					response['end']()
+					exit(400)
 					return
 				body	= []
+				closed	= false
+				var timeout
 				request
 					.'on'('data', (chunk) !->
 						body.push(chunk)
@@ -746,8 +758,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							detox-crypto['verify'](signature, sdp, source_id) &&
 							are_arrays_equal(target_id, null_id)
 						)
-							response['writeHead'](400)
-							response['end']()
+							exit(400)
 							return
 						if !@_connected_nodes.size || !random_int(0, @_connected_nodes.size)
 							random_connected_node	= null
@@ -756,8 +767,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						if random_connected_node
 							waiting_for_signal_key	= concat_arrays(source_id, random_connected_node)
 							if @_waiting_for_signal.has(waiting_for_signal_key)
-								response['writeHead'](503)
-								response['end']()
+								exit(503)
 								return
 							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
 							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
@@ -768,22 +778,18 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 										command_data
 										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
 									)
-									response['write'](Buffer.from(data))
-									response['end']()
+									exit(200, Buffer.from(data))
 								else
-									response['writeHead'](502)
-									response['end']()
+									exit(502)
 							)
-							timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
+							timeout	:= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 								@_waiting_for_signal.delete(waiting_for_signal_key)
-								response['writeHead'](504)
-								response['end']()
+								exit(504)
 							)
 						else
 							connection	= @_transport['create_connection'](false, source_id)
 							if !connection
-								response['writeHead'](503)
-								response['end']()
+								exit(503)
 								return
 							connection
 								.'once'('signal', (sdp) ~>
@@ -793,11 +799,14 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 										command_data
 										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
 									)
-									response['write'](Buffer.from(data))
-									response['end']()
+									exit(200, Buffer.from(data))
 									false
 								)
 								.'signal'(sdp)
+					)
+					.'on'('close', !->
+						clearTimeout(timeout)
+						closed	:= true
 					)
 			@_http_server
 				.'on'('error', error_handler)

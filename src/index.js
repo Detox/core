@@ -770,25 +770,38 @@
         public_port == null && (public_port = port);
         keypair = detoxCrypto['create_keypair'](bootstrap_seed)['ed25519'];
         this._http_server = require('http')['createServer'](function(request, response){
-          var content_length, body;
+          var content_length, body, closed, timeout;
           response['setHeader']('Access-Control-Allow-Origin', '*');
           response['setHeader']('Connection', 'close');
+          /**
+           * @param {number}		status
+           * @param {!Uint8Array}	data
+           */
+          function exit(status, data){
+            if (closed) {
+              return;
+            }
+            response['writeHead'](status);
+            if (data) {
+              response['write'](Buffer.from(data));
+            }
+            response['end']();
+          }
           content_length = request.headers['content-length'];
           if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
-            response['writeHead'](400);
-            response['end']();
+            exit(400);
             return;
           }
           body = [];
+          closed = false;
           request['on']('data', function(chunk){
             body.push(chunk);
           })['on']('end', function(){
-            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, timeout, connection;
+            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, connection;
             body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, null_id))) {
-              response['writeHead'](400);
-              response['end']();
+              exit(400);
               return;
             }
             if (!this$._connected_nodes.size || !random_int(0, this$._connected_nodes.size)) {
@@ -799,8 +812,7 @@
             if (random_connected_node) {
               waiting_for_signal_key = concat_arrays(source_id, random_connected_node);
               if (this$._waiting_for_signal.has(waiting_for_signal_key)) {
-                response['writeHead'](503);
-                response['end']();
+                exit(503);
                 return;
               }
               command_data = compose_signal(source_id, random_connected_node, sdp, signature);
@@ -810,23 +822,19 @@
                 clearTimeout(timeout);
                 if (detoxCrypto['verify'](signature, sdp, random_connected_node)) {
                   data = compose_bootstrap_response(command_data, detoxCrypto['sign'](command_data, keypair['public'], keypair['private']));
-                  response['write'](Buffer.from(data));
-                  response['end']();
+                  exit(200, Buffer.from(data));
                 } else {
-                  response['writeHead'](502);
-                  response['end']();
+                  exit(502);
                 }
               });
               timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
                 this$._waiting_for_signal['delete'](waiting_for_signal_key);
-                response['writeHead'](504);
-                response['end']();
+                exit(504);
               });
             } else {
               connection = this$._transport['create_connection'](false, source_id);
               if (!connection) {
-                response['writeHead'](503);
-                response['end']();
+                exit(503);
                 return;
               }
               connection['once']('signal', function(sdp){
@@ -834,11 +842,13 @@
                 signature = detoxCrypto['sign'](sdp, this$._dht_public_key, this$._dht_private_key);
                 command_data = compose_signal(this$._dht_public_key, source_id, sdp, signature);
                 data = compose_bootstrap_response(command_data, detoxCrypto['sign'](command_data, keypair['public'], keypair['private']));
-                response['write'](Buffer.from(data));
-                response['end']();
+                exit(200, Buffer.from(data));
                 return false;
               })['signal'](sdp);
             }
+          })['on']('close', function(){
+            clearTimeout(timeout);
+            closed = true;
           });
         });
         this._http_server['on']('error', error_handler)['listen'](port, ip, function(){
