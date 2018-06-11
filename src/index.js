@@ -1252,7 +1252,7 @@
       /**
        * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
        *
-       * @return {!Array<string>}
+       * @return {!Array<!Uint8Array>}
        */,
       _get_stale_aware_of_nodes: function(early_exit){
         var stale_aware_of_nodes, stale_older_than, exited;

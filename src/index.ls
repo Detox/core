@@ -1178,7 +1178,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		/**
 		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
 		 *
-		 * @return {!Array<string>}
+		 * @return {!Array<!Uint8Array>}
 		 */
 		_get_stale_aware_of_nodes : (early_exit = false) ->
 			stale_aware_of_nodes	= []
