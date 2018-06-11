@@ -25,6 +25,7 @@
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.7.1",
 		"@detox/dht"             : "^0.16.9",
+		"@detox/nodes-manager"   : "github:Detox/nodes-manager",
 		"@detox/routing"         : "^0.3.1",
 		"@detox/transport"       : "^0.38.1",
 		"@detox/utils"           : "^1.10.0",

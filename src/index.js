@@ -8,7 +8,7 @@
   /*
    * Implements version 0.4.1 of the specification
    */
-  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, DEFAULT_TIMEOUTS, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+  var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, DEFAULT_TIMEOUTS, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED;
   DHT_COMMANDS_OFFSET = 10;
   ROUTING_COMMANDS = 20;
   UNCOMPRESSED_COMMANDS_OFFSET = ROUTING_COMMANDS;
@@ -50,9 +50,8 @@
   CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE = 0;
   CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES = 1;
   CONNECTION_PROGRESS_INTRODUCTION_SENT = 2;
-  ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED = 0;
+  ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 0;
   ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED = 1;
-  ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES = 2;
   /**
    * @param {!Uint8Array} signal
    * @param {!Uint8Array} signature
@@ -263,7 +262,7 @@
   /**
    * @param {!Function=} fetch
    */
-  function Wrapper(detoxCrypto, detoxDht, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer, fetch){
+  function Wrapper(detoxCrypto, detoxDht, detoxNodesManager, detoxRouting, detoxTransport, detoxUtils, fixedSizeMultiplexer, asyncEventer, fetch){
     var hex2array, array2hex, string2array, array2string, random_bytes, random_int, pull_random_item_from_array, are_arrays_equal, concat_arrays, timeoutSet, intervalSet, error_handler, ArrayMap, ArraySet, sample, empty_array, null_id;
     fetch == null && (fetch = window['fetch']);
     hex2array = detoxUtils['hex2array'];
@@ -338,14 +337,9 @@
       this._dht_private_key = this._dht_keypair['ed25519']['private'];
       this._max_data_size = detoxTransport['MAX_DATA_SIZE'];
       this._max_compressed_data_size = detoxTransport['MAX_COMPRESSED_DATA_SIZE'];
-      this._bootstrap_nodes = new Set(bootstrap_nodes);
-      this._bootstrap_nodes_ids = ArraySet();
-      this._used_first_nodes = ArraySet();
+      this._connected_nodes_count = 0;
       this._connections_in_progress = ArrayMap();
-      this._connected_nodes = ArraySet();
-      this._peers = ArraySet();
       this._waiting_for_signal = ArrayMap();
-      this._aware_of_nodes = ArrayMap();
       this._get_nodes_requested = ArraySet();
       this._routing_paths = ArrayMap();
       this._id_to_routing_path = ArrayMap();
@@ -362,7 +356,7 @@
       this._pending_sending = ArrayMap();
       this._application_connections = ArraySet();
       this._cleanup_interval = intervalSet(this._options['timeouts']['LAST_USED_TIMEOUT'], function(){
-        var unused_older_than, super_stale_older_than;
+        var unused_older_than;
         unused_older_than = +new Date - this$._options['timeouts']['LAST_USED_TIMEOUT'] * 1000;
         this$._routes_timeouts.forEach(function(last_updated, source_id){
           var ref$, node_id, route_id;
@@ -378,12 +372,6 @@
           if (last_updated < unused_older_than) {
             this$._connections_timeouts['delete'](node_id);
             this$._transport['destroy_connection'](node_id);
-          }
-        });
-        super_stale_older_than = +new Date - this$._options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 2 * 1000;
-        this$._aware_of_nodes.forEach(function(date, node_id){
-          if (date < super_stale_older_than) {
-            this$._aware_of_nodes['delete'](node_id);
           }
         });
       });
@@ -414,38 +402,14 @@
         }
       });
       this._transport = detoxTransport['Transport'](this._dht_public_key, ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
-        var candidates_for_removal, nodes_used_in_forwarding, random_connected_node;
         this$._dht['add_peer'](peer_id);
-        this$._connected_nodes.add(peer_id);
-        this$._aware_of_nodes['delete'](peer_id);
-        this$['fire']('aware_of_nodes_count', this$._aware_of_nodes.size);
-        this$['fire']('connected_nodes_count', this$._connected_nodes.size);
+        this$._nodes_manager['add_connected_node'](peer_id);
         if (this$._bootstrap_node) {
           this$._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(this$._bootstrap_node));
         }
-        if (this$._connected_nodes.size > this$._options['connected_nodes_limit']) {
-          candidates_for_removal = [];
-          nodes_used_in_forwarding = ArraySet();
-          this$._forwarding_mapping.forEach(function(arg$){
-            var node_id;
-            node_id = arg$[0];
-            nodes_used_in_forwarding.add(node_id);
-          });
-          this$._connected_nodes.forEach(function(node_id){
-            if (!(are_arrays_equal(peer_id, node_id) || this$._used_first_nodes.has(node_id) || nodes_used_in_forwarding.has(node_id) || this$._peers.has(node_id))) {
-              candidates_for_removal.push(node_id);
-            }
-          });
-          if (candidates_for_removal.length) {
-            random_connected_node = pull_random_item_from_array(candidates_for_removal);
-            this$._transport['destroy_connection'](random_connected_node);
-          }
-        }
       })['on']('disconnected', function(peer_id){
         this$._dht['del_peer'](peer_id);
-        this$._connected_nodes['delete'](peer_id);
-        this$._peers['delete'](peer_id);
-        this$['fire']('connected_nodes_count', this$._connected_nodes.size);
+        this$._nodes_manager['del_connected_node'](peer_id);
         this$._get_nodes_requested['delete'](peer_id);
       })['on']('data', function(peer_id, command, command_data){
         this$._update_connection_timeout(peer_id, false);
@@ -475,7 +439,7 @@
       })['on']('connect_to', function(peer_peer_id, peer_id){
         return new Promise(function(resolve, reject){
           var connection;
-          if (this$._connected_nodes.has(peer_peer_id)) {
+          if (this$._nodes_manager['has_connected_node'](peer_peer_id)) {
             resolve();
             return;
           }
@@ -504,14 +468,7 @@
       })['on']('send', function(peer_id, command, command_data){
         this$._send_dht_command(peer_id, command, command_data);
       })['on']('peer_updated', function(peer_id, peer_peers){
-        var i$, len$, peer_peer_id;
-        this$._peers.add(peer_id);
-        for (i$ = 0, len$ = peer_peers.length; i$ < len$; ++i$) {
-          peer_peer_id = peer_peers[i$];
-          if (!this$._connected_nodes.has(peer_peer_id)) {
-            this$._aware_of_nodes.set(peer_peer_id, +new Date);
-          }
-        }
+        this$._nodes_manager['set_peer'](peer_id, peer_peers);
       });
       this._router = detoxRouting['Router'](this._dht_keypair['x25519']['private'], this._options['max_pending_segments'], this._options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])['on']('activity', function(node_id, route_id){
         var source_id;
@@ -661,7 +618,7 @@
               if (!number_of_intermediate_nodes) {
                 throw new Error('Direct connections are not yet supported');
               }
-              nodes = this$._pick_nodes_for_routing_path(number_of_intermediate_nodes, [rendezvous_node]);
+              nodes = this$._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes, [rendezvous_node]);
               if (!nodes) {
                 return;
               }
@@ -678,8 +635,7 @@
                 this$._register_application_connection(real_public_key, target_id);
                 signature = detoxCrypto['sign'](rendezvous_token, real_public_key, real_keypair['ed25519']['private']);
                 this$._send_to_routing_node(real_public_key, target_id, ROUTING_COMMAND_CONFIRM_CONNECTION, compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message));
-              })['catch'](function(error){
-                error_handler(error);
+              })['catch'](function(){
                 this$._connections_in_progress['delete'](full_target_id);
                 if (connection_in_progress.initiator && connection_in_progress.discarded) {
                   this$['fire']('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE);
@@ -731,8 +687,28 @@
           this$._send_ping(node_id, route_id);
         }
       });
+      this._nodes_manager = detoxNodesManager(bootstrap_nodes, this._options['aware_of_nodes_limit'], this._options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'])['on']('connected_nodes_count', function(connected_nodes_count){
+        var nodes_used_in_forwarding, candidates_for_removal, random_connected_node;
+        this$._connected_nodes_count = connected_nodes_count;
+        this$['fire']('connected_nodes_count', this$._connected_nodes_count);
+        if (connected_nodes_count > this$._options['connected_nodes_limit']) {
+          nodes_used_in_forwarding = ArraySet();
+          this$._forwarding_mapping.forEach(function(arg$){
+            var node_id;
+            node_id = arg$[0];
+            nodes_used_in_forwarding.add(node_id);
+          });
+          candidates_for_removal = this$._nodes_manager['get_candidates_for_disconnection'](nodes_used_in_forwarding);
+          if (candidates_for_removal.length) {
+            random_connected_node = pull_random_item_from_array(candidates_for_removal);
+            this$._transport['destroy_connection'](random_connected_node);
+          }
+        }
+      })['on']('aware_of_nodes_count', function(aware_of_nodes_count){
+        this$['fire']('aware_of_nodes_count', aware_of_nodes_count);
+      });
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
-      if (!this._bootstrap_nodes.size) {
+      if (!bootstrap_nodes.length) {
         setTimeout(function(){
           this$['fire']('ready');
         });
@@ -751,9 +727,8 @@
     Core['CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE'] = CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE;
     Core['CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'] = CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES;
     Core['CONNECTION_PROGRESS_INTRODUCTION_SENT'] = CONNECTION_PROGRESS_INTRODUCTION_SENT;
-    Core['ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'] = ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED;
-    Core['ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'] = ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED;
     Core['ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'] = ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES;
+    Core['ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'] = ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED;
     Core.prototype = {
       /**
        * Start HTTP server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
@@ -804,10 +779,10 @@
               exit(400);
               return;
             }
-            if (!this$._connected_nodes.size || !random_int(0, this$._connected_nodes.size)) {
+            if (!this$._connected_nodes_count || !random_int(0, this$._connected_nodes_count)) {
               random_connected_node = null;
             } else {
-              random_connected_node = (ref$ = this$._pick_random_connected_nodes(1)) != null ? ref$[0] : void 8;
+              random_connected_node = (ref$ = this$._nodes_manager['get_random_connected_nodes'](1)) != null ? ref$[0] : void 8;
             }
             if (random_connected_node) {
               waiting_for_signal_key = concat_arrays(source_id, random_connected_node);
@@ -864,14 +839,15 @@
        * @return {!Array<string>}
        */,
       'get_bootstrap_nodes': function(){
-        return Array.from(this._bootstrap_nodes);
+        return this._nodes_manager['get_bootstrap_nodes']();
       }
       /**
        * @param {Function=} callback
        */,
       _bootstrap: function(callback){
-        var waiting_for, this$ = this;
-        waiting_for = this._bootstrap_nodes.size;
+        var bootstrap_nodes, waiting_for, this$ = this;
+        bootstrap_nodes = this['get_bootstrap_nodes']();
+        waiting_for = bootstrap_nodes.length;
         if (!waiting_for) {
           if (typeof callback == 'function') {
             callback();
@@ -887,7 +863,7 @@
             callback();
           }
         }
-        this._bootstrap_nodes.forEach(function(bootstrap_node){
+        bootstrap_nodes.forEach(function(bootstrap_node){
           var bootstrap_node_id, bootstrap_node_address, random_id, connection;
           bootstrap_node = bootstrap_node.split(':');
           bootstrap_node_id = hex2array(bootstrap_node[0]);
@@ -972,7 +948,7 @@
        * @param {!Uint8Array} real_public_key
        */,
       _announce: function(real_public_key){
-        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, old_introduction_nodes, introduction_nodes, introductions_pending, introduction_nodes_confirmed, i$, len$, this$ = this;
+        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, old_introduction_nodes, nodes_for_routes_to_introduction_nodes, res$, i$, _, introductions_pending, introduction_nodes_confirmed, combined_introduction_nodes, nodes, len$, this$ = this;
         ref$ = this._real_keypairs.get(real_public_key), real_keypair = ref$[0], number_of_introduction_nodes = ref$[1], number_of_intermediate_nodes = ref$[2], announced_to = ref$[3];
         old_introduction_nodes = [];
         announced_to.forEach(function(introduction_node){
@@ -983,13 +959,18 @@
           return;
         }
         this._update_last_announcement(real_public_key, +new Date);
-        introduction_nodes = this._pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes);
-        if (!introduction_nodes) {
+        res$ = [];
+        for (i$ = 0; i$ < number_of_intermediate_nodes; ++i$) {
+          _ = i$;
+          res$.push(this._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1, old_introduction_nodes));
+        }
+        nodes_for_routes_to_introduction_nodes = res$;
+        if (!nodes_for_routes_to_introduction_nodes.length) {
           this._update_last_announcement(real_public_key, 1);
-          this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED);
+          this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return;
         }
-        introductions_pending = number_of_introduction_nodes;
+        introductions_pending = nodes_for_routes_to_introduction_nodes.length;
         introduction_nodes_confirmed = [];
         /**
          * @param {!Uint8Array=} introduction_node
@@ -1016,25 +997,26 @@
           }
           this$['fire']('announced', real_public_key);
         }
-        for (i$ = 0, len$ = introduction_nodes.length; i$ < len$; ++i$) {
-          (fn$.call(this, introduction_nodes[i$]));
-        }
-        function fn$(introduction_node){
-          var nodes, first_node, this$ = this;
-          nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes));
-          if (!nodes) {
-            this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
-            announced();
-            return;
+        combined_introduction_nodes = old_introduction_nodes.concat((function(){
+          var i$, ref$, len$, results$ = [];
+          for (i$ = 0, len$ = (ref$ = nodes_for_routes_to_introduction_nodes).length; i$ < len$; ++i$) {
+            nodes = ref$[i$];
+            results$.push(nodes[nodes.length - 1]);
           }
-          nodes.push(introduction_node);
+          return results$;
+        }()));
+        for (i$ = 0, len$ = nodes_for_routes_to_introduction_nodes.length; i$ < len$; ++i$) {
+          (fn$.call(this, nodes_for_routes_to_introduction_nodes[i$]));
+        }
+        function fn$(nodes){
+          var first_node, introduction_node, this$ = this;
           first_node = nodes[0];
+          introduction_node = nodes[nodes.length - 1];
           this._construct_routing_path(nodes).then(function(route_id){
             this$._register_routing_path(real_public_key, introduction_node, first_node, route_id);
             announced_to.add(introduction_node);
             announced(introduction_node);
-          })['catch'](function(error){
-            error_handler(error);
+          })['catch'](function(){
             announced();
           });
         }
@@ -1085,12 +1067,9 @@
             return;
           }
           this$._connections_in_progress['delete'](full_target_id);
-          if (first_node) {
-            this$._used_first_nodes['delete'](first_node);
-          }
           this$['fire']('connection_failed', real_public_key, target_id, code);
         }
-        nodes = this._pick_nodes_for_routing_path(number_of_intermediate_nodes);
+        nodes = this._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes);
         if (!nodes) {
           connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return null;
@@ -1111,6 +1090,8 @@
             }
             clearTimeout(find_introduction_nodes_timeout);
             if (code !== CONNECTION_OK) {
+              this$._router['destroy_routing_path'](first_node, route_id);
+              this$._nodes_manager['del_first_node_in_routing_path'](first_node);
               connection_failed(code);
               return;
             }
@@ -1121,6 +1102,8 @@
                 return;
               }
               if (!introduction_nodes.length) {
+                this$._router['destroy_routing_path'](first_node, route_id);
+                this$._nodes_manager['del_first_node_in_routing_path'](first_node);
                 connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES);
                 return;
               }
@@ -1166,10 +1149,11 @@
           this$._send_to_routing_path(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id);
           find_introduction_nodes_timeout = timeoutSet(this$._options['timeouts']['CONNECTION_TIMEOUT'], function(){
             this$._router['off']('data', found_introduction_nodes);
+            this$._router['destroy_routing_path'](first_node, route_id);
+            this$._nodes_manager['del_first_node_in_routing_path'](first_node);
             connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES);
           });
-        })['catch'](function(error){
-          error_handler(error);
+        })['catch'](function(){
           connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE);
         });
         return real_public_key;
@@ -1225,6 +1209,7 @@
         clearTimeout(this._random_lookup_timeout);
         this._transport['destroy']();
         this._dht['destroy']();
+        this._nodes_manager['destroy']();
       },
       _destroy_router: function(){
         var this$ = this;
@@ -1247,35 +1232,14 @@
        * @return {boolean}
        */,
       _more_aware_of_nodes_needed: function(){
-        return !this._bootstrap_node && !!(this._aware_of_nodes.size < this._options['aware_of_nodes_limit'] || this._get_stale_aware_of_nodes(true).length);
-      }
-      /**
-       * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
-       *
-       * @return {!Array<!Uint8Array>}
-       */,
-      _get_stale_aware_of_nodes: function(early_exit){
-        var stale_aware_of_nodes, stale_older_than, exited;
-        early_exit == null && (early_exit = false);
-        stale_aware_of_nodes = [];
-        stale_older_than = +new Date - this._options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 1000;
-        exited = false;
-        this._aware_of_nodes.forEach(function(date, node_id){
-          if (!exited && date < stale_older_than) {
-            stale_aware_of_nodes.push(node_id);
-            if (early_exit && !exited) {
-              exited = true;
-            }
-          }
-        });
-        return stale_aware_of_nodes;
+        return !this._bootstrap_node && this._nodes_manager['more_aware_of_nodes_needed']();
       }
       /**
        * Request more nodes to be aware of from some of the nodes already connected to
        */,
       _get_more_aware_of_nodes: function(){
         var nodes, i$, len$, node_id;
-        nodes = this._pick_random_connected_nodes(5);
+        nodes = this._nodes_manager['get_random_connected_nodes'](5);
         if (!nodes) {
           return;
         }
@@ -1290,95 +1254,13 @@
       _get_more_nodes_from: function(peer_id){
         this._get_nodes_requested.add(peer_id);
         this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, empty_array);
-      }
-      /**
-       * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
-       *
-       * @param {number}					number_of_nodes
-       * @param {!Array<!Uint8Array>=}	exclude_nodes
-       *
-       * @return {Array<!Uint8Array>} `null` if there was not enough nodes
-       */,
-      _pick_nodes_for_routing_path: function(number_of_nodes, exclude_nodes){
-        var connected_node, ref$, intermediate_nodes;
-        exclude_nodes == null && (exclude_nodes = []);
-        exclude_nodes = Array.from(this._used_first_nodes.values()).concat(exclude_nodes);
-        connected_node = (ref$ = this._pick_random_connected_nodes(1, exclude_nodes)) != null ? ref$[0] : void 8;
-        if (!connected_node) {
-          return null;
-        }
-        intermediate_nodes = this._pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes.concat([connected_node]));
-        if (!intermediate_nodes) {
-          return null;
-        }
-        return [connected_node].concat(intermediate_nodes);
-      }
-      /**
-       * Get some random nodes from already connected nodes
-       *
-       * @param {number=}					up_to_number_of_nodes
-       * @param {!Array<!Uint8Array>=}	exclude_nodes
-       *
-       * @return {Array<!Uint8Array>} `null` if there is no nodes to return
-       */,
-      _pick_random_connected_nodes: function(up_to_number_of_nodes, exclude_nodes){
-        var connected_nodes, exclude_nodes_set, i$, i, results$ = [];
-        up_to_number_of_nodes == null && (up_to_number_of_nodes = 1);
-        exclude_nodes == null && (exclude_nodes = []);
-        if (!this._connected_nodes.size) {
-          return null;
-        }
-        connected_nodes = Array.from(this._connected_nodes.values());
-        exclude_nodes_set = ArraySet(exclude_nodes.concat(Array.from(this._bootstrap_nodes_ids)));
-        connected_nodes = connected_nodes.filter(function(node){
-          return !exclude_nodes_set.has(node);
-        });
-        if (!connected_nodes.length) {
-          return null;
-        }
-        for (i$ = 0; i$ < up_to_number_of_nodes; ++i$) {
-          i = i$;
-          if (connected_nodes.length) {
-            results$.push(pull_random_item_from_array(connected_nodes));
-          }
-        }
-        return results$;
-      }
-      /**
-       * Get some random nodes from those that current node is aware of
-       *
-       * @param {number}					number_of_nodes
-       * @param {!Array<!Uint8Array>=}	exclude_nodes
-       *
-       * @return {Array<!Uint8Array>} `null` if there was not enough nodes
-       */,
-      _pick_random_aware_of_nodes: function(number_of_nodes, exclude_nodes){
-        var aware_of_nodes, exclude_nodes_set, i$, i, results$ = [];
-        if (this._aware_of_nodes.size < number_of_nodes) {
-          return null;
-        }
-        aware_of_nodes = Array.from(this._aware_of_nodes.keys());
-        if (exclude_nodes) {
-          exclude_nodes_set = ArraySet(exclude_nodes);
-          aware_of_nodes = aware_of_nodes.filter(function(node){
-            return !exclude_nodes_set.has(node);
-          });
-        }
-        if (aware_of_nodes.length < number_of_nodes) {
-          return null;
-        }
-        for (i$ = 0; i$ < number_of_nodes; ++i$) {
-          i = i$;
-          results$.push(pull_random_item_from_array(aware_of_nodes));
-        }
-        return results$;
       },
       _do_random_lookup: function(){
         var timeout, this$ = this;
         if (this._destroyed) {
           return;
         }
-        if (this._dht['get_peers']().length < this._bootstrap_nodes.size && this._bootstrap_nodes.size) {
+        if (this._dht['get_peers']().length < this['get_bootstrap_nodes']().length) {
           this._bootstrap(function(){
             if (this$._dht['get_peers']().length) {
               this$._do_random_lookup();
@@ -1407,11 +1289,10 @@
       _construct_routing_path: function(nodes){
         var first_node, x$, this$ = this;
         first_node = nodes[0];
-        this._used_first_nodes.add(first_node);
         x$ = this._router['construct_routing_path'](nodes);
         x$['catch'](function(error){
           error_handler(error);
-          this$._used_first_nodes['delete'](first_node);
+          this$._nodes_manager['del_first_node_in_routing_path'](first_node);
         });
         return x$;
       }
@@ -1444,7 +1325,7 @@
         if (!this._routing_paths.has(source_id)) {
           return;
         }
-        this._used_first_nodes['delete'](node_id);
+        this._nodes_manager['del_first_node_in_routing_path'](node_id);
         this._routing_paths['delete'](source_id);
         this._router['destroy_routing_path'](node_id, route_id);
         this._forwarding_mapping['delete'](source_id);
@@ -1529,7 +1410,7 @@
             waiting_for_signal_callback(sdp, signature, command_data);
             return;
           }
-          if (this._connected_nodes.has(target_id) && are_arrays_equal(peer_id, source_id)) {
+          if (this._nodes_manager['has_connected_node'](target_id) && are_arrays_equal(peer_id, source_id)) {
             this._send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data);
             return;
           }
@@ -1558,7 +1439,7 @@
        * @param {!Uint8Array}	command_data
        */,
       _handle_uncompressed_core_command: function(peer_id, command, command_data){
-        var ref$, target_id, introduction_message, target_node_id, target_route_id, nodes, number_of_nodes, stale_aware_of_nodes, i$, i, new_node_id, stale_node_to_remove;
+        var ref$, target_id, introduction_message, target_node_id, target_route_id, number_of_nodes, nodes, i$, i, new_node_id;
         switch (command) {
         case UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION:
           ref$ = parse_introduce_to_data(command_data), target_id = ref$[0], introduction_message = ref$[1];
@@ -1569,9 +1450,7 @@
           this._send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
           break;
         case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST:
-          nodes = this._pick_random_connected_nodes(7) || [];
-          nodes = nodes.concat(this._pick_random_aware_of_nodes(10 - nodes.length) || []);
-          command_data = concat_arrays(nodes);
+          command_data = concat_arrays(this._nodes_manager['get_aware_of_nodes']());
           this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, command_data);
           break;
         case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE:
@@ -1580,32 +1459,20 @@
           }
           this._get_nodes_requested['delete'](peer_id);
           if (!command_data.length || command_data.length % PUBLIC_KEY_LENGTH !== 0) {
+            this._peer_error(peer_id);
             return;
           }
           number_of_nodes = command_data.length / PUBLIC_KEY_LENGTH;
-          stale_aware_of_nodes = this._get_stale_aware_of_nodes();
+          nodes = [];
           for (i$ = 0; i$ < number_of_nodes; ++i$) {
             i = i$;
             new_node_id = command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH);
-            if (are_arrays_equal(new_node_id, this._dht_public_key) || this._connected_nodes.has(new_node_id)) {
-              continue;
-            }
-            if (this._aware_of_nodes.has(new_node_id) || this._aware_of_nodes.size < this._options['aware_of_nodes_limit']) {
-              this._aware_of_nodes.set(new_node_id, +new Date);
-              this['fire']('aware_of_nodes_count', this._aware_of_nodes.size);
-            } else if (stale_aware_of_nodes.length) {
-              stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes);
-              this._aware_of_nodes['delete'](stale_node_to_remove);
-              this._aware_of_nodes.set(new_node_id, +new Date);
-              this['fire']('aware_of_nodes_count', this._aware_of_nodes.size);
-            } else {
-              break;
-            }
+            nodes.push(new_node_id);
           }
+          this._nodes_manager['set_aware_of_nodes'](peer_id, nodes);
           break;
         case UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE:
-          this._bootstrap_nodes.add(array2string(command_data));
-          this._bootstrap_nodes_ids.add(peer_id);
+          this._nodes_manager['add_bootstrap_node'](peer_id, array2string(command_data));
         }
       }
       /**
@@ -1646,7 +1513,7 @@
        */,
       _send: function(node_id, command, command_data){
         var this$ = this;
-        if (this._connected_nodes.has(node_id)) {
+        if (this._nodes_manager['has_connected_node'](node_id)) {
           this._update_connection_timeout(node_id, true);
           this._transport['send'](node_id, command, command_data);
           return;
@@ -1808,10 +1675,10 @@
     };
   }
   if (typeof define === 'function' && define['amd']) {
-    define(['@detox/crypto', '@detox/dht', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
+    define(['@detox/crypto', '@detox/dht', '@detox/nodes-manager', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper);
   } else if (typeof exports === 'object') {
-    module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'), require('node-fetch'));
+    module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/nodes-manager'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'), require('node-fetch'));
   } else {
-    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_dht'], this['detox_routing'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
+    this['detox_core'] = Wrapper(this['detox_crypto'], this['detox_dht'], this['detox_nodes_manager'], this['detox_routing'], this['detox_transport'], this['detox_utils'], this['fixed_size_multiplexer'], this['async_eventer']);
   }
 }).call(this);

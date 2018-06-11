@@ -63,9 +63,8 @@ const CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE	= 0
 const CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES		= 1
 const CONNECTION_PROGRESS_INTRODUCTION_SENT				= 2
 
-const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED	= 0
+const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 0
 const ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED	= 1
-const ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES		= 2
 
 /**
  * @param {!Uint8Array} signal
@@ -239,7 +238,7 @@ function parse_introduce_to_data (message)
 /**
  * @param {!Function=} fetch
  */
-function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer, fetch = window['fetch'])
+function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, detox-transport, detox-utils, fixed-size-multiplexer, async-eventer, fetch = window['fetch'])
 	hex2array					= detox-utils['hex2array']
 	array2hex					= detox-utils['array2hex']
 	string2array				= detox-utils['string2array']
@@ -313,14 +312,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		@_max_data_size				= detox-transport['MAX_DATA_SIZE']
 		@_max_compressed_data_size	= detox-transport['MAX_COMPRESSED_DATA_SIZE']
 
-		@_bootstrap_nodes			= new Set(bootstrap_nodes)
-		@_bootstrap_nodes_ids		= ArraySet()
-		@_used_first_nodes			= ArraySet()
+		@_connected_nodes_count		= 0
 		@_connections_in_progress	= ArrayMap()
-		@_connected_nodes			= ArraySet()
-		@_peers						= ArraySet()
 		@_waiting_for_signal		= ArrayMap()
-		@_aware_of_nodes			= ArrayMap()
 		@_get_nodes_requested		= ArraySet()
 		@_routing_paths				= ArrayMap()
 		# Mapping from responder ID to routing path and from routing path to responder ID, so that we can use responder ID for external API
@@ -352,11 +346,6 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if last_updated < unused_older_than
 					@_connections_timeouts.delete(node_id)
 					@_transport['destroy_connection'](node_id)
-			# Remove aware of nodes that are stale for more that double of regular timeout
-			super_stale_older_than	= +(new Date) - @_options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 2 * 1000
-			@_aware_of_nodes.forEach (date, node_id) !~>
-				if date < super_stale_older_than
-					@_aware_of_nodes.delete(node_id)
 		)
 		# On 4/5 of the way to dropping connection
 		@_keep_announce_routes_interval	= intervalSet(@_options['timeouts']['LAST_USED_TIMEOUT'] / 5 * 4, !~>
@@ -378,7 +367,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_get_more_aware_of_nodes()
 		)
 
-		@_transport	= detox-transport['Transport'](
+		@_transport		= detox-transport['Transport'](
 			@_dht_public_key
 			ice_servers
 			packets_per_second
@@ -387,39 +376,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		)
 			.'on'('connected', (peer_id) !~>
 				@_dht['add_peer'](peer_id)
-				@_connected_nodes.add(peer_id)
-				@_aware_of_nodes.delete(peer_id)
-				@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
-				@'fire'('connected_nodes_count', @_connected_nodes.size)
+				@_nodes_manager['add_connected_node'](peer_id)
 				if @_bootstrap_node
 					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, string2array(@_bootstrap_node))
-				if @_connected_nodes.size > @_options['connected_nodes_limit']
-					# TODO: This should be greatly improved, should also take into account peer warnings
-					candidates_for_removal		= []
-					nodes_used_in_forwarding	= ArraySet()
-					@_forwarding_mapping.forEach ([node_id]) !->
-						nodes_used_in_forwarding.add(node_id)
-					@_connected_nodes.forEach (node_id) !~>
-						if !(
-							# Don't remove last added node
-							are_arrays_equal(peer_id, node_id) ||
-							# Don't remove node that act as first node in routing path
-							@_used_first_nodes.has(node_id) ||
-							# Don't remove node that is used as a middle node in someone's routing path
-							nodes_used_in_forwarding.has(node_id) ||
-							# Don't remove useful peers
-							@_peers.has(node_id)
-						)
-							candidates_for_removal.push(node_id)
-					if candidates_for_removal.length
-						random_connected_node = pull_random_item_from_array(candidates_for_removal)
-						@_transport['destroy_connection'](random_connected_node)
 			)
 			.'on'('disconnected', (peer_id) !~>
 				@_dht['del_peer'](peer_id)
-				@_connected_nodes.delete(peer_id)
-				@_peers.delete(peer_id)
-				@'fire'('connected_nodes_count', @_connected_nodes.size)
+				@_nodes_manager['del_connected_node'](peer_id)
 				@_get_nodes_requested.delete(peer_id)
 			)
 			.'on'('data', (peer_id, command, command_data) !~>
@@ -439,7 +402,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						return
 					@_handle_compressed_core_command(peer_id, command, command_data)
 			)
-		@_dht		= detox-dht['DHT'](
+		@_dht			= detox-dht['DHT'](
 			@_dht_public_key
 			bucket_size
 			@_options['state_history_size']
@@ -455,7 +418,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			)
 			.'on'('connect_to', (peer_peer_id, peer_id) ~>
 				new Promise (resolve, reject) !~>
-					if @_connected_nodes.has(peer_peer_id)
+					if @_nodes_manager['has_connected_node'](peer_peer_id)
 						resolve()
 						return
 					connection	= @_transport['get_connection'](peer_peer_id)
@@ -482,13 +445,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				@_send_dht_command(peer_id, command, command_data)
 			)
 			.'on'('peer_updated', (peer_id, peer_peers) !~>
-				@_peers.add(peer_id)
-				for peer_peer_id in peer_peers
-					if !@_connected_nodes.has(peer_peer_id)
-						@_aware_of_nodes.set(peer_peer_id, +(new Date))
-				# TODO: Store peer's peers for potential future deletion from aware of nodes
+				@_nodes_manager['set_peer'](peer_id, peer_peers)
 			)
-		@_router	= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'], @_options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])
+		@_router		= detox-routing['Router'](@_dht_keypair['x25519']['private'], @_options['max_pending_segments'], @_options['timeouts']['ROUTING_PATH_SEGMENT_TIMEOUT'])
 			.'on'('activity', (node_id, route_id) !~>
 				source_id	= concat_arrays(node_id, route_id)
 				if !@_routing_paths.has(source_id)
@@ -626,7 +585,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 									if !number_of_intermediate_nodes
 										throw new Error('Direct connections are not yet supported')
 										# TODO: Support direct connections here?
-									nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, [rendezvous_node])
+									nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes, [rendezvous_node])
 									if !nodes
 										return
 									nodes.push(rendezvous_node)
@@ -647,8 +606,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 												ROUTING_COMMAND_CONFIRM_CONNECTION
 												compose_confirm_connection_data(signature, rendezvous_token, response_handshake_message)
 											)
-										.catch (error) !~>
-											error_handler(error)
+										# Error handler is already present in `_construct_routing_path()` method
+										.catch !~>
 											@_connections_in_progress.delete(full_target_id)
 											if connection_in_progress.initiator && connection_in_progress.discarded
 												@'fire'('connection_failed', real_public_key, target_id, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE)
@@ -687,9 +646,26 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						# Send ping back
 						@_send_ping(node_id, route_id)
 			)
+		@_nodes_manager	= detox-nodes-manager(bootstrap_nodes, @_options['aware_of_nodes_limit'], @_options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'])
+			.'on'('connected_nodes_count', (connected_nodes_count) !~>
+				@_connected_nodes_count	= connected_nodes_count
+				@'fire'('connected_nodes_count', @_connected_nodes_count)
+				if connected_nodes_count > @_options['connected_nodes_limit']
+					# TODO: This should be greatly improved, should also take into account peer warnings
+					nodes_used_in_forwarding	= ArraySet()
+					@_forwarding_mapping.forEach ([node_id]) !->
+						nodes_used_in_forwarding.add(node_id)
+					candidates_for_removal		= @_nodes_manager['get_candidates_for_disconnection'](nodes_used_in_forwarding)
+					if candidates_for_removal.length
+						random_connected_node = pull_random_item_from_array(candidates_for_removal)
+						@_transport['destroy_connection'](random_connected_node)
+			)
+			.'on'('aware_of_nodes_count', (aware_of_nodes_count) !~>
+				@'fire'('aware_of_nodes_count', aware_of_nodes_count)
+			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
-		if !@_bootstrap_nodes.size
+		if !bootstrap_nodes.length
 			setTimeout !~>
 				@'fire'('ready')
 		else
@@ -707,9 +683,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 	Core.'CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES'			= CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES
 	Core.'CONNECTION_PROGRESS_INTRODUCTION_SENT'				= CONNECTION_PROGRESS_INTRODUCTION_SENT
 
-	Core.'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED
-	Core.'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED
 	Core.'ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES'		= ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES
+	Core.'ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED'	= ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED
 	Core:: =
 		/**
 		 * Start HTTP server listening on specified ip:port, so that current node will be capable of acting as bootstrap node for other users
@@ -760,10 +735,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						)
 							exit(400)
 							return
-						if !@_connected_nodes.size || !random_int(0, @_connected_nodes.size)
+						if !@_connected_nodes_count || !random_int(0, @_connected_nodes_count)
 							random_connected_node	= null
 						else
-							random_connected_node	= @_pick_random_connected_nodes(1)?[0]
+							random_connected_node	= @_nodes_manager['get_random_connected_nodes'](1)?[0]
 						if random_connected_node
 							waiting_for_signal_key	= concat_arrays(source_id, random_connected_node)
 							if @_waiting_for_signal.has(waiting_for_signal_key)
@@ -822,12 +797,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {!Array<string>}
 		 */
 		'get_bootstrap_nodes' : ->
-			Array.from(@_bootstrap_nodes)
+			@_nodes_manager['get_bootstrap_nodes']()
 		/**
 		 * @param {Function=} callback
 		 */
 		_bootstrap : (callback) !->
-			waiting_for	= @_bootstrap_nodes.size
+			bootstrap_nodes	= @'get_bootstrap_nodes'()
+			waiting_for		= bootstrap_nodes.length
 			if !waiting_for
 				callback?()
 				return
@@ -836,7 +812,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if waiting_for
 					return
 				callback?()
-			@_bootstrap_nodes.forEach (bootstrap_node) !~>
+			bootstrap_nodes.forEach (bootstrap_node) !~>
 				bootstrap_node			= bootstrap_node.split(':')
 				bootstrap_node_id		= hex2array(bootstrap_node[0])
 				bootstrap_node_address	= bootstrap_node[1] + ':' + bootstrap_node[2]
@@ -930,12 +906,15 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			if !number_of_introduction_nodes
 				return
 			@_update_last_announcement(real_public_key, +(new Date))
-			introduction_nodes				= @_pick_random_aware_of_nodes(number_of_introduction_nodes, old_introduction_nodes)
-			if !introduction_nodes
+			# Last node is introduction node, hence +1
+			nodes_for_routes_to_introduction_nodes	=
+				for _ from 0 til number_of_intermediate_nodes
+					@_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1, old_introduction_nodes)
+			if !nodes_for_routes_to_introduction_nodes.length
 				@_update_last_announcement(real_public_key, 1)
-				@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONNECTED)
+				@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return
-			introductions_pending			= number_of_introduction_nodes
+			introductions_pending			= nodes_for_routes_to_introduction_nodes.length
 			introduction_nodes_confirmed	= []
 			/**
 			 * @param {!Uint8Array=} introduction_node
@@ -961,21 +940,20 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					@_send_to_routing_node(real_public_key, introduction_node, ROUTING_COMMAND_ANNOUNCE, announcement_message)
 				# TODO: Check using independent routing path that announcement indeed happened
 				@'fire'('announced', real_public_key)
-			for let introduction_node in introduction_nodes
-				nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes, introduction_nodes.concat(old_introduction_nodes))
-				if !nodes
-					@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
-					announced()
-					return
-				nodes.push(introduction_node)
-				first_node	= nodes[0]
+			combined_introduction_nodes	= old_introduction_nodes.concat(
+				for nodes in nodes_for_routes_to_introduction_nodes
+					nodes[* - 1]
+			)
+			for let nodes in nodes_for_routes_to_introduction_nodes
+				first_node			= nodes[0]
+				introduction_node	= nodes[* - 1]
 				@_construct_routing_path(nodes)
 					.then (route_id) !~>
 						@_register_routing_path(real_public_key, introduction_node, first_node, route_id)
 						announced_to.add(introduction_node)
 						announced(introduction_node)
-					.catch (error) !~>
-						error_handler(error)
+					# Error handler is already present in `_construct_routing_path()` method
+					.catch !~>
 						announced()
 		/**
 		 * @param {!Uint8Array}	real_public_key
@@ -1019,11 +997,8 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 				if connection_in_progress.discarded
 					return
 				@_connections_in_progress.delete(full_target_id)
-				# A bit ugly, but in this case routing path construction may succeed, while eventual connection to the target node fails
-				if first_node
-					@_used_first_nodes.delete(first_node)
 				@'fire'('connection_failed', real_public_key, target_id, code)
-			nodes	= @_pick_nodes_for_routing_path(number_of_intermediate_nodes)
+			nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes) # TODO: This method is no longer present
 			if !nodes
 				connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return null
@@ -1044,6 +1019,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							return
 						clearTimeout(find_introduction_nodes_timeout)
 						if code != CONNECTION_OK
+							# Routing path is already established, but we don't need it anymore
+							@_router['destroy_routing_path'](first_node, route_id)
+							@_nodes_manager['del_first_node_in_routing_path'](first_node)
 							connection_failed(code)
 							return
 						@'fire'('connection_progress', real_public_key, target_id, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES)
@@ -1051,6 +1029,9 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 							if connection_in_progress.discarded
 								return
 							if !introduction_nodes.length
+								# Routing path is already established, but we don't need it anymore
+								@_router['destroy_routing_path'](first_node, route_id)
+								@_nodes_manager['del_first_node_in_routing_path'](first_node)
 								connection_failed(CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES)
 								return
 							introduction_node				= pull_random_item_from_array(introduction_nodes)
@@ -1108,10 +1089,13 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					@_send_to_routing_path(first_node, route_id, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, target_id)
 					find_introduction_nodes_timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
 						@_router['off']('data', found_introduction_nodes)
+						# Routing path is already established, but we don't need it anymore
+						@_router['destroy_routing_path'](first_node, route_id)
+						@_nodes_manager['del_first_node_in_routing_path'](first_node)
 						connection_failed(CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES)
 					)
-				.catch (error) !~>
-					error_handler(error)
+				# Error handler is already present in `_construct_routing_path()` method
+				.catch !~>
 					connection_failed(CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE)
 			real_public_key
 		'get_max_data_size' : ->
@@ -1161,6 +1145,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			clearTimeout(@_random_lookup_timeout)
 			@_transport['destroy']()
 			@_dht['destroy']()
+			@_nodes_manager['destroy']()
 		_destroy_router : !->
 			clearInterval(@_cleanup_interval)
 			clearInterval(@_keep_announce_routes_interval)
@@ -1174,27 +1159,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @return {boolean}
 		 */
 		_more_aware_of_nodes_needed : ->
-			!@_bootstrap_node && !!(@_aware_of_nodes.size < @_options['aware_of_nodes_limit'] || @_get_stale_aware_of_nodes(true).length)
-		/**
-		 * @param {boolean=} early_exit Will return single node if present, used to check if stale nodes are present at all
-		 *
-		 * @return {!Array<!Uint8Array>}
-		 */
-		_get_stale_aware_of_nodes : (early_exit = false) ->
-			stale_aware_of_nodes	= []
-			stale_older_than		= +(new Date) - @_options['timeouts']['STALE_AWARE_OF_NODE_TIMEOUT'] * 1000
-			exited					= false
-			@_aware_of_nodes.forEach (date, node_id) !->
-				if !exited && date < stale_older_than
-					stale_aware_of_nodes.push(node_id)
-					if early_exit && !exited
-						exited	:= true
-			stale_aware_of_nodes
+			!@_bootstrap_node && @_nodes_manager['more_aware_of_nodes_needed']()
 		/**
 		 * Request more nodes to be aware of from some of the nodes already connected to
 		 */
 		_get_more_aware_of_nodes : !->
-			nodes	= @_pick_random_connected_nodes(5)
+			nodes	= @_nodes_manager['get_random_connected_nodes'](5)
 			if !nodes
 				return
 			for node_id in nodes
@@ -1205,70 +1175,12 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		_get_more_nodes_from : (peer_id) !->
 			@_get_nodes_requested.add(peer_id)
 			@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, empty_array)
-		/**
-		 * Get some random nodes suitable for constructing routing path through them or for acting as introduction nodes
-		 *
-		 * @param {number}					number_of_nodes
-		 * @param {!Array<!Uint8Array>=}	exclude_nodes
-		 *
-		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
-		 */
-		_pick_nodes_for_routing_path : (number_of_nodes, exclude_nodes = []) ->
-			exclude_nodes	= Array.from(@_used_first_nodes.values()).concat(exclude_nodes)
-			connected_node	= @_pick_random_connected_nodes(1, exclude_nodes)?[0]
-			if !connected_node
-				return null
-			intermediate_nodes	= @_pick_random_aware_of_nodes(number_of_nodes - 1, exclude_nodes.concat([connected_node]))
-			if !intermediate_nodes
-				return null
-			[connected_node].concat(intermediate_nodes)
-		/**
-		 * Get some random nodes from already connected nodes
-		 *
-		 * @param {number=}					up_to_number_of_nodes
-		 * @param {!Array<!Uint8Array>=}	exclude_nodes
-		 *
-		 * @return {Array<!Uint8Array>} `null` if there is no nodes to return
-		 */
-		_pick_random_connected_nodes : (up_to_number_of_nodes = 1, exclude_nodes = []) ->
-			# TODO: Some trust model, only return trusted nodes
-			if !@_connected_nodes.size
-				return null
-			connected_nodes		= Array.from(@_connected_nodes.values())
-			exclude_nodes_set	= ArraySet(exclude_nodes.concat(Array.from(@_bootstrap_nodes_ids)))
-			connected_nodes		= connected_nodes.filter (node) ->
-				!exclude_nodes_set.has(node)
-			if !connected_nodes.length
-				return null
-			for i from 0 til up_to_number_of_nodes
-				if connected_nodes.length
-					pull_random_item_from_array(connected_nodes)
-		/**
-		 * Get some random nodes from those that current node is aware of
-		 *
-		 * @param {number}					number_of_nodes
-		 * @param {!Array<!Uint8Array>=}	exclude_nodes
-		 *
-		 * @return {Array<!Uint8Array>} `null` if there was not enough nodes
-		 */
-		_pick_random_aware_of_nodes : (number_of_nodes, exclude_nodes) ->
-			if @_aware_of_nodes.size < number_of_nodes
-				return null
-			aware_of_nodes	= Array.from(@_aware_of_nodes.keys())
-			if exclude_nodes
-				exclude_nodes_set	= ArraySet(exclude_nodes)
-				aware_of_nodes		= aware_of_nodes.filter (node) ->
-					!exclude_nodes_set.has(node)
-			if aware_of_nodes.length < number_of_nodes
-				return null
-			for i from 0 til number_of_nodes
-				pull_random_item_from_array(aware_of_nodes)
 		_do_random_lookup : !->
 			if @_destroyed
 				return
 			# TODO: Selective disconnect from the network by an active attacker is dangerous
 			# Bootstrap if disconnected from the network
-			if @_dht['get_peers']().length < @_bootstrap_nodes.size && @_bootstrap_nodes.size
+			if @_dht['get_peers']().length < @'get_bootstrap_nodes'().length
 				@_bootstrap !~>
 					if @_dht['get_peers']().length
 						@_do_random_lookup()
@@ -1294,12 +1206,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 */
 		_construct_routing_path : (nodes) ->
 			first_node	= nodes[0]
-			# Store first node as used, so that we don't use it for building other routing paths
-			@_used_first_nodes.add(first_node)
 			@_router['construct_routing_path'](nodes)
 				..catch (error) !~>
 					error_handler(error)
-					@_used_first_nodes.delete(first_node)
+					@_nodes_manager['del_first_node_in_routing_path'](first_node)
 		/**
 		 * @param {!Uint8Array} real_public_key
 		 * @param {!Uint8Array} target_id		Last node in routing path, responder
@@ -1327,7 +1237,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 			source_id	= concat_arrays(node_id, route_id)
 			if !@_routing_paths.has(source_id)
 				return
-			@_used_first_nodes.delete(node_id)
+			@_nodes_manager['del_first_node_in_routing_path'](node_id)
 			@_routing_paths.delete(source_id)
 			@_router['destroy_routing_path'](node_id, route_id)
 			@_forwarding_mapping.delete(source_id)
@@ -1397,7 +1307,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 						waiting_for_signal_callback(sdp, signature, command_data)
 						return
 					# If command targets our peer, forward it
-					if @_connected_nodes.has(target_id) && are_arrays_equal(peer_id, source_id)
+					if @_nodes_manager['has_connected_node'](target_id) && are_arrays_equal(peer_id, source_id)
 						@_send_compressed_core_command(target_id, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
 						return
 					# If command doesn't target ourselves - exit
@@ -1429,40 +1339,26 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 					[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
 					@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST
-					# TODO: This is a naive implementation, can be attacked relatively easily
-					nodes			= @_pick_random_connected_nodes(7) || []
-					nodes			= nodes.concat(@_pick_random_aware_of_nodes(10 - nodes.length) || [])
-					command_data	= concat_arrays(nodes)
+					command_data	= concat_arrays(@_nodes_manager['get_aware_of_nodes']())
 					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, command_data)
 				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE
 					if !@_get_nodes_requested.has(peer_id)
 						return
 					@_get_nodes_requested.delete(peer_id)
 					if !command_data.length || command_data.length % PUBLIC_KEY_LENGTH != 0
+						@_peer_error(peer_id)
 						return
-					number_of_nodes			= command_data.length / PUBLIC_KEY_LENGTH
-					stale_aware_of_nodes	= @_get_stale_aware_of_nodes()
+					number_of_nodes	= command_data.length / PUBLIC_KEY_LENGTH
+					nodes			= []
 					for i from 0 til number_of_nodes
 						new_node_id	= command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH)
-						# Ignore already connected nodes and own ID or if there are enough nodes already
-						if (
-							are_arrays_equal(new_node_id, @_dht_public_key) ||
-							@_connected_nodes.has(new_node_id)
-						)
-							continue
-						if @_aware_of_nodes.has(new_node_id) || @_aware_of_nodes.size < @_options['aware_of_nodes_limit']
-							@_aware_of_nodes.set(new_node_id, +(new Date))
-							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
-						else if stale_aware_of_nodes.length
-							stale_node_to_remove = pull_random_item_from_array(stale_aware_of_nodes)
-							@_aware_of_nodes.delete(stale_node_to_remove)
-							@_aware_of_nodes.set(new_node_id, +(new Date))
-							@'fire'('aware_of_nodes_count', @_aware_of_nodes.size)
-						else
-							break
+						# TODO: Unlock this in future when specification is and node manager are updated
+#						if are_arrays_equal(@_dht_public_key, new_node_id)
+#							@_peer_error(peer_id)
+						nodes.push(new_node_id)
+					@_nodes_manager['set_aware_of_nodes'](peer_id, nodes)
 				case UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE
-					@_bootstrap_nodes.add(array2string(command_data))
-					@_bootstrap_nodes_ids.add(peer_id)
+					@_nodes_manager['add_bootstrap_node'](peer_id, array2string(command_data))
 		/**
 		 * @param {!Uint8Array}	peer_id
 		 * @param {number}		command			0..9
@@ -1496,7 +1392,7 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 		 * @param {!Uint8Array}	command_data
 		 */
 		_send : (node_id, command, command_data) !->
-			if @_connected_nodes.has(node_id)
+			if @_nodes_manager['has_connected_node'](node_id)
 				@_update_connection_timeout(node_id, true)
 				@_transport['send'](node_id, command, command_data)
 				return
@@ -1631,10 +1527,10 @@ function Wrapper (detox-crypto, detox-dht, detox-routing, detox-transport, detox
 # NOTE: `node-fetch` dependency is the last one and only specified for CommonJS, make sure to insert new dependencies before it
 if typeof define == 'function' && define['amd']
 	# AMD
-	define(['@detox/crypto', '@detox/dht', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
+	define(['@detox/crypto', '@detox/dht', '@detox/nodes-manager', '@detox/routing', '@detox/transport', '@detox/utils', 'fixed-size-multiplexer', 'async-eventer'], Wrapper)
 else if typeof exports == 'object'
 	# CommonJS
-	module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'), require('node-fetch'))
+	module.exports = Wrapper(require('@detox/crypto'), require('@detox/dht'), require('@detox/nodes-manager'), require('@detox/routing'), require('@detox/transport'), require('@detox/utils'), require('fixed-size-multiplexer'), require('async-eventer'), require('node-fetch'))
 else
 	# Browser globals
-	@'detox_core' = Wrapper(@'detox_crypto', @'detox_dht', @'detox_routing', @'detox_transport', @'detox_utils', @'fixed_size_multiplexer', @'async_eventer')
+	@'detox_core' = Wrapper(@'detox_crypto', @'detox_dht', @'detox_nodes_manager', @'detox_routing', @'detox_transport', @'detox_utils', @'fixed_size_multiplexer', @'async_eventer')
