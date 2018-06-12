@@ -215,11 +215,11 @@ Event is fired when `target_id` disconnected for whatever reason.
 
 ### Event: connected_nodes_count
 Payload is a single argument `count` (`number`).
-Event is fired when new node connection with DHT node is established or destroyed.
+Event is fired when new direct connection with node is established or destroyed.
 
 ### Event: aware_of_nodes_count
 Payload is a single argument `count` (`number`).
-Event is fired when number of nodes in DHT about which current node is aware of changes.
+Event is fired when number of nodes which current node is aware of changes.
 
 ### Event: routing_paths_count
 Payload is a single argument `count` (`number`).

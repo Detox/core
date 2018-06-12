@@ -751,8 +751,8 @@
           response['setHeader']('Access-Control-Allow-Origin', '*');
           response['setHeader']('Connection', 'close');
           /**
-           * @param {number}		status
-           * @param {!Uint8Array}	data
+           * @param {number}			status
+           * @param {!Uint8Array=}	data
            */
           function exit(status, data){
             if (closed) {

@@ -7,7 +7,7 @@
 		"distributed",
 		"p2p"
 	],
-	"version"         : "0.18.1",
+	"version"         : "0.19.0",
 	"homepage"        : "https://github.com/Detox/core",
 	"author"          : "Nazar Mokrynskyi <nazar@mokrynskyi.com>",
 	"repository"      : {
@@ -25,7 +25,7 @@
 	"dependencies"    : {
 		"@detox/crypto"          : "^0.7.1",
 		"@detox/dht"             : "^0.16.9",
-		"@detox/nodes-manager"   : "github:Detox/nodes-manager",
+		"@detox/nodes-manager"   : "^0.1.0",
 		"@detox/routing"         : "^0.3.1",
 		"@detox/transport"       : "^0.38.1",
 		"@detox/utils"           : "^1.10.0",
