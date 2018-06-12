@@ -4,7 +4,7 @@
  * @license 0BSD
  */
 /*
- * Implements version 0.4.1 of the specification
+ * Implements version 0.5.0 of the specification
  */
 const DHT_COMMANDS_OFFSET				= 10				# 0..9 are reserved as Core commands
 const ROUTING_COMMANDS					= 20				# 10..19 are reserved as DHT commands
@@ -663,6 +663,9 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 			.'on'('aware_of_nodes_count', (aware_of_nodes_count) !~>
 				@'fire'('aware_of_nodes_count', aware_of_nodes_count)
 			)
+			.'on'('peer_error', (peer_id) !~>
+				@_peer_error(peer_id)
+			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
 		if !bootstrap_nodes.length
@@ -907,9 +910,11 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 				return
 			@_update_last_announcement(real_public_key, +(new Date))
 			# Last node is introduction node, hence +1
-			nodes_for_routes_to_introduction_nodes	=
-				for _ from 0 til number_of_intermediate_nodes
-					@_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1, old_introduction_nodes)
+			nodes_for_routes_to_introduction_nodes	= []
+			for let _ from 0 til number_of_intermediate_nodes
+				nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1, old_introduction_nodes)
+				if nodes
+					nodes_for_routes_to_introduction_nodes.push(nodes)
 			if !nodes_for_routes_to_introduction_nodes.length
 				@_update_last_announcement(real_public_key, 1)
 				@'fire'('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
@@ -1339,7 +1344,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 					[target_node_id, target_route_id]	= @_announcements_from.get(target_id)
 					@_send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message)
 				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST
-					command_data	= concat_arrays(@_nodes_manager['get_aware_of_nodes']())
+					command_data	= concat_arrays(@_nodes_manager['get_aware_of_nodes'](peer_id))
 					@_send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, command_data)
 				case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE
 					if !@_get_nodes_requested.has(peer_id)
@@ -1352,9 +1357,8 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 					nodes			= []
 					for i from 0 til number_of_nodes
 						new_node_id	= command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH)
-						# TODO: Unlock this in future when specification is and node manager are updated
-#						if are_arrays_equal(@_dht_public_key, new_node_id)
-#							@_peer_error(peer_id)
+						if are_arrays_equal(@_dht_public_key, new_node_id)
+							@_peer_error(peer_id)
 						nodes.push(new_node_id)
 					@_nodes_manager['set_aware_of_nodes'](peer_id, nodes)
 				case UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE

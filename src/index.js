@@ -6,7 +6,7 @@
  */
 (function(){
   /*
-   * Implements version 0.4.1 of the specification
+   * Implements version 0.5.0 of the specification
    */
   var DHT_COMMANDS_OFFSET, ROUTING_COMMANDS, UNCOMPRESSED_COMMANDS_OFFSET, UNCOMPRESSED_CORE_COMMANDS_OFFSET, COMPRESSED_CORE_COMMAND_SIGNAL, UNCOMPRESSED_CORE_COMMAND_FORWARD_INTRODUCTION, UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, UNCOMPRESSED_CORE_COMMAND_BOOTSTRAP_NODE, ROUTING_COMMAND_ANNOUNCE, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_REQUEST, ROUTING_COMMAND_FIND_INTRODUCTION_NODES_RESPONSE, ROUTING_COMMAND_INITIALIZE_CONNECTION, ROUTING_COMMAND_INTRODUCTION, ROUTING_COMMAND_CONFIRM_CONNECTION, ROUTING_COMMAND_CONNECTED, ROUTING_COMMAND_DATA, ROUTING_COMMAND_PING, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH, HANDSHAKE_MESSAGE_LENGTH, MAC_LENGTH, APPLICATION_LENGTH, DEFAULT_TIMEOUTS, CONNECTION_OK, CONNECTION_ERROR_NO_INTRODUCTION_NODES, CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES, CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, CONNECTION_ERROR_CANT_CONNECT_TO_RENDEZVOUS_NODE, CONNECTION_ERROR_OUT_OF_INTRODUCTION_NODES, CONNECTION_PROGRESS_CONNECTED_TO_RENDEZVOUS_NODE, CONNECTION_PROGRESS_FOUND_INTRODUCTION_NODES, CONNECTION_PROGRESS_INTRODUCTION_SENT, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES, ANNOUNCEMENT_ERROR_NO_INTRODUCTION_NODES_CONFIRMED;
   DHT_COMMANDS_OFFSET = 10;
@@ -706,6 +706,8 @@
         }
       })['on']('aware_of_nodes_count', function(aware_of_nodes_count){
         this$['fire']('aware_of_nodes_count', aware_of_nodes_count);
+      })['on']('peer_error', function(peer_id){
+        this$._peer_error(peer_id);
       });
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
       if (!bootstrap_nodes.length) {
@@ -948,7 +950,7 @@
        * @param {!Uint8Array} real_public_key
        */,
       _announce: function(real_public_key){
-        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, old_introduction_nodes, nodes_for_routes_to_introduction_nodes, res$, i$, _, introductions_pending, introduction_nodes_confirmed, combined_introduction_nodes, nodes, len$, this$ = this;
+        var ref$, real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, old_introduction_nodes, nodes_for_routes_to_introduction_nodes, i$, introductions_pending, introduction_nodes_confirmed, combined_introduction_nodes, nodes, len$, this$ = this;
         ref$ = this._real_keypairs.get(real_public_key), real_keypair = ref$[0], number_of_introduction_nodes = ref$[1], number_of_intermediate_nodes = ref$[2], announced_to = ref$[3];
         old_introduction_nodes = [];
         announced_to.forEach(function(introduction_node){
@@ -959,12 +961,10 @@
           return;
         }
         this._update_last_announcement(real_public_key, +new Date);
-        res$ = [];
+        nodes_for_routes_to_introduction_nodes = [];
         for (i$ = 0; i$ < number_of_intermediate_nodes; ++i$) {
-          _ = i$;
-          res$.push(this._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1, old_introduction_nodes));
+          (fn$.call(this, i$));
         }
-        nodes_for_routes_to_introduction_nodes = res$;
         if (!nodes_for_routes_to_introduction_nodes.length) {
           this._update_last_announcement(real_public_key, 1);
           this['fire']('announcement_failed', real_public_key, ANNOUNCEMENT_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
@@ -1006,9 +1006,16 @@
           return results$;
         }()));
         for (i$ = 0, len$ = nodes_for_routes_to_introduction_nodes.length; i$ < len$; ++i$) {
-          (fn$.call(this, nodes_for_routes_to_introduction_nodes[i$]));
+          (fn1$.call(this, nodes_for_routes_to_introduction_nodes[i$]));
         }
-        function fn$(nodes){
+        function fn$(_){
+          var nodes;
+          nodes = this._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1, old_introduction_nodes);
+          if (nodes) {
+            nodes_for_routes_to_introduction_nodes.push(nodes);
+          }
+        }
+        function fn1$(nodes){
           var first_node, introduction_node, this$ = this;
           first_node = nodes[0];
           introduction_node = nodes[nodes.length - 1];
@@ -1450,7 +1457,7 @@
           this._send_to_routing_path(target_node_id, target_route_id, ROUTING_COMMAND_INTRODUCTION, introduction_message);
           break;
         case UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST:
-          command_data = concat_arrays(this._nodes_manager['get_aware_of_nodes']());
+          command_data = concat_arrays(this._nodes_manager['get_aware_of_nodes'](peer_id));
           this._send_uncompressed_core_command(peer_id, UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE, command_data);
           break;
         case UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE:
@@ -1467,6 +1474,9 @@
           for (i$ = 0; i$ < number_of_nodes; ++i$) {
             i = i$;
             new_node_id = command_data.subarray(i * PUBLIC_KEY_LENGTH, (i + 1) * PUBLIC_KEY_LENGTH);
+            if (are_arrays_equal(this._dht_public_key, new_node_id)) {
+              this._peer_error(peer_id);
+            }
             nodes.push(new_node_id);
           }
           this._nodes_manager['set_aware_of_nodes'](peer_id, nodes);
