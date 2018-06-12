@@ -397,9 +397,7 @@
         });
       });
       this._get_more_nodes_interval = intervalSet(this._options['timeouts']['GET_MORE_AWARE_OF_NODES_INTERVAL'], function(){
-        if (this$._more_aware_of_nodes_needed()) {
-          this$._get_more_aware_of_nodes();
-        }
+        this$._get_more_aware_of_nodes();
       });
       this._transport = detoxTransport['Transport'](this._dht_public_key, ice_servers, packets_per_second, UNCOMPRESSED_COMMANDS_OFFSET, this._options['timeouts']['CONNECTION_TIMEOUT'])['on']('connected', function(peer_id){
         this$._dht['add_peer'](peer_id);
@@ -717,6 +715,7 @@
       } else {
         this._dht['once']('peer_updated', function(){
           this$['fire']('ready');
+          this$._get_more_aware_of_nodes();
         });
       }
       this._do_random_lookup();
@@ -1236,16 +1235,13 @@
         this._router['destroy']();
       }
       /**
-       * @return {boolean}
-       */,
-      _more_aware_of_nodes_needed: function(){
-        return !this._bootstrap_node && this._nodes_manager['more_aware_of_nodes_needed']();
-      }
-      /**
        * Request more nodes to be aware of from some of the nodes already connected to
        */,
       _get_more_aware_of_nodes: function(){
         var nodes, i$, len$, node_id;
+        if (this._bootstrap_node || !this._nodes_manager['more_aware_of_nodes_needed']()) {
+          return;
+        }
         nodes = this._nodes_manager['get_random_connected_nodes'](5);
         if (!nodes) {
           return;

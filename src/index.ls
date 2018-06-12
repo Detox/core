@@ -363,8 +363,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 						@_pending_pings.add(source_id)
 		)
 		@_get_more_nodes_interval		= intervalSet(@_options['timeouts']['GET_MORE_AWARE_OF_NODES_INTERVAL'], !~>
-			if @_more_aware_of_nodes_needed()
-				@_get_more_aware_of_nodes()
+			@_get_more_aware_of_nodes()
 		)
 
 		@_transport		= detox-transport['Transport'](
@@ -674,6 +673,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 		else
 			@_dht['once']('peer_updated', !~>
 				@'fire'('ready')
+				@_get_more_aware_of_nodes()
 			)
 		@_do_random_lookup()
 	Core.'CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES'		= CONNECTION_ERROR_CANT_FIND_INTRODUCTION_NODES
@@ -1161,14 +1161,11 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 				clearTimeout(connection_timeout)
 			@_router['destroy']()
 		/**
-		 * @return {boolean}
-		 */
-		_more_aware_of_nodes_needed : ->
-			!@_bootstrap_node && @_nodes_manager['more_aware_of_nodes_needed']()
-		/**
 		 * Request more nodes to be aware of from some of the nodes already connected to
 		 */
 		_get_more_aware_of_nodes : !->
+			if @_bootstrap_node || !@_nodes_manager['more_aware_of_nodes_needed']()
+				return
 			nodes	= @_nodes_manager['get_random_connected_nodes'](5)
 			if !nodes
 				return
