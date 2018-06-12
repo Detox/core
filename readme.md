@@ -86,7 +86,7 @@ requirejs(['@detox/core'], function (detox_core) {
 ### detox_core.generate_seed() : Uint8Array
 Generates random seed that can be later used in `detox_core.Core` constructor.
 
-### detox_core.Core(bootstrap_nodes : Object[], ice_servers : Object[], packets_per_second = 1 : number, bucket_size = 2 : number, options = {} : Object) : detox_core.Core
+### detox_core.Core(bootstrap_nodes : string[], ice_servers : Object[], packets_per_second = 1 : number, bucket_size = 2 : number, options = {} : Object) : detox_core.Core
 Constructor for Core object, offers methods for connecting to and interacting with Detox network.
 
 * `bootstrap_nodes` - array of strings in format `node_id:address:port`
@@ -126,7 +126,7 @@ Constructor for Core object, offers methods for connecting to and interacting wi
 * `public_port` - publicly available port on `public_address`
 Start bootstrap server (HTTP) listening on specified IP and port, optionally referred externally by specified address (like domain name) and port.
 
-### detox_core.Core.get_bootstrap_nodes() : Object
+### detox_core.Core.get_bootstrap_nodes() : string[]
 Returns array of collected bootstrap nodes obtained during DHT operation in the same format as `bootstrap_nodes` argument in constructor.
 
 ### detox_core.Core.announce(real_key_seed : Uint8Array, number_of_introduction_nodes : number, number_of_intermediate_nodes : number) : Uint8Array|null
