@@ -1,6 +1,6 @@
 # Detox specification
 
-Specification version: 0.5.0
+Specification version: 0.5.1
 
 Author: Nazar Mokrynskyi
 
@@ -253,7 +253,7 @@ When routing path is created (see "Routing path creation" section below), we nee
 The first node in routing path MUST be always the random node to which direct connection is already established, at the same time each new routing path MUST start from unique node (e.g. there MUST NOT be 2 routing paths started from the same node). The rest of the nodes MUST be those to which direct connections are not yet established.
 
 Node can send `UNCOMPRESSED_CORE_COMMAND_GET_NODES_REQUEST` transport command with empty contents to the other nodes and in response it will receive `UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE` transport command that contains concatenated list of up to 10 unique random IDs of nodes queried node is aware of.
-This list SHOULD NOT include nodes that are directly connected to queried node, instead it consists of up to 5 random peers of queried node's peers, but preferably nodes that were collected from `UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE` by queried node.
+This list SHOULD NOT include nodes that are directly connected to queried node, instead it consists of 3 to 5 random peers of queried node's peers and up to 7 nodes that were collected from `UNCOMPRESSED_CORE_COMMAND_GET_NODES_RESPONSE` by queried node.
 
 When routing path is created, necessary number of nodes is selected from these known nodes.
 
