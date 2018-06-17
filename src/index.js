@@ -1461,7 +1461,10 @@
             return;
           }
           this._get_nodes_requested['delete'](peer_id);
-          if (!command_data.length || command_data.length % PUBLIC_KEY_LENGTH !== 0) {
+          if (!command_data.length) {
+            return;
+          }
+          if (command_data.length % PUBLIC_KEY_LENGTH !== 0) {
             this._peer_error(peer_id);
             return;
           }

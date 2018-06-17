@@ -1347,7 +1347,9 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 					if !@_get_nodes_requested.has(peer_id)
 						return
 					@_get_nodes_requested.delete(peer_id)
-					if !command_data.length || command_data.length % PUBLIC_KEY_LENGTH != 0
+					if !command_data.length
+						return
+					if command_data.length % PUBLIC_KEY_LENGTH != 0
 						@_peer_error(peer_id)
 						return
 					number_of_nodes	= command_data.length / PUBLIC_KEY_LENGTH
