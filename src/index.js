@@ -706,6 +706,8 @@
         this$['fire']('aware_of_nodes_count', aware_of_nodes_count);
       })['on']('peer_error', function(peer_id){
         this$._peer_error(peer_id);
+      })['on']('peer_warning', function(peer_id){
+        this$._peer_warning(peer_id);
       });
       this._max_packet_data_size = this._router['get_max_packet_data_size']() - MAC_LENGTH;
       if (!bootstrap_nodes.length) {

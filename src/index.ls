@@ -665,6 +665,9 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 			.'on'('peer_error', (peer_id) !~>
 				@_peer_error(peer_id)
 			)
+			.'on'('peer_warning', (peer_id) !~>
+				@_peer_warning(peer_id)
+			)
 		# As we wrap encrypted data into encrypted routing path, we'll have more overhead: MAC on top of encrypted block of multiplexed data
 		@_max_packet_data_size	= @_router['get_max_packet_data_size']() - MAC_LENGTH # 472 bytes
 		if !bootstrap_nodes.length
