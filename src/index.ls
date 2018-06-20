@@ -581,13 +581,14 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 									number_of_intermediate_nodes	= data['number_of_intermediate_nodes']
 									if number_of_intermediate_nodes == null
 										throw 'No event handler for introduction'
-									if !number_of_intermediate_nodes
-										throw new Error('Direct connections are not yet supported')
-										# TODO: Support direct connections here?
-									nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes, [rendezvous_node])
-									if !nodes
-										return
-									nodes.push(rendezvous_node)
+									# Here we allow user to connect to rendezvous node directly if he wants too
+									if number_of_intermediate_nodes
+										nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes, [rendezvous_node])
+										nodes.push(rendezvous_node)
+										if !nodes
+											return
+									else
+										nodes	= [rendezvous_node]
 									first_node	= nodes[0]
 									@_construct_routing_path(nodes)
 										.then (route_id) !~>
@@ -974,16 +975,13 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
 		 * @param {!Uint8Array}	application						Up to 64 bytes
 		 * @param {!Uint8Array}	secret							Up to 32 bytes
-		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
+		 * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
 		 *
 		 * @return {Uint8Array} Real public key or `null` in case of failure
 		 */
 		'connect_to' : (real_key_seed, target_id, application, secret, number_of_intermediate_nodes) ->
 			if @_bootstrap_node
 				return null
-			if !number_of_intermediate_nodes
-				throw new Error('Direct connections are not yet supported')
-				# TODO: Support direct connections here?
 			real_keypair	= create_keypair(real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
 			# Don't connect to itself
@@ -1006,7 +1004,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 					return
 				@_connections_in_progress.delete(full_target_id)
 				@'fire'('connection_failed', real_public_key, target_id, code)
-			nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes) # TODO: This method is no longer present
+			nodes	= @_nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1)
 			if !nodes
 				connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES)
 				return null
@@ -1143,7 +1141,6 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 		'destroy' : !->
 			if @_destroyed
 				return
-			# TODO: Probably check this in more places
 			@_destroyed	= true
 			# Bootstrap node immediately destroys router, no need to do it again
 			if !@_bootstrap_node

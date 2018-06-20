@@ -147,7 +147,7 @@ Listen for events to identify when/if connection succeeded. NOTE: there is no wa
 * `target_id` - long-term public key of a friend
 * `application` - Application-specific string up to 64 bytes that both friends should understand
 * `secret` - secret that will be sent to a friend, up to 32 bytes, typically used for friend requests and identification as kind of a password
-* `number_of_intermediate_nodes` - non-zero number of intermediate nodes between this node and rendezvous node (including it) used during routing path construction for anonymity
+* `number_of_intermediate_nodes` - number of intermediate nodes between this node and rendezvous node (not including it) used during routing path construction for anonymity
 
 Returns real public key or `null` in case of failure.
 

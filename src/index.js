@@ -613,14 +613,15 @@
               if (number_of_intermediate_nodes === null) {
                 throw 'No event handler for introduction';
               }
-              if (!number_of_intermediate_nodes) {
-                throw new Error('Direct connections are not yet supported');
+              if (number_of_intermediate_nodes) {
+                nodes = this$._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes, [rendezvous_node]);
+                nodes.push(rendezvous_node);
+                if (!nodes) {
+                  return;
+                }
+              } else {
+                nodes = [rendezvous_node];
               }
-              nodes = this$._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes, [rendezvous_node]);
-              if (!nodes) {
-                return;
-              }
-              nodes.push(rendezvous_node);
               first_node = nodes[0];
               this$._construct_routing_path(nodes).then(function(route_id){
                 var encryptor_instance, response_handshake_message, signature;
@@ -1041,7 +1042,7 @@
        * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
        * @param {!Uint8Array}	application						Up to 64 bytes
        * @param {!Uint8Array}	secret							Up to 32 bytes
-       * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (including it)
+       * @param {number}		number_of_intermediate_nodes	How many hops should be made until rendezvous node (not including it)
        *
        * @return {Uint8Array} Real public key or `null` in case of failure
        */,
@@ -1049,9 +1050,6 @@
         var real_keypair, real_public_key, full_target_id, connection_in_progress, nodes, first_node, rendezvous_node, this$ = this;
         if (this._bootstrap_node) {
           return null;
-        }
-        if (!number_of_intermediate_nodes) {
-          throw new Error('Direct connections are not yet supported');
         }
         real_keypair = create_keypair(real_key_seed);
         real_public_key = real_keypair['ed25519']['public'];
@@ -1077,7 +1075,7 @@
           this$._connections_in_progress['delete'](full_target_id);
           this$['fire']('connection_failed', real_public_key, target_id, code);
         }
-        nodes = this._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes);
+        nodes = this._nodes_manager['get_nodes_for_routing_path'](number_of_intermediate_nodes + 1);
         if (!nodes) {
           connection_failed(CONNECTION_ERROR_NOT_ENOUGH_INTERMEDIATE_NODES);
           return null;
