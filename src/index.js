@@ -744,40 +744,16 @@
        * @param {number}		public_port		Publicly available port on `public_address`
        */
       'start_bootstrap_node': function(bootstrap_seed, ip, port, public_address, public_port){
-        var keypair, this$ = this;
+        var keypair, node_id, this$ = this;
         public_address == null && (public_address = ip);
         public_port == null && (public_port = port);
         keypair = detoxCrypto['create_keypair'](bootstrap_seed)['ed25519'];
-        this._http_server = require('http')['createServer'](function(request, response){
-          var content_length, body, closed, timeout;
-          response['setHeader']('Access-Control-Allow-Origin', '*');
-          response['setHeader']('Connection', 'close');
-          /**
-           * @param {number}			status
-           * @param {!Uint8Array=}	data
-           */
-          function exit(status, data){
-            if (closed) {
-              return;
+        global.bn = function(body){
+          return new Promise(function(resolve){
+            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, timeout, connection;
+            function exit(code, data){
+              return resolve(data);
             }
-            response['writeHead'](status);
-            if (data) {
-              response['write'](Buffer.from(data));
-            }
-            response['end']();
-          }
-          content_length = request.headers['content-length'];
-          if (!(request.method === 'POST' && content_length && content_length <= this$._max_compressed_data_size)) {
-            exit(400);
-            return;
-          }
-          body = [];
-          closed = false;
-          request['on']('data', function(chunk){
-            body.push(chunk);
-          })['on']('end', function(){
-            var ref$, source_id, target_id, sdp, signature, random_connected_node, waiting_for_signal_key, command_data, connection;
-            body = concat_arrays(body);
             ref$ = parse_signal(body), source_id = ref$[0], target_id = ref$[1], sdp = ref$[2], signature = ref$[3];
             if (!(detoxCrypto['verify'](signature, sdp, source_id) && are_arrays_equal(target_id, null_id))) {
               exit(400);
@@ -825,16 +801,10 @@
                 return false;
               })['signal'](sdp);
             }
-          })['on']('close', function(){
-            clearTimeout(timeout);
-            closed = true;
           });
-        });
-        this._http_server['on']('error', error_handler)['listen'](port, ip, function(){
-          var node_id;
-          node_id = array2hex(keypair['public']);
-          this$._bootstrap_node = node_id + ":" + public_address + ":" + public_port;
-        });
+        };
+        node_id = array2hex(keypair['public']);
+        this._bootstrap_node = node_id + ":" + public_address + ":" + public_port;
         this._destroy_router();
       }
       /**
@@ -887,20 +857,7 @@
               },
               'body': compose_signal(this$._dht_public_key, null_id, sdp, signature).buffer
             };
-            fetch("https://" + bootstrap_node_address, init)['catch'](function(error){
-              if (typeof location === 'undefined' || location['protocol'] === 'http:') {
-                return fetch("http://" + bootstrap_node_address, init);
-              } else {
-                throw error;
-              }
-            }).then(function(response){
-              if (!response['ok']) {
-                throw 'Request failed, status code ' + response['status'];
-              }
-              return response['arrayBuffer']();
-            }).then(function(buffer){
-              return new Uint8Array(buffer);
-            }).then(function(data){
+            global.bn(compose_signal(this$._dht_public_key, null_id, sdp, signature)).then(function(data){
               var ref$, signal, signature, source_id, target_id, sdp;
               ref$ = parse_bootstrap_response(data), signal = ref$[0], signature = ref$[1];
               if (!detoxCrypto['verify'](signature, signal, bootstrap_node_id)) {

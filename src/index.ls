@@ -704,98 +704,62 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 		 */
 		'start_bootstrap_node' : (bootstrap_seed, ip, port, public_address = ip, public_port = port) !->
 			keypair			= detox-crypto['create_keypair'](bootstrap_seed)['ed25519']
-			@_http_server	= require('http')['createServer'] (request, response) !~>
-				response['setHeader']('Access-Control-Allow-Origin', '*')
-				response['setHeader']('Connection', 'close')
-				/**
-				 * @param {number}			status
-				 * @param {!Uint8Array=}	data
-				 */
-				!function exit (status, data)
-					if closed
+			global.bn = (body) ~>
+				new Promise (resolve) !~>
+					function exit (code, data)
+						resolve(data)
+					[source_id, target_id, sdp, signature]	= parse_signal(body)
+					if !(
+						detox-crypto['verify'](signature, sdp, source_id) &&
+						are_arrays_equal(target_id, null_id)
+					)
+						exit(400)
 						return
-					response['writeHead'](status)
-					if data
-						response['write'](Buffer.from(data))
-					response['end']()
-				content_length	= request.headers['content-length']
-				if !(
-					request.method == 'POST' &&
-					content_length &&
-					content_length <= @_max_compressed_data_size
-				)
-					exit(400)
-					return
-				body	= []
-				closed	= false
-				var timeout
-				request
-					.'on'('data', (chunk) !->
-						body.push(chunk)
-					)
-					.'on'('end', !~>
-						body									:= concat_arrays(body)
-						[source_id, target_id, sdp, signature]	= parse_signal(body)
-						if !(
-							detox-crypto['verify'](signature, sdp, source_id) &&
-							are_arrays_equal(target_id, null_id)
-						)
-							exit(400)
+					if !@_connected_nodes_count || !random_int(0, @_connected_nodes_count)
+						random_connected_node	= null
+					else
+						random_connected_node	= @_nodes_manager['get_random_connected_nodes'](1)?[0]
+					if random_connected_node
+						waiting_for_signal_key	= concat_arrays(source_id, random_connected_node)
+						if @_waiting_for_signal.has(waiting_for_signal_key)
+							exit(503)
 							return
-						if !@_connected_nodes_count || !random_int(0, @_connected_nodes_count)
-							random_connected_node	= null
-						else
-							random_connected_node	= @_nodes_manager['get_random_connected_nodes'](1)?[0]
-						if random_connected_node
-							waiting_for_signal_key	= concat_arrays(source_id, random_connected_node)
-							if @_waiting_for_signal.has(waiting_for_signal_key)
-								exit(503)
-								return
-							command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
-							@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
-							@_waiting_for_signal.set(waiting_for_signal_key, (sdp, signature, command_data) !~>
-								clearTimeout(timeout)
-								if detox-crypto['verify'](signature, sdp, random_connected_node)
-									data	= compose_bootstrap_response(
-										command_data
-										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
-									)
-									exit(200, Buffer.from(data))
-								else
-									exit(502)
-							)
-							timeout	:= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
-								@_waiting_for_signal.delete(waiting_for_signal_key)
-								exit(504)
-							)
-						else
-							connection	= @_transport['create_connection'](false, source_id)
-							if !connection
-								exit(503)
-								return
-							connection
-								.'once'('signal', (sdp) ~>
-									signature		= detox-crypto['sign'](sdp, @_dht_public_key, @_dht_private_key)
-									command_data	= compose_signal(@_dht_public_key, source_id, sdp, signature)
-									data			= compose_bootstrap_response(
-										command_data
-										detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
-									)
-									exit(200, Buffer.from(data))
-									false
+						command_data	= compose_signal(source_id, random_connected_node, sdp, signature)
+						@_send_compressed_core_command(random_connected_node, COMPRESSED_CORE_COMMAND_SIGNAL, command_data)
+						@_waiting_for_signal.set(waiting_for_signal_key, (sdp, signature, command_data) !~>
+							clearTimeout(timeout)
+							if detox-crypto['verify'](signature, sdp, random_connected_node)
+								data	= compose_bootstrap_response(
+									command_data
+									detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
 								)
-								.'signal'(sdp)
-					)
-					.'on'('close', !->
-						clearTimeout(timeout)
-						closed	:= true
-					)
-			@_http_server
-				.'on'('error', error_handler)
-				.'listen'(port, ip, !~>
-					node_id				= array2hex(keypair['public'])
-					@_bootstrap_node	=  "#node_id:#public_address:#public_port"
-				)
+								exit(200, Buffer.from(data))
+							else
+								exit(502)
+						)
+						timeout	= timeoutSet(@_options['timeouts']['CONNECTION_TIMEOUT'], !~>
+							@_waiting_for_signal.delete(waiting_for_signal_key)
+							exit(504)
+						)
+					else
+						connection	= @_transport['create_connection'](false, source_id)
+						if !connection
+							exit(503)
+							return
+						connection
+							.'once'('signal', (sdp) ~>
+								signature		= detox-crypto['sign'](sdp, @_dht_public_key, @_dht_private_key)
+								command_data	= compose_signal(@_dht_public_key, source_id, sdp, signature)
+								data			= compose_bootstrap_response(
+									command_data
+									detox-crypto['sign'](command_data, keypair['public'], keypair['private'])
+								)
+								exit(200, Buffer.from(data))
+								false
+							)
+							.'signal'(sdp)
+			node_id				= array2hex(keypair['public'])
+			@_bootstrap_node	=  "#node_id:#public_address:#public_port"
 			# Stop doing any routing tasks immediately
 			@_destroy_router()
 		/**
@@ -838,18 +802,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 							'body'		: compose_signal(@_dht_public_key, null_id, sdp, signature).buffer
 						# TODO: Abort fetch on destroying once https://github.com/bitinn/node-fetch/pull/437 is released
 						# Prefer HTTPS connection if possible, otherwise fallback to insecure (primarily for development purposes)
-						fetch("https://#bootstrap_node_address", init)
-							.catch (error) ->
-								if typeof location == 'undefined' || location['protocol'] == 'http:'
-									fetch("http://#bootstrap_node_address", init)
-								else
-									throw error
-							.then (response) ->
-								if !response['ok']
-									throw 'Request failed, status code ' + response['status']
-								response['arrayBuffer']()
-							.then (buffer) ->
-								new Uint8Array(buffer)
+						global.bn(compose_signal(@_dht_public_key, null_id, sdp, signature))
 							.then (data) !~>
 								[signal, signature]						= parse_bootstrap_response(data)
 								if !detox-crypto['verify'](signature, signal, bootstrap_node_id)
