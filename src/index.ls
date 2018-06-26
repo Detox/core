@@ -304,7 +304,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 			}
 		)
 
-		@_real_keypairs				= ArrayMap()
+		@_announced_keypairs		= ArrayMap()
 		@_dht_keypair				= create_keypair(@_options['dht_key_seed'])
 		# Convenient shortcuts
 		@_dht_public_key			= @_dht_keypair['ed25519']['public']
@@ -349,7 +349,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 		)
 		# On 4/5 of the way to dropping connection
 		@_keep_announce_routes_interval	= intervalSet(@_options['timeouts']['LAST_USED_TIMEOUT'] / 5 * 4, !~>
-			@_real_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
+			@_announced_keypairs.forEach ([real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, announced_to, last_announcement], real_public_key) !~>
 				if announced_to.size < number_of_introduction_nodes && last_announcement
 					# Give at least 3x time for announcement process to complete and to announce to some node
 					reannounce_if_older_than	= +(new Date) - @_options['timeouts']['CONNECTION_TIMEOUT'] * 3
@@ -527,9 +527,9 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 							# If routing path unknown - ignore
 							return
 						[real_public_key, introduction_node]	= routing_path_details
-						if !@_real_keypairs.has(real_public_key)
+						if !@_announced_keypairs.has(real_public_key)
 							return
-						[real_keypair, , , announced_to]	= @_real_keypairs.get(real_public_key)
+						[real_keypair, , , announced_to]	= @_announced_keypairs.get(real_public_key)
 						if !announced_to.has(introduction_node)
 							return
 						try
@@ -888,9 +888,9 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 			real_keypair	= create_keypair(real_key_seed)
 			real_public_key	= real_keypair['ed25519']['public']
 			# Ignore repeated announcement
-			if @_real_keypairs.has(real_public_key)
+			if @_announced_keypairs.has(real_public_key)
 				return null
-			@_real_keypairs.set(
+			@_announced_keypairs.set(
 				real_public_key
 				[real_keypair, number_of_introduction_nodes, number_of_intermediate_nodes, ArraySet()]
 			)
@@ -905,7 +905,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 				number_of_introduction_nodes
 				number_of_intermediate_nodes
 				announced_to
-			]								= @_real_keypairs.get(real_public_key)
+			]								= @_announced_keypairs.get(real_public_key)
 			old_introduction_nodes			= []
 			announced_to.forEach (introduction_node) !->
 				old_introduction_nodes.push(introduction_node)
@@ -969,7 +969,7 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 		 * @param {number}		value
 		 */
 		_update_last_announcement : (real_public_key, value) !->
-			@_real_keypairs.get(real_public_key)[4]	= value
+			@_announced_keypairs.get(real_public_key)[4]	= value
 		/**
 		 * @param {!Uint8Array}	real_key_seed					Seed used to generate real long-term keypair
 		 * @param {!Uint8Array}	target_id						Real Ed25519 pubic key of interested node
@@ -1259,8 +1259,8 @@ function Wrapper (detox-crypto, detox-dht, detox-nodes-manager, detox-routing, d
 			if @_pending_sending.has(full_target_id)
 				clearTimeout(@_pending_sending.get(full_target_id))
 				@_pending_sending.delete(full_target_id)
-			if @_real_keypairs.has(real_public_key)
-				announced_to	= @_real_keypairs.get(real_public_key)[3]
+			if @_announced_keypairs.has(real_public_key)
+				announced_to	= @_announced_keypairs.get(real_public_key)[3]
 				announced_to.delete(target_id)
 			encryptor_instance	= @_encryptor_instances.get(full_target_id)
 			if encryptor_instance
